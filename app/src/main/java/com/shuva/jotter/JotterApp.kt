@@ -17,6 +17,7 @@ class JotterApp : Application() {
     @Inject lateinit var repository: NoteRepository
     @Inject lateinit var scheduler: SyncScheduler
     @Inject lateinit var attachmentFiles: AttachmentFiles
+    @Inject lateinit var attachmentIndex: com.shuva.jotter.data.AttachmentIndex
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -29,6 +30,8 @@ class JotterApp : Application() {
         }
         // Keeps the home-screen widget current while the process runs (app or background sync).
         appScope.launch { repository.liveNotes().collect { RecentWidget.push(this@JotterApp, it) } }
+        // Reads text in photos and PDFs so search finds it.
+        appScope.launch { attachmentIndex.run() }
         scheduler.onAppStart() // sync on app start (when signed in) + 6 h periodic job
     }
 }

@@ -5,4 +5,8 @@
     <string name="widget_new_note">New note</string>
     <string name="widget_empty">No notes yet</string>
     <string name="widget_description">Your latest notes</string>
+    <string name="shortcut_new_note">New note</string>
+    <string name="shortcut_scan">Scan document</string>
+    <string name="shortcut_voice">Voice note</string>
+    <string name="tile_new_note">New note</string>
 </resources>

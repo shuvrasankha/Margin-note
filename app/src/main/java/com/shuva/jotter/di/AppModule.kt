@@ -7,6 +7,7 @@ import com.shuva.jotter.data.MIGRATION_1_2
 import com.shuva.jotter.data.MIGRATION_2_3
 import com.shuva.jotter.data.MIGRATION_3_4
 import com.shuva.jotter.data.MIGRATION_4_5
+import com.shuva.jotter.data.MIGRATION_5_6
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -20,5 +21,5 @@ object AppModule {
     @Provides
     @Singleton
     fun database(@ApplicationContext context: Context): JotterDatabase =
-        Room.databaseBuilder(context, JotterDatabase::class.java, "jotter.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+        Room.databaseBuilder(context, JotterDatabase::class.java, "jotter.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build()
 }

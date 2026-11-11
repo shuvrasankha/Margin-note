@@ -95,15 +95,21 @@ class MainActivity : FragmentActivity() {
         fromWidget(intent)
     }
 
-    /** A tap on the home-screen widget: open that note, or a new one. */
+    /** A tap on the home-screen widget, the Quick Settings tile or an app shortcut: open that note, or a new one. */
     private fun fromWidget(intent: android.content.Intent?) {
         val screen = when (intent?.action) {
             RecentWidget.ACTION_OPEN -> intent.getStringExtra(RecentWidget.EXTRA_NOTE)?.let {
                 Screen.Editor(it, intent.getStringExtra(RecentWidget.EXTRA_FOLDER) ?: DEFAULT_FOLDER_ID)
             }
-            RecentWidget.ACTION_NEW -> Screen.Editor(newId(), DEFAULT_FOLDER_ID)
+            RecentWidget.ACTION_NEW, RecentWidget.ACTION_SCAN, RecentWidget.ACTION_VOICE -> Screen.Editor(newId(), DEFAULT_FOLDER_ID)
             else -> null
         } ?: return
+        // The new note starts the scanner or the recorder once it's open.
+        editor.startAction = when (intent?.action) {
+            RecentWidget.ACTION_SCAN -> EditorViewModel.START_SCAN
+            RecentWidget.ACTION_VOICE -> EditorViewModel.START_VOICE
+            else -> null
+        }
         if (nav.current == screen) return
         editor.close()
         if (nav.current is Screen.Editor) nav.pop()

@@ -19,7 +19,8 @@ sealed interface ListEntry {
     data class Header(val text: String, val collapsed: Boolean? = null) : ListEntry
     data class Row(val note: NoteEntity) : ListEntry
     /** Search: an attachment whose name matches, in [note]. */
-    data class AttachmentRow(val note: NoteEntity, val attachment: Attachment) : ListEntry
+    /** [snippet]: where the words are in the text read from it, when they aren't in its name. */
+    data class AttachmentRow(val note: NoteEntity, val attachment: Attachment, val snippet: SearchSnippet? = null) : ListEntry
 }
 
 /** The date a note is sorted, grouped and labelled by. */
@@ -100,22 +101,30 @@ fun buildListing(
 enum class SearchScope(val label: String) { TOP("Top results"), NOTES("Notes"), ATTACHMENTS("Attachments") }
 
 /** Search results: notes whose title or text matches, and attachments whose name matches. A note can be in both. */
-data class SearchResults(val notes: List<NoteEntity>, val attachments: List<Pair<NoteEntity, Attachment>>)
+data class SearchResults(
+    val notes: List<NoteEntity>,
+    val attachments: List<Pair<NoteEntity, Attachment>>,
+    /** For attachments found by the text inside them (photos, PDFs): the line with the match. */
+    val inside: Map<String, SearchSnippet> = emptyMap(),
+)
 
 /**
  * Splits what the database found (it matches attachment names as part of the text) into note hits and
  * attachment hits, keeping the order given. A note found only through an attachment is only an attachment hit.
  */
-fun searchResults(found: List<NoteEntity>, query: String): SearchResults {
+fun searchResults(found: List<NoteEntity>, query: String, texts: Map<String, String> = emptyMap()): SearchResults {
     val q = query.trim()
     if (q.isEmpty()) return SearchResults(emptyList(), emptyList())
     val notes = found.filter { n ->
         n.title.contains(q, ignoreCase = true) || n.blocks.drop(1).any { it.attachment == null && it.plainText.contains(q, ignoreCase = true) }
     }
     val attachments = found.flatMap { n ->
-        n.blocks.mapNotNull { b -> b.attachment?.takeIf { it.name.contains(q, ignoreCase = true) }?.let { n to it } }
+        n.blocks.mapNotNull { b -> b.attachment?.takeIf { it.name.contains(q, ignoreCase = true) || it.file in texts }?.let { n to it } }
     }
-    return SearchResults(notes, attachments)
+    val inside = attachments.mapNotNull { (_, a) ->
+        if (a.name.contains(q, ignoreCase = true)) null else texts[a.file]?.let { a.file to snippetIn(it.lines(), q) }
+    }.toMap()
+    return SearchResults(notes, attachments, inside)
 }
 
 fun SearchResults.entries(scope: SearchScope): List<ListEntry> = buildList {
@@ -125,7 +134,7 @@ fun SearchResults.entries(scope: SearchScope): List<ListEntry> = buildList {
     }
     if (scope != SearchScope.NOTES && attachments.isNotEmpty()) {
         add(ListEntry.Header("In attachments"))
-        attachments.mapTo(this) { (n, a) -> ListEntry.AttachmentRow(n, a) }
+        attachments.mapTo(this) { (n, a) -> ListEntry.AttachmentRow(n, a, inside[a.file]) }
     }
 }
 
@@ -140,6 +149,10 @@ fun searchSnippet(note: NoteEntity, query: String, lead: Int = 24): SearchSnippe
     if (note.isLocked) return SearchSnippet("Locked", null)
     val q = query.trim()
     val lines = note.blocks.drop(1).filter { it.attachment == null }.flatMap { it.plainText.lines() }
+    return snippetIn(lines, q, lead)
+}
+
+private fun snippetIn(lines: List<String>, q: String, lead: Int = 24): SearchSnippet {
     for (line in lines) {
         val at = if (q.isEmpty()) -1 else line.indexOf(q, ignoreCase = true)
         if (at < 0) continue

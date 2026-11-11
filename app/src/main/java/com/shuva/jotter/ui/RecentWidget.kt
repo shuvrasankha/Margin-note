@@ -41,6 +41,9 @@ class RecentWidget : AppWidgetProvider() {
     companion object {
         const val ACTION_OPEN = "com.shuva.jotter.OPEN_NOTE"
         const val ACTION_NEW = "com.shuva.jotter.NEW_NOTE"
+        /** App shortcuts: a new note that opens the document scanner or starts recording. */
+        const val ACTION_SCAN = "com.shuva.jotter.SCAN"
+        const val ACTION_VOICE = "com.shuva.jotter.VOICE_NOTE"
         const val EXTRA_NOTE = "note"
         const val EXTRA_FOLDER = "folder"
         private val ROWS = listOf(

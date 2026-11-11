@@ -62,7 +62,8 @@ interface NoteDao {
 
     @Query(
         "SELECT * FROM notes WHERE deleted = 0 AND trashedAt IS NULL " +
-            "AND (title LIKE :pattern ESCAPE '\\' OR searchText LIKE :pattern ESCAPE '\\') " +
+            "AND (title LIKE :pattern ESCAPE '\\' OR searchText LIKE :pattern ESCAPE '\\' " +
+            "OR EXISTS (SELECT 1 FROM attachment_text t WHERE t.text LIKE :pattern ESCAPE '\\' AND notes.blocks LIKE '%\"' || t.file || '\"%')) " +
             "ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC",
     )
     fun observeSearch(pattern: String): Flow<List<NoteEntity>>
@@ -105,11 +106,74 @@ interface NoteDao {
     fun observeDirtyCount(): Flow<Int>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class], version = 5, exportSchema = true)
+/** Text read from a photo or PDF attachment, for search. Local only: each phone reads its own. Empty = read, none found. */
+@androidx.room.Entity(tableName = "attachment_text")
+data class AttachmentText(@androidx.room.PrimaryKey val file: String, val text: String)
+
+@Dao
+interface AttachmentTextDao {
+    @Query("SELECT file FROM attachment_text")
+    suspend fun files(): List<String>
+
+    @Query("SELECT * FROM attachment_text WHERE text LIKE :pattern ESCAPE '\\'")
+    fun observeMatching(pattern: String): Flow<List<AttachmentText>>
+
+    @Upsert
+    suspend fun upsert(row: AttachmentText)
+
+    @Query("DELETE FROM attachment_text WHERE file IN (:files)")
+    suspend fun delete(files: List<String>)
+}
+
+/** A note as it was at the end of an editing session. Local only, never for locked notes. */
+@androidx.room.Entity(tableName = "note_versions", indices = [androidx.room.Index("noteId")])
+data class NoteVersion(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val noteId: String,
+    val savedAt: Long,
+    val blocks: List<Block>,
+)
+
+@Dao
+interface NoteVersionDao {
+    @Query("SELECT * FROM note_versions WHERE noteId = :noteId ORDER BY savedAt DESC")
+    fun observe(noteId: String): Flow<List<NoteVersion>>
+
+    @Query("SELECT * FROM note_versions WHERE noteId = :noteId ORDER BY savedAt DESC LIMIT 1")
+    suspend fun latest(noteId: String): NoteVersion?
+
+    @Upsert
+    suspend fun upsert(v: NoteVersion)
+
+    @Query("DELETE FROM note_versions WHERE noteId = :noteId AND id NOT IN (SELECT id FROM note_versions WHERE noteId = :noteId ORDER BY savedAt DESC LIMIT :keep)")
+    suspend fun trim(noteId: String, keep: Int)
+
+    @Query("DELETE FROM note_versions WHERE noteId = :noteId")
+    suspend fun deleteFor(noteId: String)
+
+    @Query("DELETE FROM note_versions WHERE noteId NOT IN (SELECT id FROM notes WHERE deleted = 0)")
+    suspend fun deleteOrphans()
+
+    @Query("SELECT blocks FROM note_versions")
+    suspend fun allBlocks(): List<String>
+}
+
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 6, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class JotterDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
     abstract fun notes(): NoteDao
+    abstract fun attachmentText(): AttachmentTextDao
+    abstract fun versions(): NoteVersionDao
+}
+
+/** v6: text read from attachments (for search) and note version history. Both local only. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `attachment_text` (`file` TEXT NOT NULL, `text` TEXT NOT NULL, PRIMARY KEY(`file`))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `note_versions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `noteId` TEXT NOT NULL, `savedAt` INTEGER NOT NULL, `blocks` TEXT NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_versions_noteId` ON `note_versions` (`noteId`)")
+    }
 }
 
 /** v2: per-folder sort and a note edit time separate from the sync time. Existing notes start with editedAt = updatedAt. */

@@ -1189,10 +1189,13 @@ private fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fold
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(44.dp, 52.dp).clip(RoundedCornerShape(8.dp)).background(jc.surface), contentAlignment = Alignment.Center) {
-            JIcon(if (entry.attachment.isAudio) Ico.MIC else Ico.FILE, jc.muted, size = 22.dp)
+            val a = entry.attachment
+            JIcon(if (a.isAudio) Ico.MIC else if (a.isImage) Ico.CAMERA else if (a.isPdf) ICON_PDF else Ico.FILE, jc.muted, size = 22.dp)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(withHit(name, if (at < 0) null else at until at + query.length), style = JType.row, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Found by the words inside it (read from the photo or PDF): show where.
+            entry.snippet?.let { Text(withHit(it.text, it.hit), style = JType.secondary, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             Text(
                 listOfNotNull("In " + entry.note.displayTitle, folderName).joinToString(" · "),
                 style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -1572,6 +1575,7 @@ fun EditorScreen(
     var formatting by remember { mutableStateOf(false) }
     var attaching by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf(false) }
     var linked by remember { mutableStateOf(false) }
     /** Find in note: null = closed. [findAt] is the current match. */
     var find by remember { mutableStateOf<String?>(null) }
@@ -1734,6 +1738,7 @@ fun EditorScreen(
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
                             item("Linked notes · ${vm.linkedNotes(targets).size}", Ico.LINK, gap = true) { linked = true }
                             item("Note info", Ico.INFO) { info = true }
+                            if (vm.exists && !vm.locked && !vm.needsUnlock) item("Version history", ICON_HISTORY) { history = true }
                             item("Delete", Ico.TRASH, gap = true, danger = true) { vm.delete(onBack) }
                         }
                     }
@@ -1786,16 +1791,37 @@ fun EditorScreen(
                             ?: return@rememberLauncherForActivityResult toast("The scan didn't come back. Try again.")
                         vm.addScan(context, pdf.uri) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
                     }
+                    fun startVoice() {
+                        val mic = android.Manifest.permission.RECORD_AUDIO
+                        val wanted = listOfNotNull(mic, if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.POST_NOTIFICATIONS else null)
+                        if (wanted.all { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) recording = true
+                        else micPermission.launch(wanted.toTypedArray())
+                    }
+                    fun startDocScan() {
+                        val activity = context.findActivity() ?: return toast("Couldn't open the scanner.")
+                        val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+                            .setGalleryImportAllowed(true)
+                            .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                            .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                            .build()
+                        com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
+                            .addOnSuccessListener { docScanner.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build()) }
+                            .addOnFailureListener { toast("The document scanner isn't available on this phone. It needs Google Play services.") }
+                    }
+                    // An app shortcut ("Scan document", "Voice note") opened this new note: start it once the note has loaded.
+                    LaunchedEffect(vm.startAction, vm.loaded) {
+                        val action = vm.startAction ?: return@LaunchedEffect
+                        if (!vm.loaded) return@LaunchedEffect
+                        vm.startAction = null
+                        when (action) {
+                            EditorViewModel.START_SCAN -> startDocScan()
+                            EditorViewModel.START_VOICE -> startVoice()
+                        }
+                    }
                     if (attaching) AttachSheet(
                         onClose = { attaching = false },
                         onFile = { attaching = false; picker.launch(arrayOf("*/*")) },
-                        onVoice = {
-                            attaching = false
-                            val mic = android.Manifest.permission.RECORD_AUDIO
-                            val wanted = listOfNotNull(mic, if (Build.VERSION.SDK_INT >= 33) android.Manifest.permission.POST_NOTIFICATIONS else null)
-                            if (wanted.all { androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED }) recording = true
-                            else micPermission.launch(wanted.toTypedArray())
-                        },
+                        onVoice = { attaching = false; startVoice() },
                         onDraw = { attaching = false; drawing = null to null },
                         onCamera = {
                             attaching = false
@@ -1807,18 +1833,7 @@ fun EditorScreen(
                         onLink = { attaching = false; addingLink = true },
                         onTable = { attaching = false; vm.insertTable() },
                         onPdf = { attaching = false; picker.launch(arrayOf(com.shuva.jotter.data.PDF_MIME)) },
-                        onScanDoc = {
-                            attaching = false
-                            val activity = context.findActivity() ?: return@AttachSheet toast("Couldn't open the scanner.")
-                            val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
-                                .setGalleryImportAllowed(true)
-                                .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
-                                .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-                                .build()
-                            com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
-                                .addOnSuccessListener { docScanner.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build()) }
-                                .addOnFailureListener { toast("The document scanner isn't available on this phone. It needs Google Play services.") }
-                        },
+                        onScanDoc = { attaching = false; startDocScan() },
                         onScan = {
                             attaching = false
                             try { scanCamera.launch(vm.scanTarget()) } catch (_: android.content.ActivityNotFoundException) {
@@ -1905,6 +1920,7 @@ fun EditorScreen(
         }
     }
     if (info) NoteInfoDialog(vm, folderName) { info = false }
+    if (history) VersionHistory(vm) { history = false }
     peek?.let { n -> LinkedNotePreview(n, onOpen = { peek = null; onOpenNote(n) }, onDismiss = { peek = null }) }
     if (linked) {
         val notes = vm.linkedNotes(targets)
@@ -2189,6 +2205,98 @@ private fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable 
         }
         content()
     }
+}
+
+/** A clock with an arrow going back. */
+private const val ICON_HISTORY = "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"
+
+/**
+ * Version history: the note as it was at the end of each editing session (kept on this phone, up to 50).
+ * Tap one to read it; Restore puts it back as an edit, so Undo returns to the current text.
+ */
+@Composable
+private fun VersionHistory(vm: EditorViewModel, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val versions by remember { vm.versions() }.collectAsState(initial = null)
+    val current = vm.doc.toBlocks()
+    // The newest version is usually the text as it is now; it's not offered.
+    val older = versions?.filter { it.blocks.map { b -> b.plainText to b.attachment } != current.map { b -> b.plainText to b.attachment } }
+    var open by remember { mutableStateOf<com.shuva.jotter.data.NoteVersion?>(null) }
+    Dialog(onDismissRequest = { if (open != null) open = null else onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        FullWindow()
+        Column(Modifier.fillMaxSize().background(jc.bg).systemBarsPadding()) {
+            val v = open
+            Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button) { if (v != null) open = null else onClose() }
+                        .semantics { contentDescription = if (v != null) "Back to versions" else "Close" },
+                    contentAlignment = Alignment.Center,
+                ) { JIcon(if (v != null) Ico.BACK else Ico.CLOSE, jc.accent, size = 20.dp, stroke = 2.2f) }
+                Text(
+                    if (v != null) versionTime(context, v.savedAt) else "Version history",
+                    Modifier.weight(1f).padding(start = 4.dp), style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                if (v != null && !vm.readOnly) TextButton(onClick = { vm.restoreVersion(v.blocks); onClose() }) {
+                    Text("Restore", fontWeight = FontWeight.SemiBold, color = jc.accent)
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
+            when {
+                v != null -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    v.blocks.forEachIndexed { i, b ->
+                        val text = b.attachment?.let { "[" + it.name + "]" } ?: b.table?.let { "[Table]" }
+                            ?: (if (b.type == com.shuva.jotter.data.BlockType.CHECK) (if (b.checked) "☑ " else "☐ ") else "") + b.text
+                        Text(
+                            text,
+                            style = if (i == 0) JType.rowTitle.copy(fontSize = 22.sp) else JType.body,
+                            color = if (b.attachment != null || b.table != null) jc.muted else jc.ink,
+                        )
+                    }
+                }
+                older == null -> Unit
+                older.isEmpty() -> Column(
+                    Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                ) {
+                    JIcon(ICON_HISTORY, jc.muted, size = 40.dp, stroke = 1.6f)
+                    Text("No earlier versions yet", style = JType.rowTitle, color = jc.ink)
+                    Text(
+                        "A version is kept each time you come back to edit this note after a break of 10 minutes or more.",
+                        style = JType.secondary, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+                else -> LazyColumn(Modifier.fillMaxSize()) {
+                    items(older, key = { it.id }) { ver ->
+                        val preview = remember(ver) {
+                            ver.blocks.drop(1).map { it.plainText }.filter { it.isNotBlank() }.take(2).joinToString(" · ").ifEmpty { "No additional text" }
+                        }
+                        Column(
+                            Modifier.fillMaxWidth().clickable { open = ver }.padding(horizontal = 20.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Text(versionTime(context, ver.savedAt), style = JType.rowTitle.copy(fontSize = 16.sp), color = jc.ink)
+                            Text(
+                                (ver.blocks.firstOrNull()?.text?.ifBlank { null }?.let { "$it · " } ?: "") + preview,
+                                style = JType.secondary, color = jc.muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Box(Modifier.padding(start = 20.dp).fillMaxWidth().height(1.dp).background(jc.line))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "Today, 4:23 pm", "Yesterday, 9:05 am" or "3 Nov 2026, 9:05 am". */
+private fun versionTime(context: android.content.Context, at: Long): String {
+    val time = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(at))
+    val day = when {
+        android.text.format.DateUtils.isToday(at) -> "Today"
+        android.text.format.DateUtils.isToday(at + 86_400_000L) -> "Yesterday"
+        else -> java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(at))
+    }
+    return "$day, $time"
 }
 
 /** A page between scan corners. */

@@ -15,6 +15,8 @@ class NoteRepository @Inject constructor(
 ) {
     private val folders = db.folders()
     private val notes = db.notes()
+    private val versions = db.versions()
+    private val texts = db.attachmentText()
     private fun now() = System.currentTimeMillis()
 
     fun liveFolders(): Flow<List<FolderEntity>> = folders.observeLive()
@@ -145,8 +147,36 @@ class NoteRepository @Inject constructor(
         )
         val stored = if (cipher != null) blocks.take(1) else blocks
         notes.upsert(base.withBlocks(stored, now).copy(cipher = cipher))
+        if (cipher != null) versions.deleteFor(id) // no readable copies of a locked note
+        else if (existing?.blocks != blocks) keepVersion(id, blocks, now)
         scheduler.requestDebounced()
     }
+
+    /**
+     * Version history: one version per editing session. Saves within [SESSION_MS] of the last version update it;
+     * after a pause a new version starts. The newest [KEEP_VERSIONS] are kept.
+     */
+    private suspend fun keepVersion(id: String, blocks: List<Block>, now: Long) {
+        if (blocks.all { it.plainText.isBlank() }) return
+        val last = versions.latest(id)
+        if (last != null && now - last.savedAt < SESSION_MS) versions.upsert(last.copy(savedAt = now, blocks = blocks))
+        else {
+            versions.upsert(NoteVersion(noteId = id, savedAt = now, blocks = blocks))
+            versions.trim(id, KEEP_VERSIONS)
+        }
+    }
+
+    fun versionsOf(noteId: String): Flow<List<NoteVersion>> = versions.observe(noteId)
+
+    /** Text read from attachments that contains [query] (for search results). */
+    fun attachmentTextMatching(query: String): Flow<List<AttachmentText>> {
+        val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return texts.observeMatching("%$escaped%")
+    }
+
+    suspend fun indexedAttachments(): Set<String> = texts.files().toSet()
+    suspend fun saveAttachmentText(file: String, text: String) = texts.upsert(AttachmentText(file, text))
+    suspend fun forgetAttachmentText(files: Collection<String>) { if (files.isNotEmpty()) texts.delete(files.toList()) }
 
     /** Every note and folder as stored, for Export all. */
     suspend fun everything() = notes.all() to folders.all()
@@ -303,7 +333,14 @@ class NoteRepository @Inject constructor(
     }
 
     /** Attachment files any stored note still uses. */
-    suspend fun attachmentsInUse() = referencedAttachments(notes.all())
+    suspend fun attachmentsInUse(): Set<String> {
+        versions.deleteOrphans() // history of notes deleted for good
+        // Older versions can be restored, so the files they show are kept too.
+        val old = versions.allBlocks().flatMap { json ->
+            runCatching { JotterJson.decodeFromString<List<Block>>(json) }.getOrDefault(emptyList()).mapNotNull { it.attachment?.file }
+        }
+        return referencedAttachments(notes.all()) + old
+    }
 
     /** Auto-purge after the "Keep deleted notes" setting (30 days by default). Runs on app start and in every sync. */
     suspend fun purgeExpiredTrash() {
@@ -336,3 +373,6 @@ class NoteRepository @Inject constructor(
         scheduler.requestDebounced()
     }
 }
+
+private const val SESSION_MS = 10 * 60 * 1000L
+private const val KEEP_VERSIONS = 50

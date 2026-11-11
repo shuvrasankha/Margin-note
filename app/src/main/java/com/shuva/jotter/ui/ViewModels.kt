@@ -87,6 +87,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -274,7 +275,11 @@ class NotesViewModel @Inject constructor(
 
     /** Search: the scope pill, and the results split into notes and attachments. */
     val searchScope = MutableStateFlow(SearchScope.TOP)
-    val searchResults: StateFlow<SearchResults> = combine(notes, query, ::searchResults)
+    /** Text read from photos and PDFs that contains the query, by attachment file. */
+    private val textHits = query.map { it.trim() }.distinctUntilChanged().flatMapLatest { q ->
+        if (q.isEmpty()) flowOf(emptyMap()) else repo.attachmentTextMatching(q).map { rows -> rows.associate { it.file to it.text } }
+    }
+    val searchResults: StateFlow<SearchResults> = combine(notes, query, textHits, ::searchResults)
         .stateIn(viewModelScope, SharingStarted.Eagerly, SearchResults(emptyList(), emptyList()))
 
     /** The open folder (null for Recently Deleted); its sort setting drives the list. */
@@ -416,6 +421,11 @@ class EditorViewModel @Inject constructor(
     val files: AttachmentFiles,
     private val reminders: com.shuva.jotter.data.Reminders,
 ) : ViewModel() {
+    companion object {
+        const val START_SCAN = "scan"
+        const val START_VOICE = "voice"
+    }
+
     private val openId = MutableStateFlow("")
 
     /** When this note's reminder rings, or null; changes as reminders are set, snoozed and rung. */
@@ -961,6 +971,21 @@ class EditorViewModel @Inject constructor(
             doc = EditorDoc.fromBlocks(doc.toBlocks().mapIndexed { i, b -> if (i == at) b.copy(attachment = turned) else b })
             changed()
         }
+    }
+
+    /** Set by an app shortcut: what the newly opened note starts with ([START_SCAN], [START_VOICE]); the editor clears it. */
+    var startAction by mutableStateOf<String?>(null)
+
+    /** This note's earlier versions, newest first (see NoteRepository.keepVersion). */
+    fun versions() = repo.versionsOf(noteId)
+
+    /** Puts an earlier version back as an ordinary edit, so Undo returns to what was there. */
+    fun restoreVersion(blocks: List<com.shuva.jotter.data.Block>) {
+        if (readOnly || needsUnlock || locked) return
+        lastChangeAt = 0 // its own undo step
+        doc = EditorDoc.fromBlocks(blocks)
+        value = TextFieldValue(doc.text, TextRange(0))
+        changed()
     }
 
     fun removeAttachment(line: Int) {
