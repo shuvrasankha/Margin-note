@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Margin icon: an amber margin rule beside three lines of text. The 1024 master is scaled into the
+     72dp visible part of the 108dp adaptive layer. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.0703125" android:scaleY="0.0703125" android:translateX="18" android:translateY="18">
+        <path android:strokeColor="@color/icon_rule" android:strokeWidth="56" android:strokeLineCap="round" android:pathData="M302,232V792" />
+        <path android:strokeColor="@color/icon_ink" android:strokeWidth="56" android:strokeLineCap="round" android:pathData="M402,360H722M402,512H662M402,664H562" />
+    </group>
+</vector>

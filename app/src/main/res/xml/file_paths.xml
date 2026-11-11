@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path name="attachments" path="attachments/" />
+    <!-- Exported PDFs and Markdown files handed to the share sheet. -->
+    <cache-path name="exports" path="exports/" />
+</paths>

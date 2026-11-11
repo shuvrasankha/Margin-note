@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="launch_bg">#FF0B0B0C</color>
+    <!-- Recent notes widget. -->
+    <color name="widget_ink">#FFF5F5F7</color>
+    <color name="widget_muted">#FFA1A1A8</color>
+    <color name="widget_line">#FF2A2A2E</color>
+    <color name="widget_accent">#FFFFB340</color>
+</resources>

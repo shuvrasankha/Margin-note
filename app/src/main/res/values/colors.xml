@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launch screen: the app's page colour, so it blends into the first screen. -->
+    <color name="launch_bg">#FFFFFFFF</color>
+    <!-- Recent notes widget. -->
+    <color name="widget_ink">#FF111111</color>
+    <color name="widget_muted">#FF5C5C63</color>
+    <color name="widget_line">#FFE6E6EA</color>
+    <color name="widget_accent">#FFB25E00</color>
+    <!-- App icon, light and dark: ink ground, amber margin rule, paper lines. -->
+    <color name="icon_ground">#FF111111</color>
+    <color name="icon_rule">#FFFFB340</color>
+    <color name="icon_ink">#FFFFFFFF</color>
+</resources>

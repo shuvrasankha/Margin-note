@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed (tinted) icon on Android 13+: one tone, the system colours it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.0703125" android:scaleY="0.0703125" android:translateX="18" android:translateY="18">
+        <path android:strokeColor="#FFFFFFFF" android:strokeWidth="56" android:strokeLineCap="round" android:pathData="M302,232V792 M402,360H722M402,512H662M402,664H562" />
+    </group>
+</vector>

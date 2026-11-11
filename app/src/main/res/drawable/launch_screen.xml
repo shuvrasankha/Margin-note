@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown by the window while Margin starts, before the first frame: just the page colour. The app then draws the
+     full logo (LaunchScreen) on the same colour, so nothing jumps. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/launch_bg" />
+</layer-list>
