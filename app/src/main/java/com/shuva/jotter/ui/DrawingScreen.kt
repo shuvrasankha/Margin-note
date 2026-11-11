@@ -33,6 +33,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
@@ -85,6 +89,9 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.changedToDown
 import kotlin.math.roundToInt
 import com.shuva.jotter.data.moved
+import com.shuva.jotter.data.recognizeShape
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.shuva.jotter.data.straightLine
 import com.shuva.jotter.data.strokesInside
 
@@ -94,6 +101,7 @@ import com.shuva.jotter.data.strokesInside
  */
 private val DARK_INKS = mapOf(
     0xFF111111 to 0xFFF5F5F7, 0xFFB25E00 to 0xFFFFB340, 0xFF0A66D9 to 0xFF6AAEFF, 0xFF1F7A4D to 0xFF5FD37E, 0xFF8E8E93 to 0xFFA1A1A8,
+    0xFFD12F25 to 0xFFFF6B5E, 0xFF7440C9 to 0xFFB592FF,
 )
 
 /** The ink colours for the current page: as stored on a light page, lightened on a dark one. */
@@ -103,9 +111,10 @@ fun rememberInk(): (Long) -> Color {
     return remember(dark) { if (dark) { c -> Color(DARK_INKS[c] ?: c) } else { c -> Color(c) } }
 }
 
-// The design's five inks and three stroke widths.
+// Seven inks and three stroke widths.
 private val INKS = listOf(
-    0xFF111111 to "Black", 0xFFB25E00 to "Amber", 0xFF0A66D9 to "Blue", 0xFF1F7A4D to "Green", 0xFF8E8E93 to "Grey",
+    0xFF111111 to "Black", 0xFFB25E00 to "Amber", 0xFFD12F25 to "Red", 0xFF0A66D9 to "Blue", 0xFF1F7A4D to "Green",
+    0xFF7440C9 to "Purple", 0xFF8E8E93 to "Grey",
 )
 private val WIDTHS = listOf(Triple("Fine", 2f, 4.dp), Triple("Medium", 4f, 8.dp), Triple("Bold", 7f, 14.dp))
 
@@ -122,16 +131,28 @@ private fun DrawScope.drawStroke(st: PenStroke, ink: (Long) -> Color) {
         else -> base
     }
     if (p.size == 2) { drawCircle(color, st.width / 2, Offset(p[0], p[1]), blendMode = blend); return }
-    val path = Path().apply {
-        moveTo(p[0], p[1])
-        for (i in 2 until p.size step 2) lineTo(p[i], p[i + 1])
-    }
+    val path = smoothPath(p)
     val cap = if (st.tool == PenTool.MARKER && !st.erase) StrokeCap.Square else StrokeCap.Round
     drawPath(path, color, style = Stroke(st.width, cap = cap, join = StrokeJoin.Round), blendMode = blend)
     if (st.tool == PenTool.PENCIL && !st.erase) {
         val grain = PathEffect.dashPathEffect(floatArrayOf(st.width * 0.6f, st.width * 0.9f))
         drawPath(path, base.copy(alpha = 0.55f), style = Stroke(st.width * 0.55f, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = grain))
     }
+}
+
+/**
+ * A curve through the points (x, y pairs): each point bends the line towards it, passing through the midpoints
+ * between points, so fast strokes come out round instead of as straight segments.
+ */
+private fun smoothPath(p: List<Float>) = Path().apply {
+    moveTo(p[0], p[1])
+    val n = p.size / 2
+    if (n == 2) { lineTo(p[2], p[3]); return@apply }
+    for (i in 1 until n - 1) {
+        val x = p[2 * i]; val y = p[2 * i + 1]
+        quadraticTo(x, y, (x + p[2 * i + 2]) / 2, (y + p[2 * i + 3]) / 2)
+    }
+    lineTo(p[p.size - 2], p[p.size - 1])
 }
 
 /**
@@ -168,6 +189,8 @@ private fun fitView(d: Drawing, w: Float, h: Float): View {
 
 /** How far the endless canvas zooms, relative to the fitted view. */
 private const val MIN_ZOOM = 0.2f
+/** How long to hold still at the end of a stroke before it snaps to a shape. */
+private const val HOLD_MS = 550L
 private const val MAX_ZOOM = 8f
 
 /** Touches wider than this are taken for a resting palm and ignored. */
@@ -279,6 +302,9 @@ private fun ToolPen(tool: Tool, ink: Color, picked: Boolean, onPick: () -> Unit)
 fun DrawingScreen(
     initial: Drawing?, noteTitle: String, onDone: (Drawing?) -> Unit,
     onText: ((remaining: Drawing?, text: String) -> Unit)? = null,
+    /** A picture to draw on (a PDF page), filling [initial]'s page; the page then keeps its size. */
+    background: ImageBitmap? = null,
+    title: String = "Sketch",
 ) {
     val density = LocalDensity.current
     var canvas by remember { mutableStateOf(initial) }
@@ -308,12 +334,15 @@ fun DrawingScreen(
     val strokePx = with(density) { (width * mode.factor).dp.toPx() }
     val penPx by rememberUpdatedState(strokePx)
     val grab = with(density) { 24.dp.toPx() }
+    val stillSlop = with(density) { 6.dp.toPx() }
+    val haptics = LocalHapticFeedback.current
     val accent = jc.accent
     val inkOf = rememberInk()
     val paper = jc.bg
     val gridLine = jc.line
+    val pageDesk = jc.page
     // Ink drawn past the page grows it, so nothing is cut off in the note.
-    val finish = { onDone(if (changed) canvas?.copy(strokes = strokes)?.grownToFit(INLINE_PAD) else null) }
+    val finish = { onDone(if (changed) canvas?.copy(strokes = strokes)?.let { if (background != null) it else it.grownToFit(INLINE_PAD) } else null) }
     // Handwriting to text: the strokes being read (the lasso's, or all of them).
     var reading by remember { mutableStateOf<Set<Int>?>(null) }
     val hasInk = strokes.any { !it.erase }
@@ -331,7 +360,7 @@ fun DrawingScreen(
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextAction("Cancel", { onDone(null) })
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Sketch", style = JType.rowTitle, color = jc.ink)
+                    Text(title, style = JType.rowTitle, color = jc.ink)
                     if (noteTitle.isNotBlank()) {
                         Text("In \u201C$noteTitle\u201D", style = JType.small.copy(fontSize = 12.sp), color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -347,7 +376,21 @@ fun DrawingScreen(
                         if (canvas == null) canvas = Drawing(it.width.toFloat(), it.height.toFloat())
                         area = Size(it.width.toFloat(), it.height.toFloat())
                     }
-                    .drawBehind { if (canvas?.grid == true) view?.let { drawEndlessGrid(it, gridLine) } }
+                    .drawBehind {
+                        val v = view
+                        if (background != null && v != null) {
+                            // The page under the ink, outside the ink's layer so erasing never rubs it out, on a grey
+                            // desk with an outline, so its edges show.
+                            drawRect(pageDesk)
+                            val w = canvas!!.width * v.scale; val h = canvas!!.height * v.scale
+                            drawImage(
+                                background, dstOffset = IntOffset(v.origin.x.roundToInt(), v.origin.y.roundToInt()),
+                                dstSize = IntSize(w.roundToInt(), h.roundToInt()),
+                            )
+                            drawRect(gridLine, v.origin, Size(w, h), style = Stroke(1.dp.toPx()))
+                        }
+                        if (canvas?.grid == true) v?.let { drawEndlessGrid(it, gridLine) }
+                    }
                     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                     .pointerInput(canvas != null) {
                         // Keyed on the canvas existing only: restarting on every tool change could drop a stroke already under way.
@@ -376,9 +419,22 @@ fun DrawingScreen(
                             current.add(start.x); current.add(start.y)
                             liveErase = erasing
                             val straight = ruler && mode != Mode.LASSO && !erasing
+                            // Shape snapping: hold still at the end of a stroke and it becomes the shape it looks like.
+                            val canSnap = !straight && !moving && mode != Mode.LASSO && !erasing
+                            var stillAt = down.position
+                            var stillSince = down.uptimeMillis
+                            var snapped = false
+                            fun trySnap() {
+                                if (snapped || current.size < 8) return
+                                val shape = recognizeShape(current.toList()) ?: return
+                                current.clear(); current.addAll(shape)
+                                snapped = true
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
                             down.consume()
                             while (true) {
-                                val e = awaitPointerEvent()
+                                val e = if (canSnap && !snapped) withTimeoutOrNull(HOLD_MS) { awaitPointerEvent() } else awaitPointerEvent()
+                                if (e == null) { trySnap(); continue } // held perfectly still
                                 // A second finger while drawing with a finger means pan or zoom: the stroke so far is dropped.
                                 if (!pen && e.changes.count { it.pressed && !it.type.isPen } > 1 || cancelled(e)) {
                                     current.clear(); lift = Offset.Zero
@@ -387,7 +443,12 @@ fun DrawingScreen(
                                 val c = e.changes.firstOrNull { it.id == down.id } ?: break
                                 val u = v.units(c.position) // the lift point counts too, so a quick ruler line ends where the finger left
                                 if (!c.pressed && u == start) break
+                                if (canSnap && c.pressed) {
+                                    if ((c.position - stillAt).getDistance() > stillSlop) { stillAt = c.position; stillSince = c.uptimeMillis }
+                                    else if (c.uptimeMillis - stillSince >= HOLD_MS) trySnap()
+                                }
                                 when {
+                                    snapped -> Unit // the shape stays as it snapped until the pen lifts
                                     moving -> lift = u - start
                                     straight -> { current.clear(); current.addAll(straightLine(start.x, start.y, u.x, u.y)) }
                                     else -> { current.add(u.x); current.add(u.y) }
@@ -482,7 +543,18 @@ fun DrawingScreen(
                     )
                 }
                 if (selection.isNotEmpty()) {
-                    SelectionActions(Modifier.align(Alignment.TopEnd), onText = onText?.let { { reading = selection } }) {
+                    SelectionActions(
+                        Modifier.align(Alignment.TopEnd), onText = onText?.let { { reading = selection } },
+                        onDuplicate = {
+                            // The copies land a little down and to the right, and become the selection, ready to drag.
+                            val shift = 24f / (view?.scale ?: 1f)
+                            val picked = selection.sorted().map { strokes[it] }
+                            val copies = picked.moved(picked.indices.toSet(), shift, shift)
+                            val first = strokes.size
+                            commit(strokes + copies)
+                            selection = (first until strokes.size).toSet()
+                        },
+                    ) {
                         commit(strokes.filterIndexed { i, _ -> i !in selection })
                         selection = emptySet()
                     }
@@ -521,7 +593,7 @@ fun DrawingScreen(
                 WIDTHS.forEach { (name, w, dot) ->
                     val on = width == w
                     Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent)
+                        Modifier.size(34.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent)
                             .clickable(role = Role.RadioButton) { width = w }.semantics { contentDescription = "$name stroke"; selected = on },
                         contentAlignment = Alignment.Center,
                     ) { Box(Modifier.size(dot).clip(CircleShape).background(jc.ink)) }
@@ -532,16 +604,18 @@ fun DrawingScreen(
                 INKS.forEach { (value, name) ->
                     val on = ink == value
                     Box(
-                        Modifier.size(38.dp).clip(CircleShape).clickable(role = Role.RadioButton) {
+                        Modifier.size(34.dp).clip(CircleShape).clickable(role = Role.RadioButton) {
                             ink = value
-                            if (mode == Mode.ERASER || mode == Mode.LASSO) mode = Mode.PEN
-                            selection = emptySet()
-                        }.semantics { contentDescription = name; selected = on },
+                            if (selection.isNotEmpty()) {
+                                // With strokes picked by the lasso, an ink recolours them.
+                                commit(strokes.mapIndexed { i, st -> if (i in selection && !st.erase) st.copy(color = value) else st })
+                            } else if (mode == Mode.ERASER || mode == Mode.LASSO) mode = Mode.PEN
+                        }.semantics { contentDescription = if (selection.isNotEmpty()) "Colour selection $name" else name; selected = on },
                         contentAlignment = Alignment.Center,
                     ) {
                         // Selected: the swatch gets a ring with a gap, as in the design.
-                        if (on) Box(Modifier.size(38.dp).border(2.dp, inkOf(value), CircleShape))
-                        Box(Modifier.size(28.dp).clip(CircleShape).background(inkOf(value)))
+                        if (on) Box(Modifier.size(34.dp).border(2.dp, inkOf(value), CircleShape))
+                        Box(Modifier.size(24.dp).clip(CircleShape).background(inkOf(value)))
                     }
                 }
             }
@@ -551,9 +625,26 @@ fun DrawingScreen(
 
 /** Over the canvas while the lasso holds strokes: turn them into text or delete them (drag the box to move them). */
 @Composable
-private fun SelectionActions(modifier: Modifier, onText: (() -> Unit)?, onDelete: () -> Unit) {
+private fun SelectionActions(modifier: Modifier, onText: (() -> Unit)?, onDuplicate: () -> Unit, onDelete: () -> Unit) {
     Row(modifier.padding(8.dp).clip(CircleShape).background(jc.ink.copy(alpha = 0.85f)).padding(horizontal = 4.dp)) {
         onText?.let { IconAction(Ico.HANDWRITING, "Convert selected handwriting to text", it, color = jc.bg) }
+        IconAction(Ico.COPY, "Duplicate selected strokes", onDuplicate, color = jc.bg)
         IconAction(Ico.TRASH, "Delete selected strokes", onDelete, color = jc.bg)
     }
+}
+
+
+/**
+ * The ink of [drawing] as a transparent picture [w] x [h] pixels, stretched over its whole page, in the colours it
+ * was drawn in. Used to stamp a sketch onto a PDF page.
+ */
+fun renderInk(drawing: Drawing, w: Int, h: Int): android.graphics.Bitmap {
+    val bmp = ImageBitmap(w, h)
+    val canvas = androidx.compose.ui.graphics.Canvas(bmp)
+    androidx.compose.ui.graphics.drawscope.CanvasDrawScope().draw(
+        androidx.compose.ui.unit.Density(1f), androidx.compose.ui.unit.LayoutDirection.Ltr, canvas, Size(w.toFloat(), h.toFloat()),
+    ) {
+        scale(w / drawing.width, h / drawing.height, pivot = Offset.Zero) { drawInk(drawing.strokes, { Color(it) }, null, emptySet(), Offset.Zero) }
+    }
+    return bmp.asAndroidBitmap()
 }

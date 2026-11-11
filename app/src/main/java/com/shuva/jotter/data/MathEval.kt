@@ -38,7 +38,9 @@ fun mathSuggestionAt(text: String, cursor: Int): MathSuggestion? {
     val lineStart = text.lastIndexOf('\n', cursor - 1) + 1
     val line = text.substring(lineStart, cursor).trim()
     if ('=' !in line || '→' in line || "==" in line) return null
-    return suggestionFor(line, mathScope(text.substring(0, lineStart).lines()))
+    val above = text.substring(0, lineStart).lines()
+    TOTAL.matchEntire(line)?.let { m -> return totalOf(m.groupValues[1], above.drop(1).dropLast(1))?.let(MathSuggestion::Answer) }
+    return suggestionFor(line, mathScope(above))
 }
 
 /** The plot of every graphable line in [text] (each "y = …" and "f(x) = …"), top to bottom. */
@@ -52,6 +54,7 @@ fun mathAnswerAt(text: String, cursor: Int): String? = (mathSuggestionAt(text, c
 
 private fun suggestionFor(line: String, scope: Scope): MathSuggestion? {
     if (line.endsWith('=')) {
+        convert(line.dropLast(1).substringAfterLast('=').trim(), scope)?.let { return MathSuggestion.Answer(it) }
         // "a = 5 + 3 =": the sum is what comes after the earlier "=".
         val body = line.dropLast(1).substringAfterLast('=')
         val node = longestSum(body, scope) { it.unknowns(scope).isEmpty() } ?: return null
@@ -443,4 +446,116 @@ private class Parser(s: String) {
 private class CallOrTimes(val name: String, val arg: Node) : Node {
     override fun eval(s: Scope): Double = if (s.function(name) != null) Call(name, arg).eval(s) else Name(name).eval(s) * arg.eval(s)
     override fun unknowns(s: Scope): Set<String> = if (s.function(name) != null) arg.unknowns(s) else Name(name).unknowns(s) + arg.unknowns(s)
+}
+
+
+// ---------- Totals ----------
+
+/** "Total =", "Grand total:=", "Average =": a line that totals the list above it. */
+private val TOTAL = Regex("""(?i)(?:.*\s)?(total|subtotal|sum|average|avg|mean)\s*:?\s*=""")
+/** A number as written in a list: 1,200 or 4.50 or -3, with any currency sign in front ignored. */
+private val LIST_NUMBER = Regex("""-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?""")
+
+/**
+ * The total (or average, for [kind] average / avg / mean) of the list [lines] ends with, as text: each line's
+ * last number, or a sum's answer after its last "=". The list runs up to a blank line or an earlier total.
+ * Lines without a number (a heading) are skipped. Null when there are no numbers.
+ */
+internal fun totalOf(kind: String, lines: List<String>): String? {
+    val values = mutableListOf<Double>()
+    for (raw in lines.asReversed()) {
+        val line = raw.trim().trimEnd('.')
+        if (line.isEmpty()) break
+        if (TOTAL_DONE.containsMatchIn(line)) break
+        val part = if ('=' in line) line.substringAfterLast('=') else line
+        val v = LIST_NUMBER.findAll(part).lastOrNull()?.value?.replace(",", "")?.toDoubleOrNull() ?: continue
+        values += v
+    }
+    if (values.isEmpty()) return null
+    val v = when (kind.lowercase()) { "average", "avg", "mean" -> values.average(); else -> values.sum() }
+    return formatNumber(v, 10)
+}
+
+/** An earlier total line, which ends the list above a new one. */
+private val TOTAL_DONE = Regex("""(?i)\b(total|subtotal|sum|average|avg|mean)\s*:?\s*=""")
+
+// ---------- Units ----------
+
+private enum class Dim { LENGTH, MASS, VOLUME, TIME, DATA, SPEED, AREA, TEMPERATURE }
+
+/** Each unit's size in its dimension's base unit (metre, kilogram, litre, second, byte, m/s, m²). */
+private val UNITS: Map<String, Pair<Dim, Double>> = buildMap {
+    fun add(dim: Dim, size: Double, vararg names: String) = names.forEach { put(it, dim to size) }
+    add(Dim.LENGTH, 0.001, "mm", "millimetre", "millimeter")
+    add(Dim.LENGTH, 0.01, "cm", "centimetre", "centimeter")
+    add(Dim.LENGTH, 1.0, "m", "metre", "meter")
+    add(Dim.LENGTH, 1000.0, "km", "kilometre", "kilometer")
+    add(Dim.LENGTH, 0.0254, "in", "inch", "inches", "\"")
+    add(Dim.LENGTH, 0.3048, "ft", "foot", "feet", "'")
+    add(Dim.LENGTH, 0.9144, "yd", "yard")
+    add(Dim.LENGTH, 1609.344, "mi", "mile")
+    add(Dim.LENGTH, 1852.0, "nmi")
+    add(Dim.MASS, 1e-6, "mg")
+    add(Dim.MASS, 0.001, "g", "gram", "gramme")
+    add(Dim.MASS, 1.0, "kg", "kilo", "kilogram")
+    add(Dim.MASS, 1000.0, "t", "tonne")
+    add(Dim.MASS, 0.028349523125, "oz", "ounce")
+    add(Dim.MASS, 0.45359237, "lb", "lbs", "pound")
+    add(Dim.MASS, 6.35029318, "st", "stone")
+    add(Dim.VOLUME, 0.001, "ml", "millilitre", "milliliter")
+    add(Dim.VOLUME, 0.01, "cl")
+    add(Dim.VOLUME, 1.0, "l", "litre", "liter")
+    add(Dim.VOLUME, 0.00492892159375, "tsp", "teaspoon")
+    add(Dim.VOLUME, 0.01478676478125, "tbsp", "tablespoon")
+    add(Dim.VOLUME, 0.0295735295625, "floz")
+    add(Dim.VOLUME, 0.2365882365, "cup")
+    add(Dim.VOLUME, 0.473176473, "pt", "pint")
+    add(Dim.VOLUME, 0.946352946, "qt", "quart")
+    add(Dim.VOLUME, 3.785411784, "gal", "gallon")
+    add(Dim.TIME, 0.001, "ms")
+    add(Dim.TIME, 1.0, "s", "sec", "second")
+    add(Dim.TIME, 60.0, "min", "minute")
+    add(Dim.TIME, 3600.0, "h", "hr", "hour")
+    add(Dim.TIME, 86400.0, "d", "day")
+    add(Dim.TIME, 604800.0, "wk", "week")
+    add(Dim.TIME, 31557600.0, "yr", "year")
+    add(Dim.DATA, 1.0, "b", "byte")
+    add(Dim.DATA, 1e3, "kb"); add(Dim.DATA, 1e6, "mb"); add(Dim.DATA, 1e9, "gb"); add(Dim.DATA, 1e12, "tb")
+    add(Dim.DATA, 1024.0, "kib"); add(Dim.DATA, 1048576.0, "mib"); add(Dim.DATA, 1073741824.0, "gib"); add(Dim.DATA, 1099511627776.0, "tib")
+    add(Dim.SPEED, 1.0, "m/s", "mps")
+    add(Dim.SPEED, 1 / 3.6, "km/h", "kmh", "kph")
+    add(Dim.SPEED, 0.44704, "mph")
+    add(Dim.SPEED, 1852 / 3600.0, "knot", "kn", "kt")
+    add(Dim.AREA, 1.0, "m2", "m²", "sqm")
+    add(Dim.AREA, 1e-4, "cm2", "cm²")
+    add(Dim.AREA, 1e6, "km2", "km²")
+    add(Dim.AREA, 1e4, "ha", "hectare")
+    add(Dim.AREA, 4046.8564224, "acre")
+    add(Dim.AREA, 0.09290304, "ft2", "ft²", "sqft")
+    add(Dim.TEMPERATURE, 0.0, "c", "°c", "celsius", "f", "°f", "fahrenheit", "k", "kelvin")
+}
+
+private fun unit(word: String): Pair<Dim, Double>? {
+    val w = word.lowercase()
+    return UNITS[w] ?: w.takeIf { it.length > 3 && it.endsWith("s") }?.let { UNITS[it.dropLast(1)] }
+        ?: w.takeIf { it.endsWith("es") }?.let { UNITS[it.dropLast(2)] }
+}
+
+/** "5 km in miles", "70kg to lb", "100 °F in °C": the amount, its unit and the unit wanted. */
+private val CONVERSION = Regex("""(?i)(.*?[\d)πe])\s*([a-zµ°'"²/]+[a-z0-9²/]*)\s+(?:in|to|as|into)\s+([a-zµ°'"²/]+[a-z0-9²/]*)""")
+
+/** [text] converted to the unit it names ("5 km in miles" → "3.10686 miles"), or null when it isn't a conversion. */
+internal fun convert(text: String, scope: Scope = Scope()): String? {
+    val m = CONVERSION.matchEntire(text.trim()) ?: return null
+    val (amountText, fromWord, toWord) = m.destructured
+    val from = unit(fromWord) ?: return null
+    val to = unit(toWord) ?: return null
+    if (from.first != to.first) return null
+    val node = longestSum(amountText, scope) { it.unknowns(scope).isEmpty() } ?: return null
+    val amount = node.eval(scope).takeIf { it.isFinite() } ?: return null
+    val v = if (from.first == Dim.TEMPERATURE) {
+        val kelvin = when (fromWord.lowercase().trimStart('°').first()) { 'c' -> amount + 273.15; 'f' -> (amount - 32) * 5 / 9 + 273.15; else -> amount }
+        when (toWord.lowercase().trimStart('°').first()) { 'c' -> kelvin - 273.15; 'f' -> (kelvin - 273.15) * 9 / 5 + 32; else -> kelvin }
+    } else amount * from.second / to.second
+    return formatNumber(if (abs(v) < 1e-12) 0.0 else v, 6) + " " + toWord
 }

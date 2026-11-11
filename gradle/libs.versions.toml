@@ -19,6 +19,7 @@ junit = "4.13.2"
 biometric = "1.1.0"
 mlkitText = "16.0.1"
 mlkitInk = "19.0.0"
+pdfbox = "2.0.27.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -41,6 +42,7 @@ play-services-auth = { module = "com.google.android.gms:play-services-auth", ver
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitText" }
 mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitInk" }
+pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox" }
 junit = { module = "junit:junit", version.ref = "junit" }
 
 [plugins]

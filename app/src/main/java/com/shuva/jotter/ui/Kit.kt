@@ -70,14 +70,14 @@ object Ico {
     const val BACK = "M15 5l-7 7 7 7"
     const val CHEVRON = "M9 5l7 7-7 7"
     val SEARCH = circle(11f, 11f, 7f) + "M20 20l-3.5-3.5"
-    val MORE = circle(5f, 12f, 1.6f) + circle(12f, 12f, 1.6f) + circle(19f, 12f, 1.6f)
+    val MORE = circle(5f, 12f, 0.8f) + circle(12f, 12f, 0.8f) + circle(19f, 12f, 0.8f)
     const val COMPOSE = "M20 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6M17.5 3.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"
     const val FOLDER = "M3 6h7l2 2h9v11H3z"
     const val NEW_FOLDER = "M3 6h7l2 2h9v11H3zM12 11v5M9.5 13.5h5"
     const val SMART_FOLDER = "M3 6h7l2 2h9v11H3zM9 13l2 2 4-4"
     const val MOVE = "M3 6h7l2 2h9v11H3zM10 13h6M13 10l3 3-3 3"
     const val TRASH = "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
-    const val PIN = "M12 17v5M8 3h8l-1 6 3 4H6l3-4z"
+    const val PIN = "M9 3h6M10 3v5.5L7 12h10l-3-3.5V3M12 12v9"
     const val SHARE = "M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1"
     const val LINK = "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
     const val ATTACH = "M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"
@@ -89,6 +89,30 @@ object Ico {
     const val FILE = "M6 3h8l4 4v14H6zM14 3v4h4"
     const val COPY = "M8 8h12v12H8zM4 16V4h12"
     val INFO = circle(12f, 12f, 9f) + "M12 11v6M12 7.5v.5"
+    const val SETTINGS = "M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"
+    const val SYNC = "M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"
+    const val RESTORE = "M12 4v11M7.5 10.5L12 15l4.5-4.5M4 17v3h16v-3"
+    const val SIGN_IN = "M14 4h5v16h-5M9 8l4 4-4 4M13 12H3"
+    const val SIGN_OUT = "M10 4H5v16h5M15 8l4 4-4 4M19 12H9"
+    const val SINK = "M4 6h10M4 11h10M4 16h6M18 5v13M15 15l3 3 3-3"
+    const val GRAMMAR = "M3 17l4-11 4 11M4.5 13h5M13.5 14l2.5 2.5L21 11"
+    const val SORT = "M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3"
+    const val CALENDAR = "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"
+    const val CALENDAR_PICK = "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M12 13v5M9.5 15.5h5"
+    const val EYE_OFF = "M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 6c5 0 8.5 4 9.5 6a13 13 0 0 1-2.6 3.3M6.6 7.6C4.5 8.9 3.1 10.7 2.5 12c1 2 4.5 6 9.5 6 1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2"
+    const val ARCHIVE = "M4 4h16v5H4zM5 9v11h14V9M10 13h4"
+    val KEY = circle(8f, 12f, 4f) + "M12 12h9M17 12v3M20 12v2"
+    const val FINGERPRINT = "M7.5 6.5A7 7 0 0 1 19 12v1.5M5 10a7 7 0 0 0-.2 1.8V15M8.5 19.5A11 11 0 0 0 9 16v-4a3 3 0 0 1 6 0v1.5M12 12v4a14 14 0 0 1-1 5M15 16.5a17 17 0 0 1-.7 3.5M18.6 17a20 20 0 0 1-.4 2"
+    const val MOON = "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"
+    val PALETTE = "M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.9 1.2-1.8-.5-1 .1-2.2 1.3-2.2H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10z" +
+        circle(7.5f, 11.5f, 1f) + circle(10.5f, 7.5f, 1f) + circle(15.5f, 8f, 1f)
+    const val TEXT_SIZE = "M3 18l4-11 4 11M4.5 14h5M14 18l3-8 3 8M15 15.5h4"
+    const val LINES = "M4 6h16M4 11h16M4 16h10"
+    val CLOCK = circle(12f, 12f, 9f) + "M12 7v5l3 2"
+    const val SUNSET = "M3 17h18M7 17a5 5 0 0 1 10 0M12 8V5M5.6 11.6L4.2 10.2M18.4 11.6l1.4-1.4M8 20.5h8"
+    val SUN = circle(12f, 12f, 4f) + "M12 2.5v2M12 19.5v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2.5 12h2M19.5 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+    const val ARROW_DOWN = "M12 5v14M6 13l6 6 6-6"
+    const val ARROW_UP = "M12 19V5M6 11l6-6 6 6"
     const val HANDWRITING = "M3 17l4-11 4 11M4.5 13h5M13 16c1.5 0 2-5 3.5-5s1 5 2.5 5 1.5-2 2-2M3 21h18"
     const val SCAN = "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 10h8M8 14h5"
     const val BELL = "M6 16V10a6 6 0 0 1 12 0v6l1.5 2h-15zM10 21h4"
@@ -102,7 +126,7 @@ object Ico {
     const val EMPTY_NOTE = "M5 3h10l4 4v14H5zM15 3v4h4M9 12h6M9 16h4"
     val BULLETS = circle(5f, 6f, 1f) + circle(5f, 12f, 1f) + circle(5f, 18f, 1f) + "M10 6h10M10 12h10M10 18h10"
     const val DASHES = "M3 6h3M3 12h3M3 18h3M10 6h10M10 12h10M10 18h10"
-    const val NUMBERS = "M4 5h1v4M4 9h2M4 14h2l-2 3h2M10 6h10M10 12h10M10 18h10"
+    const val NUMBERS = "M4 4.5l1.5-1v5M3.8 14.3a1.4 1.4 0 0 1 2.7.6c0 .8-.6 1.4-2.7 3.6h2.8M10 6h10M10 12h10M10 18h10"
     const val RULER = "M3 16L16 3l5 5L8 21zM7 12l2 2M10 9l2 2M13 6l2 2"
     const val GRID = "M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"
     const val CLOUD = "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"
@@ -124,8 +148,9 @@ fun JIcon(d: String, color: Color, modifier: Modifier = Modifier, size: Dp = 22.
     val path = remember(d) { PathParser().parsePathString(d).toPath() }
     Canvas(modifier.size(size)) {
         scale(this.size.width / 24f, pivot = Offset.Zero) {
+            // Filled icons keep their strokes too: open lines (a bell's clapper, a pin's needle) have no area to fill.
             if (fill) drawPath(path, color)
-            else drawPath(path, color, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(path, color, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
     }
 }
@@ -158,7 +183,10 @@ fun TextAction(text: String, onClick: () -> Unit, color: Color = jc.accent, bold
 
 /** Top row of a page: "‹ Back label" on the left, actions on the right. Sits under the status bar. */
 @Composable
-fun NavBar(backLabel: String?, onBack: () -> Unit, color: Color = jc.bg, actions: @Composable RowScope.() -> Unit = {}) {
+fun NavBar(
+    backLabel: String?, onBack: () -> Unit, color: Color = jc.bg, leading: (@Composable RowScope.() -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     Row(
         Modifier.fillMaxWidth().background(color).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -173,6 +201,7 @@ fun NavBar(backLabel: String?, onBack: () -> Unit, color: Color = jc.bg, actions
                 Text(backLabel, style = JType.row, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        leading?.invoke(this)
         Spacer(Modifier.weight(1f))
         actions()
     }
@@ -329,18 +358,39 @@ fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> U
     Column(modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(jc.card), content = content)
 }
 
+/** A row's icon on a soft tinted square, as in Settings. */
+@Composable
+fun IconTile(icon: String, color: Color = jc.accent) {
+    Box(Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+        JIcon(icon, color, size = 18.dp, stroke = 2f)
+    }
+}
+
+/** A Settings section title with its icon tile, for rows that aren't a [CardRow]. */
+@Composable
+fun IconTitle(icon: String, text: String, modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        IconTile(icon)
+        Text(text, style = JType.row, color = jc.ink)
+    }
+}
+
 @Composable
 fun CardDivider() = HorizontalDivider(Modifier.padding(start = 16.dp), color = jc.line)
 
 /** One row in a [Card]: a label (with optional grey line under it) and something on the right. */
 @Composable
-fun CardRow(label: String, sub: String? = null, onClick: (() -> Unit)? = null, labelColor: Color = jc.ink, trailing: @Composable RowScope.() -> Unit = {}) {
+fun CardRow(
+    label: String, sub: String? = null, onClick: (() -> Unit)? = null, labelColor: Color = jc.ink, icon: String? = null,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp).let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        icon?.let { IconTile(it, if (labelColor == jc.danger) jc.danger else jc.accent) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(label, style = JType.row.copy(fontSize = 16.sp), color = labelColor)
             sub?.let { Text(it, style = JType.small, color = jc.muted) }

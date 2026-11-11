@@ -16,6 +16,8 @@ import androidx.lifecycle.viewModelScope
 import com.shuva.jotter.data.AppPrefs
 import com.shuva.jotter.data.ATTACHMENT_CHAR
 import com.shuva.jotter.data.NoteTable
+import com.shuva.jotter.data.PDF_MIME
+import com.shuva.jotter.data.isPdf
 import com.shuva.jotter.data.Attachment
 import com.shuva.jotter.data.AttachmentFiles
 import com.shuva.jotter.data.DRAWING_MIME
@@ -119,21 +121,26 @@ sealed interface Screen {
 }
 
 /** Something another app shared to Jotter: text (with an optional subject) and/or a photo. */
-data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?)
+data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false)
 
 /** Reads a share intent; null for anything else (or a share with nothing usable in it). */
 fun sharedIn(intent: android.content.Intent?): SharedIn? {
+    // "Open with Margin" on a PDF: a new note holding it.
+    if (intent?.action == android.content.Intent.ACTION_VIEW && intent.type == "application/pdf") {
+        return intent.data?.let { SharedIn(null, null, it, pdf = true) }
+    }
     if (intent?.action != android.content.Intent.ACTION_SEND) return null
-    val image = if (intent.type?.startsWith("image/") == true)
+    // A shared photo or PDF is copied into the note.
+    val image = if (intent.type?.startsWith("image/") == true || intent.type == "application/pdf")
         androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java) else null
     val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
     if (image == null && text.isNullOrBlank()) return null
-    return SharedIn(intent.getStringExtra(android.content.Intent.EXTRA_SUBJECT), text, image)
+    return SharedIn(intent.getStringExtra(android.content.Intent.EXTRA_SUBJECT), text, image, pdf = image != null && intent.type == "application/pdf")
 }
 
 class NavViewModel : ViewModel() {
-    // Opens on All Notes, with Folders underneath for its back button.
-    val stack = mutableStateListOf<Screen>(Screen.Folders, Screen.Notes(ALL_ID))
+    // All Notes is the home screen: Back there leaves the app; its Folders button opens the folders.
+    val stack = mutableStateListOf<Screen>(Screen.Notes(ALL_ID))
     /** A share waiting for its folder; kept here so it survives rotation. */
     var incoming by mutableStateOf<SharedIn?>(null)
     val current get() = stack.last()
@@ -173,7 +180,7 @@ class FoldersViewModel @Inject constructor(
     fun saveShared(subject: String?, text: String?, image: android.net.Uri?, folderId: String, onError: (String) -> Unit, onSaved: (String) -> Unit) {
         viewModelScope.launch {
             val attachment = image?.let {
-                try { files.import(it) } catch (e: Exception) { onError(e.message ?: "Couldn't copy the photo"); null }
+                try { files.import(it) } catch (e: Exception) { onError(e.message ?: "Couldn't copy the file"); null }
             }
             if (attachment == null && text.isNullOrBlank() && subject.isNullOrBlank()) return@launch
             val id = newId()
@@ -750,6 +757,65 @@ class EditorViewModel @Inject constructor(
         val blocks = doc.toBlocks().toMutableList()
         addLines(blocks, (afterLine ?: cursorLine) + 1, text)
     }
+
+    // ---------- PDF tools ----------
+
+    /** What a PDF tool is doing ("Merging…"), shown in the viewer; null when idle. */
+    var pdfBusy by mutableStateOf<String?>(null); private set
+
+    /** What a PDF tool made: a copy to replace the PDF with (it keeps its name), new PDFs to add under it, or text. */
+    class PdfOutcome(val replace: ByteArray? = null, val add: List<Pair<String, ByteArray>> = emptyList(), val text: String? = null)
+
+    /**
+     * Runs [work] off the main thread on the PDF on the line with id [lineId], then puts its outcome in the note
+     * as one edit (so Undo reverses it): the replacement on that line, new PDFs and text right after it.
+     */
+    fun pdfTool(
+        context: android.content.Context, lineId: String, label: String, onError: (String) -> Unit, onDone: () -> Unit = {},
+        work: (android.content.Context, Attachment, java.io.File) -> PdfOutcome,
+    ) {
+        if (readOnly || pdfBusy != null) return
+        val a = doc.lines.firstOrNull { it.id == lineId }?.attachment?.takeIf { it.isPdf } ?: return
+        val file = files.file(a)
+        if (!file.exists()) { onError("This PDF isn't downloaded yet. It arrives with the next sync."); return }
+        val app = context.applicationContext
+        pdfBusy = label
+        viewModelScope.launch {
+            try {
+                val out = withContext(Dispatchers.IO) { work(app, a, file) }
+                val replaced = out.replace?.let { files.write(it, "pdf", a.name, PDF_MIME) }
+                val added = out.add.map { (name, bytes) -> files.write(bytes, "pdf", name, PDF_MIME) }
+                val at = doc.lines.indexOfFirst { it.id == lineId }
+                if (at < 0) return@launch // the PDF was removed meanwhile
+                val blocks = doc.toBlocks().toMutableList()
+                if (replaced != null) blocks[at] = blocks[at].copy(attachment = replaced)
+                added.forEachIndexed { k, n -> blocks.add(at + 1 + k, Block(text = ATTACHMENT_CHAR.toString(), attachment = n)) }
+                val text = out.text?.takeIf { it.isNotBlank() }
+                if (text != null) addLines(blocks, at + 1 + added.size, text)
+                else {
+                    if (at + added.size == blocks.lastIndex) blocks.add(Block())
+                    doc = EditorDoc.fromBlocks(blocks)
+                    // The field's text must match the doc's, or it can't map the cursor (lines were added).
+                    val cursor = if (added.isEmpty()) value.selection.start.coerceAtMost(doc.text.length) else doc.lineStart(at + added.size + 1)
+                    value = TextFieldValue(doc.text, TextRange(cursor))
+                    changed()
+                }
+                onDone()
+            } catch (e: Exception) {
+                onError(e.message ?: "That didn't work on this PDF.")
+            } finally {
+                pdfBusy = null
+            }
+        }
+    }
+
+    /** The PDFs in this note other than the one on line [lineId], for Merge. */
+    fun otherPdfs(context: Context, lineId: String): List<Attachment> = doc.lines.filter { it.id != lineId }.mapNotNull { it.attachment?.takeIf { a -> a.isPdf && com.shuva.jotter.data.Pdf.info(context, fileOf(a))?.locked != true } }
+
+    fun fileOf(a: Attachment) = files.file(a)
+
+    /** Copies a PDF picked on the phone into the attachments (not into the note), for Merge. */
+    suspend fun importForMerge(uri: android.net.Uri): Attachment = files.import(uri)
 
     /** [text] as lines at block [index] of [blocks], which becomes the note, with the cursor after the text. */
     private fun addLines(blocks: MutableList<Block>, index: Int, text: String) {

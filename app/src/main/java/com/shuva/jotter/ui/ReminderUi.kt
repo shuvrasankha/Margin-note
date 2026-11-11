@@ -108,14 +108,20 @@ fun ReminderDialog(current: Long?, onTime: Boolean, onPick: (Long) -> Unit, onRe
                 !custom -> {
                     Column(Modifier.padding(top = 10.dp)) {
                         reminderChoices(now).forEach { (label, at) ->
-                            ChoiceRow(label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli()) }
+                            val icon = when (label) {
+                                "This evening" -> Ico.SUNSET
+                                "Tomorrow morning" -> Ico.SUN
+                                "Next week" -> Ico.CALENDAR
+                                else -> Ico.CLOCK
+                            }
+                            ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli()) }
                         }
-                        ChoiceRow("Pick date & time…", null) { custom = true }
-                        if (current != null) ChoiceRow("Remove reminder", null, danger = true, onClick = onRemove)
+                        ChoiceRow(Ico.CALENDAR_PICK, "Pick date & time…", null) { custom = true }
+                        if (current != null) ChoiceRow(Ico.TRASH, "Remove reminder", null, danger = true, onClick = onRemove)
                     }
                     if (!onTime) {
                         Text(
-                            "Android may deliver reminders a few minutes late unless Jotter is allowed to set alarms.",
+                            "Android may deliver reminders a few minutes late unless Margin is allowed to set alarms.",
                             Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp), style = JType.small, color = jc.muted,
                         )
                         Box(Modifier.padding(start = 12.dp)) {
@@ -184,11 +190,12 @@ fun ReminderDialog(current: Long?, onTime: Boolean, onPick: (Long) -> Unit, onRe
 }
 
 @Composable
-private fun ChoiceRow(label: String, detail: String?, danger: Boolean = false, onClick: () -> Unit) {
+private fun ChoiceRow(icon: String, label: String, detail: String?, danger: Boolean = false, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(48.dp).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        JIcon(icon, if (danger) jc.danger else jc.accent, size = 20.dp, stroke = 1.9f)
         Text(label, Modifier.weight(1f), style = JType.row.copy(fontSize = 16.sp), color = if (danger) jc.danger else jc.ink)
         detail?.let { Text(it, style = JType.small, color = jc.muted) }
     }
