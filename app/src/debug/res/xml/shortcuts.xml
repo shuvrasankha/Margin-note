@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug build (com.margin.app.debug): same as main/res/xml/shortcuts.xml, its own package. Long-press the app icon: start a note, a scan or a voice note straight away. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="new_note" android:enabled="true" android:icon="@drawable/shortcut_note"
+        android:shortcutShortLabel="@string/shortcut_new_note">
+        <intent android:action="com.shuva.jotter.NEW_NOTE"
+            android:targetPackage="com.margin.app.debug" android:targetClass="com.shuva.jotter.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="scan" android:enabled="true" android:icon="@drawable/shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan">
+        <intent android:action="com.shuva.jotter.SCAN"
+            android:targetPackage="com.margin.app.debug" android:targetClass="com.shuva.jotter.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="voice" android:enabled="true" android:icon="@drawable/shortcut_voice"
+        android:shortcutShortLabel="@string/shortcut_voice">
+        <intent android:action="com.shuva.jotter.VOICE_NOTE"
+            android:targetPackage="com.margin.app.debug" android:targetClass="com.shuva.jotter.MainActivity" />
+    </shortcut>
+</shortcuts>

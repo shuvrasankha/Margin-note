@@ -17,7 +17,7 @@ googleid = "1.2.0"
 playServicesAuth = "21.1.1"
 junit = "4.13.2"
 biometric = "1.1.0"
-mlkitText = "16.0.1"
+mlkitText = "19.0.1"
 mlkitInk = "19.0.0"
 docScanner = "16.0.0-beta1"
 pdfbox = "2.0.27.0"
@@ -41,7 +41,7 @@ androidx-credentials-play-services = { module = "androidx.credentials:credential
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid" }
 play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "playServicesAuth" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
-mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitText" }
+mlkit-text-recognition = { module = "com.google.android.gms:play-services-mlkit-text-recognition", version.ref = "mlkitText" }
 mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitInk" }
 mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-document-scanner", version.ref = "docScanner" }
 pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox" }

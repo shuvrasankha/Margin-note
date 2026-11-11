@@ -21,7 +21,8 @@ android {
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.shuva.jotter"
+        // The Play Store ID. The code keeps its own namespace (com.shuva.jotter), which users never see.
+        applicationId = "com.margin.app"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1
@@ -41,11 +42,43 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Installs next to the release app, so trying one never means uninstalling the other (and its notes).
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
+    }
+
+    // One APK per processor type, so each carries only its own native libraries (ML Kit, PDF).
+    // Phones from the last decade want app-arm64-v8a-release.apk; x86_64 is for the emulator.
+    splits {
+        abi {
+            // Off when building the Play bundle (.aab): Play splits it per phone itself, and AGP can't do both.
+            isEnable = gradle.startParameter.taskNames.none { it.contains("bundle", ignoreCase = true) }
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
+    androidResources {
+        // The app is in English; libraries' translations of their own strings aren't needed.
+        localeFilters += listOf("en")
+        // PdfBox's CJK character maps (~3 MB): only for Chinese, Japanese and Korean PDFs without their own
+        // text mapping. Identity-H/V (used by almost every PDF with embedded fonts) and H/V are kept.
+        ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~" +
+            ":!Adobe-*:!Uni*:!GB*:!KSC*:!HKscs*:!83pv*:!90ms*:!90pv*:!Add-*:!Ext-*:!B5pc-*:!CNS-*:!ETen*:!EUC-*"
+    }
+
+    packaging {
+        resources {
+            // BouncyCastle (pulled in by PdfBox) carries 8 MB of post-quantum crypto tables PDFs never use.
+            excludes += "org/bouncycastle/pqc/**"
         }
     }
 
@@ -89,7 +122,8 @@ dependencies {
     implementation(libs.play.services.auth)
 
     implementation(libs.androidx.biometric)
-    // OCR: on-device text recognition (Latin script), bundled so it works offline from the first use.
+    // OCR: on-device text recognition (Latin script). The model comes from Google Play services (downloaded at
+    // install, see the manifest), which keeps it out of the APK; recognition still runs offline on the phone.
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.digital.ink)
     implementation(libs.mlkit.document.scanner)

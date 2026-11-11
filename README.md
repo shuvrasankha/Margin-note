@@ -128,7 +128,7 @@ doesn't need `google-services.json` at all.
    You'll see something like `SHA1: AA:BB:CC:...` (use your own value).
    Repeat this with your release keystore when you ship, and add a second Android client for it.
 5. **Create an Android OAuth client:** *Clients → Create client → Android*
-   - Package name: `com.shuva.jotter`
+   - Package name: `com.margin.app` (and `com.margin.app.debug` for debug builds, as a separate client)
    - SHA-1: the value from step 4
    - Nothing from this client goes into the app. Google matches it by package and signature.
 6. **Create a Web OAuth client:** *Clients → Create client → Web application*. Credential Manager needs
