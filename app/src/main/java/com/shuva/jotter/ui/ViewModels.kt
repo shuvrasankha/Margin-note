@@ -639,6 +639,20 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    /** Adds a scanned document (the scanner's PDF at [uri]) after the cursor's line, named for when it was scanned. */
+    fun addScan(context: android.content.Context, uri: android.net.Uri, onError: (String) -> Unit) {
+        if (readOnly || needsUnlock || locked) return
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }
+                val stamp = java.text.SimpleDateFormat("d MMM yyyy, HH.mm", java.util.Locale.getDefault()).format(java.util.Date())
+                insertAttachment(files.write(bytes, "pdf", "Scan $stamp.pdf", com.shuva.jotter.data.PDF_MIME))
+            } catch (e: Exception) {
+                onError(e.message ?: "Couldn't add the scan")
+            }
+        }
+    }
+
     /** The line id of the table open in the table editor, or null. */
     var editingTable by mutableStateOf<String?>(null)
 

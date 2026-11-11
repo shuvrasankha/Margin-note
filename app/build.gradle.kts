@@ -92,6 +92,7 @@ dependencies {
     // OCR: on-device text recognition (Latin script), bundled so it works offline from the first use.
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.digital.ink)
+    implementation(libs.mlkit.document.scanner)
     implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)

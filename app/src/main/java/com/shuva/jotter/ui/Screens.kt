@@ -1779,6 +1779,13 @@ fun EditorScreen(
                     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                         uri?.let { vm.attach(it) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() } }
                     }
+                    // Scan document: Google's scanner finds the page edges, crops and cleans up; the pages come back as one PDF.
+                    val docScanner = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
+                        if (r.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+                        val pdf = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(r.data)?.pdf
+                            ?: return@rememberLauncherForActivityResult toast("The scan didn't come back. Try again.")
+                        vm.addScan(context, pdf.uri) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+                    }
                     if (attaching) AttachSheet(
                         onClose = { attaching = false },
                         onFile = { attaching = false; picker.launch(arrayOf("*/*")) },
@@ -1800,6 +1807,18 @@ fun EditorScreen(
                         onLink = { attaching = false; addingLink = true },
                         onTable = { attaching = false; vm.insertTable() },
                         onPdf = { attaching = false; picker.launch(arrayOf(com.shuva.jotter.data.PDF_MIME)) },
+                        onScanDoc = {
+                            attaching = false
+                            val activity = context.findActivity() ?: return@AttachSheet toast("Couldn't open the scanner.")
+                            val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+                                .setGalleryImportAllowed(true)
+                                .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+                                .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                                .build()
+                            com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
+                                .addOnSuccessListener { docScanner.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build()) }
+                                .addOnFailureListener { toast("The document scanner isn't available on this phone. It needs Google Play services.") }
+                        },
                         onScan = {
                             attaching = false
                             try { scanCamera.launch(vm.scanTarget()) } catch (_: android.content.ActivityNotFoundException) {
@@ -2172,16 +2191,26 @@ private fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable 
     }
 }
 
+/** A page between scan corners. */
+private const val ICON_SCAN_DOC = "M3 8V4h4M17 4h4v4M21 16v4h-4M7 20H3v-4M8 7h8v10H8zM10 10h4M10 13h4"
+
+/** The activity behind a Compose context (it can be wrapped, e.g. by a theme). */
+private tailrec fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 /** "Add to note": the attachment kinds Jotter has, as tiles. */
 @Composable
 private fun AttachSheet(
     onClose: () -> Unit, onFile: () -> Unit, onVoice: () -> Unit, onDraw: () -> Unit, onCamera: () -> Unit, onLink: () -> Unit,
-    onScan: () -> Unit, onTable: () -> Unit, onPdf: () -> Unit,
+    onScan: () -> Unit, onTable: () -> Unit, onPdf: () -> Unit, onScanDoc: () -> Unit,
 ) {
     val tiles = listOf(
         Triple("Camera", Ico.CAMERA, onCamera), Triple("Photo or file", Ico.FILE, onFile), Triple("Voice note", Ico.MIC, onVoice),
         Triple("Drawing", Ico.PEN, onDraw), Triple("Web link", Ico.GLOBE, onLink), Triple("Scan text", Ico.SCAN, onScan),
-        Triple("Table", ICON_TABLE, onTable), Triple("PDF", ICON_PDF, onPdf),
+        Triple("Table", ICON_TABLE, onTable), Triple("PDF", ICON_PDF, onPdf), Triple("Scan document", ICON_SCAN_DOC, onScanDoc),
     )
     SheetPanel("Add to note", onClose) {
         tiles.chunked(3).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
