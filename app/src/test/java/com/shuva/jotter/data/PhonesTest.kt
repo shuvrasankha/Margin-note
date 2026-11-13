@@ -15,6 +15,8 @@ class PhonesTest {
 
     @Test fun `leaves out things that aren't phone numbers`() {
         assertEquals(emptyList<String>(), found("Lunch 18.50 + 15% = 21.275"))
+        assertEquals(emptyList<String>(), found("1 ÷ 3 + 1 ÷ 4 = 7/12 ≈ 0.583333333333"))
+        assertEquals(emptyList<String>(), found("2^40 = 1099511627776.5"))
         assertEquals(emptyList<String>(), found("on 2026-11-10 at 10:30"))
         assertEquals(emptyList<String>(), found("server 192.168.100.200"))
         assertEquals(emptyList<String>(), found("order 12345 and 678"))

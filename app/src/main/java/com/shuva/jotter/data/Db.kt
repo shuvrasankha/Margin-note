@@ -158,13 +158,20 @@ interface NoteVersionDao {
     suspend fun allBlocks(): List<String>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 6, exportSchema = true)
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 7, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class JotterDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
     abstract fun notes(): NoteDao
     abstract fun attachmentText(): AttachmentTextDao
     abstract fun versions(): NoteVersionDao
+}
+
+/** v7: the paper a note's text is written on. Existing notes start plain (null). */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN paper TEXT")
+    }
 }
 
 /** v6: text read from attachments (for search) and note version history. Both local only. */

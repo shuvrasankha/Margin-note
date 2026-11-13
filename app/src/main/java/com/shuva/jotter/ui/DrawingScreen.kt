@@ -3,6 +3,7 @@ package com.shuva.jotter.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -38,8 +39,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -71,10 +75,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.layout.BoxScope
 import com.shuva.jotter.data.Drawing
 import com.shuva.jotter.data.GRID_STEP
+import com.shuva.jotter.data.Paper
+import com.shuva.jotter.data.paperStyle
+import com.shuva.jotter.data.withPaper
 import com.shuva.jotter.data.PenStroke
 import com.shuva.jotter.data.PenTool
 import com.shuva.jotter.data.bounds
 import com.shuva.jotter.data.inkRows
+import com.shuva.jotter.data.inkTop
 import com.shuva.jotter.data.fitScale
 import com.shuva.jotter.data.grownToFit
 import android.view.MotionEvent
@@ -198,14 +206,83 @@ private val PALM_SIZE = 110.dp
 
 private val PointerType.isPen get() = this == PointerType.Stylus || this == PointerType.Eraser
 
-/** Squared paper across the whole visible area at [view] (the endless canvas has no edge). */
-private fun DrawScope.drawEndlessGrid(view: View, line: Color) {
-    val step = GRID_STEP * view.scale
-    if (step < 4f) return // zoomed far out: lines would merge into a grey wash
-    var x = view.origin.x - kotlin.math.ceil(view.origin.x / step) * step
-    while (x <= size.width) { drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx()); x += step }
-    var y = view.origin.y - kotlin.math.ceil(view.origin.y / step) * step
-    while (y <= size.height) { drawLine(line, Offset(0f, y), Offset(size.width, y), 1.dp.toPx()); y += step }
+/**
+ * Paper is black and white, from the theme: [faint] for grids and guide lines, [strong] for writing lines and
+ * margins. Grey on white in light mode, grey on black in dark mode, light enough to sit behind any ink.
+ */
+class PaperColors(val faint: Color, val strong: Color)
+
+@Composable
+fun paperColors() = PaperColors(jc.line, lerp(jc.line, jc.ink, 0.28f))
+/** Where the margin sits, in drawing units from the left of the first page. */
+private const val MARGIN_X = 2 * GRID_STEP
+
+/**
+ * Lines every [period] drawing units, starting at [offset], across the visible area at [view]: horizontal
+ * ([across] true) or vertical. Skipped once zoomed so far out that they'd merge into a wash.
+ */
+private fun DrawScope.paperLines(
+    view: View, period: Float, offset: Float, color: Color, width: Float, across: Boolean, below: Float = 0f,
+) {
+    if (period * view.scale < 4f) return
+    val origin = if (across) view.origin.y else view.origin.x
+    val extent = if (across) size.height + below else size.width
+    val first = kotlin.math.ceil((-origin / view.scale - offset) / period).toInt()
+    val last = kotlin.math.floor(((extent - origin) / view.scale - offset) / period).toInt()
+    for (k in first..last) {
+        val at = origin + (offset + k * period) * view.scale
+        if (across) drawLine(color, Offset(0f, at), Offset(size.width, at), width) else drawLine(color, Offset(at, 0f), Offset(at, size.height + below), width)
+    }
+}
+
+/** A single vertical line at [x] drawing units, the full height of the visible area. */
+private fun DrawScope.margin(view: View, x: Float, color: Color, below: Float = 0f) {
+    val at = view.origin.x + x * view.scale
+    drawLine(color, Offset(at, 0f), Offset(at, size.height + below), 1.5.dp.toPx())
+}
+
+/**
+ * [paper] across the whole visible area at [view] (the endless canvas has no edge), and [below] px past its
+ * bottom. [line] is the grid grey.
+ */
+private fun DrawScope.drawEndlessPaper(view: View, paper: Paper, colors: PaperColors, below: Float = 0f) {
+    val thin = 1.dp.toPx()
+    val line = colors.faint
+    val strong = colors.strong
+    fun paperLines(view: View, period: Float, offset: Float, color: Color, width: Float, across: Boolean) =
+        paperLines(view, period, offset, color, width, across, below)
+    when (paper) {
+        Paper.PLAIN -> Unit
+        Paper.SQUARES -> {
+            paperLines(view, GRID_STEP, 0f, line, thin, across = true)
+            paperLines(view, GRID_STEP, 0f, line, thin, across = false)
+        }
+        // Fine squares with a heavier line every fifth, like engineering pads.
+        Paper.GRAPH -> {
+            val minor = GRID_STEP / 3
+            val faint = line.copy(alpha = line.alpha * 0.55f)
+            paperLines(view, minor, 0f, faint, thin * 0.75f, across = true)
+            paperLines(view, minor, 0f, faint, thin * 0.75f, across = false)
+            paperLines(view, minor * 5, 0f, line, thin * 1.2f, across = true)
+            paperLines(view, minor * 5, 0f, line, thin * 1.2f, across = false)
+        }
+        // College ruled: lines and a margin.
+        Paper.RULED -> {
+            paperLines(view, GRID_STEP, 0f, strong, thin, across = true)
+            margin(view, MARGIN_X, strong, below)
+        }
+        // Handwriting practice: sets of four lines (darker top and bottom, faint between) with a gap, and a double margin.
+        Paper.FOUR_LINE -> {
+            val gap = GRID_STEP / 2
+            val block = gap * 5
+            paperLines(view, block, 0f, strong, thin, across = true)
+            paperLines(view, block, gap, line, thin, across = true)
+            paperLines(view, block, gap * 2, line, thin, across = true)
+            paperLines(view, block, gap * 3, strong, thin, across = true)
+            margin(view, MARGIN_X, strong, below)
+            margin(view, MARGIN_X + 6f, strong, below)
+        }
+    }
 }
 
 /** Squared paper behind the ink (outside the offscreen layer, so the eraser doesn't remove it). */
@@ -225,20 +302,148 @@ fun DrawScope.drawGrid(drawing: Drawing, line: Color) {
 const val INLINE_PAD = 12f
 
 /**
- * A drawing as part of the note: no card or paper, just the ink on the page, as wide as the text and cut to
- * the rows its ink covers (see [inkRows]). The grid only shows while editing. Size it to [inlineHeight].
+ * A drawing as part of the note: no card, just the ink on its paper, as wide as the text and cut to the rows
+ * its ink covers (see [inkRows]). The paper's lines stay where they were while drawing. Size it to [inlineHeight].
  */
 @Composable
 fun InlineDrawing(drawing: Drawing, modifier: Modifier) {
     val shown = remember(drawing) { drawing.inkRows(INLINE_PAD) }
+    val top = remember(drawing) { drawing.inkTop(INLINE_PAD) }
+    val paper = drawing.paperStyle
     val ink = rememberInk()
-    // No grid here even when the drawing has one: squared paper would box it off from the text again.
-    Canvas(modifier.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)) { drawStrokes(shown, ink) }
+    val line = paperColors()
+    Canvas(
+        modifier.clipToBounds()
+            // The paper sits outside the ink's layer, so erase strokes never rub it out.
+            .drawBehind {
+                if (paper == Paper.PLAIN) return@drawBehind
+                val s = shown.fitScale(size.width, size.height)
+                val origin = Offset((size.width - shown.width * s) / 2, (size.height - shown.height * s) / 2 - top * s)
+                drawEndlessPaper(View(s, origin), paper, line)
+            }
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
+    ) { drawStrokes(shown, ink) }
 }
 
 /** How tall [drawing] is in a note [width] pixels wide (its ink rows, scaled to that width). */
 fun inlineHeight(drawing: Drawing, width: Float): Float =
     drawing.inkRows(INLINE_PAD).let { if (it.width <= 0f) 0f else it.height * width / it.width }
+
+/**
+ * [paper] behind a note's text laid out as [layout]. Ruled and four-line paper rule each line of text where
+ * it sits (titles and headings included); squared and graph paper cover the page, with squares as tall as a
+ * [bodyLine] (px). Lines where [skip] is true (photos, drawings, tables, link cards) are left bare: they
+ * carry their own background.
+ */
+fun DrawScope.drawNotePaper(
+    paper: Paper, layout: TextLayoutResult, bodyLine: Float, bodyFont: Float, fontOf: (Int) -> Float,
+    skip: (Int) -> Boolean, colors: PaperColors, below: Float,
+) {
+    if (paper == Paper.PLAIN || layout.lineCount == 0) return
+    val thin = 1.dp.toPx()
+    // Under the last line, the page carries on as empty body lines.
+    val end = layout.getLineBottom(layout.lineCount - 1)
+    val extra = generateSequence(end + bodyLine) { it + bodyLine }.takeWhile { it < size.height + below }.toList()
+    when (paper) {
+        Paper.PLAIN -> Unit
+        Paper.SQUARES, Paper.GRAPH -> {
+            val bare = Path()
+            for (i in 0 until layout.lineCount) if (skip(i)) {
+                bare.addRect(androidx.compose.ui.geometry.Rect(0f, layout.getLineTop(i), size.width, layout.getLineBottom(i)))
+            }
+            val square = if (paper == Paper.SQUARES) GRID_STEP else GRID_STEP / 3 * 5 // a graph block per text line
+            clipPath(bare, androidx.compose.ui.graphics.ClipOp.Difference) {
+                drawEndlessPaper(View(bodyLine / square, Offset.Zero), paper, colors, below)
+            }
+        }
+        Paper.RULED -> {
+            for (i in 0 until layout.lineCount) if (!skip(i)) {
+                val y = layout.getLineBottom(i) - thin
+                drawLine(colors.strong, Offset(0f, y), Offset(size.width, y), thin)
+            }
+            extra.forEach { b -> drawLine(colors.strong, Offset(0f, b - thin), Offset(size.width, b - thin), thin) }
+        }
+        // A copybook band for each line of text, fitted to its font (Inter's proportions): darker at the top of the
+        // capitals and the bottom of the descenders, faint at the x-height and on the baseline, so lowercase
+        // letters fill the middle and every line keeps a clear gap to the next band.
+        Paper.FOUR_LINE -> {
+            val pink = colors.strong
+            val grey = colors.faint
+            fun band(base: Float, font: Float) =
+                listOf(-INTER_CAP to pink, -INTER_X to grey, 0f to grey, INTER_DESCENT to pink).forEach { (k, c) ->
+                    val y = base + k * font
+                    drawLine(c, Offset(0f, y), Offset(size.width, y), thin)
+                }
+            var bodyBase: Float? = null // where a body line's baseline sits above its bottom, to carry on the page
+            for (i in 0 until layout.lineCount) if (!skip(i)) {
+                val font = fontOf(i)
+                band(layout.getLineBaseline(i), font)
+                if (bodyBase == null && font == bodyFont) bodyBase = layout.getLineBottom(i) - layout.getLineBaseline(i)
+            }
+            val fromBottom = bodyBase ?: ((bodyLine - (INTER_CAP + INTER_DESCENT) * bodyFont) / 2 + INTER_DESCENT * bodyFont)
+            extra.forEach { b -> band(b - fromBottom, bodyFont) }
+        }
+    }
+}
+
+// Inter's cap height, x-height and descender, as fractions of the font size.
+private const val INTER_CAP = 0.727f
+private const val INTER_X = 0.546f
+private const val INTER_DESCENT = 0.24f
+
+/** A small square of [paper], for pickers. */
+@Composable
+fun PaperSwatch(paper: Paper, size: androidx.compose.ui.unit.Dp = 28.dp) {
+    val line = paperColors()
+    Canvas(Modifier.size(size).clip(RoundedCornerShape(4.dp)).background(jc.surface).border(1.dp, line.faint, RoundedCornerShape(4.dp))) {
+        drawEndlessPaper(View(this.size.width / (GRID_STEP * 3.2f), Offset.Zero), paper, line)
+    }
+}
+
+/** Picks the paper behind a note's text. */
+@Composable
+fun PaperDialog(current: Paper, onPick: (Paper) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(jc.bg).padding(vertical = 16.dp)) {
+            Text("Paper", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            Text("Shown behind this note's text.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+            Spacer(Modifier.height(8.dp))
+            Paper.entries.forEach { p ->
+                val on = p == current
+                Row(
+                    Modifier.fillMaxWidth().height(52.dp).clickable(role = androidx.compose.ui.semantics.Role.RadioButton) { onPick(p) }
+                        .padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    PaperSwatch(p)
+                    Text(p.label, Modifier.weight(1f), style = JType.row.copy(fontSize = 16.sp), color = if (on) jc.accent else jc.ink)
+                    if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
+                }
+            }
+        }
+    }
+}
+
+/** The paper switch: a menu of [Paper] kinds, each with a small swatch; lit while the paper isn't plain. */
+@Composable
+private fun PaperMenu(current: Paper, onPick: (Paper) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconAction(Ico.GRID, "Paper, ${current.label}", { open = true }, color = if (current != Paper.PLAIN) jc.accent else jc.muted)
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = jc.bg) {
+            Text("Paper", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = JType.section, color = jc.muted)
+            Paper.entries.forEach { p ->
+                val on = p == current
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(p.label, style = JType.row, color = if (on) jc.accent else jc.ink) },
+                    leadingIcon = { PaperSwatch(p) },
+                    trailingIcon = { if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f) },
+                    onClick = { onPick(p); open = false },
+                )
+            }
+        }
+    }
+}
 
 /**
  * A drawing tool shown standing in the tray, in a 30 x 84 box: body, cone, tip and band, plus an optional
@@ -340,6 +545,7 @@ fun DrawingScreen(
     val inkOf = rememberInk()
     val paper = jc.bg
     val gridLine = jc.line
+    val paperInk = paperColors()
     val pageDesk = jc.page
     // Ink drawn past the page grows it, so nothing is cut off in the note.
     val finish = { onDone(if (changed) canvas?.copy(strokes = strokes)?.let { if (background != null) it else it.grownToFit(INLINE_PAD) } else null) }
@@ -389,7 +595,7 @@ fun DrawingScreen(
                             )
                             drawRect(gridLine, v.origin, Size(w, h), style = Stroke(1.dp.toPx()))
                         }
-                        if (canvas?.grid == true) v?.let { drawEndlessGrid(it, gridLine) }
+                        canvas?.let { c -> v?.let { drawEndlessPaper(it, c.paperStyle, paperInk) } }
                     }
                     .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
                     .pointerInput(canvas != null) {
@@ -580,9 +786,7 @@ fun DrawingScreen(
                 Spacer(Modifier.weight(1f))
                 Column(Modifier.align(Alignment.CenterVertically)) {
                     IconAction(Ico.RULER, if (ruler) "Ruler, on" else "Ruler, off", { ruler = !ruler }, color = if (ruler) jc.accent else jc.muted)
-                    IconAction(Ico.GRID, if (canvas?.grid == true) "Grid, on" else "Grid, off", {
-                        canvas = canvas?.let { it.copy(grid = !it.grid) }; changed = true
-                    }, color = if (canvas?.grid == true) jc.accent else jc.muted)
+                    PaperMenu(canvas?.paperStyle ?: Paper.PLAIN) { p -> canvas = canvas?.withPaper(p); changed = true }
                 }
             }
             HorizontalDivider(color = jc.line)

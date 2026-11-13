@@ -171,7 +171,14 @@ data class NoteEntity(
      * calendar day on every phone. Null = none. Older versions ignore it when syncing.
      */
     val targetDate: Long? = null,
+    /**
+     * The paper the note's text is written on (schema v7): a [Paper] name, or null for plain. A string, so a
+     * kind added later reads as plain here. Older versions ignore it when syncing.
+     */
+    val paper: String? = null,
 )
+
+val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN
 
 val NoteEntity.isLocked get() = cipher != null
 

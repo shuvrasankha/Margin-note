@@ -298,6 +298,8 @@ class NoteRepository @Inject constructor(
 
     /** Sets or clears ([day] null) a to-do list's target end date; [day] is a LocalDate epoch day. */
     suspend fun setTargetDate(id: String, day: Long?) = update(id) { it.copy(targetDate = day, updatedAt = now()) }
+    suspend fun setPaper(id: String, paper: Paper) =
+        update(id) { it.copy(paper = paper.name.takeIf { paper != Paper.PLAIN }, updatedAt = now()) }
 
     suspend fun moveToTrash(id: String) = update(id) { it.copy(trashedAt = now(), isPinned = false, updatedAt = now()) }
 

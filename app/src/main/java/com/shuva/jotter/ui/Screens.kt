@@ -187,6 +187,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
@@ -216,6 +217,7 @@ import androidx.fragment.app.FragmentActivity
 import com.shuva.jotter.data.BlockType
 import com.shuva.jotter.data.DEFAULT_FOLDER_ID
 import com.shuva.jotter.data.NoteEntity
+import com.shuva.jotter.data.Paper
 import com.shuva.jotter.data.NoteSort
 import com.shuva.jotter.data.SmartFilter
 import com.shuva.jotter.data.TagCount
@@ -437,7 +439,7 @@ private fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Unit
 @Composable
 fun FoldersScreen(
     vm: FoldersViewModel, onOpen: (String) -> Unit, onSearch: () -> Unit, onNew: () -> Unit, onEdit: () -> Unit, onSettings: () -> Unit,
-    onTodos: () -> Unit, onReminders: () -> Unit, onBack: () -> Unit,
+    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onBack: () -> Unit,
 ) {
     val syncBanner by vm.syncBanner.collectAsState()
     val rows by vm.rows.collectAsState()
@@ -499,6 +501,10 @@ fun FoldersScreen(
                 val reminders by vm.reminders.collectAsState()
                 val count = remember(notes, reminders) { notes.count { it.id in reminders } }
                 FolderListRow(Ico.BELL, "Reminders", count, onClick = onReminders)
+            }
+            item {
+                val notes by vm.liveNotes.collectAsState()
+                FolderListRow(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onClick = onJournal)
             }
             item { SectionLabel("Folders") }
             items(regular, key = { it.folder.id }) { row ->
@@ -1374,6 +1380,7 @@ private fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: (
         }
         Text(
             when {
+                journalDay(note) != null -> "Journal"
                 note.isLocked -> "Locked"
                 body.isEmpty() -> "No additional text"
                 else -> body
@@ -1477,7 +1484,7 @@ private fun NoteRow(
                     return@Column
                 }
                 // Preview: 0 lines shows only the time; 2 lines adds the next line of text below.
-                val lines = if (note.isLocked) listOf("Locked")
+                val lines = if (journalDay(note) != null) listOf("Journal") else if (note.isLocked) listOf("Locked")
                 else note.searchText.lineSequence().filter { it.isNotBlank() }.take(2).toList().ifEmpty { listOf("No additional text") }
                 val signedIn by vm.signedIn.collectAsState()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1585,6 +1592,7 @@ fun EditorScreen(
         if (q.isBlank()) emptyList() else Regex(Regex.escape(q), RegexOption.IGNORE_CASE).findAll(vm.doc.text).map { it.range }.toList()
     }
     androidx.activity.compose.BackHandler(enabled = find != null) { find = null }
+    androidx.activity.compose.BackHandler(enabled = vm.mathKeys && vm.focused) { vm.mathKeys = false }
     val scroll = rememberScrollState()
     var fieldTop by remember { mutableIntStateOf(0) }
     val targets by vm.linkTargets.collectAsState()
@@ -1633,6 +1641,8 @@ fun EditorScreen(
     var reminding by remember { mutableStateOf(false) }
     /** The to-do target date picker is open. */
     var pickingTarget by remember { mutableStateOf(false) }
+    var pickingPaper by remember { mutableStateOf(false) }
+    if (pickingPaper) PaperDialog(vm.paper, onPick = { pickingPaper = false; vm.changePaper(it) }, onDismiss = { pickingPaper = false })
     if (pickingTarget) {
         TargetDateDialog(
             vm.targetDate,
@@ -1750,6 +1760,7 @@ fun EditorScreen(
                             item("Move to folder…", Ico.MOVE, gap = first) { moving = true }
                             if (vm.canRemind) item(if (reminderAt != null) "Change reminder…" else "Remind me…", Ico.BELL) { reminding = true }
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
+                            if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
                             item("Linked notes · ${vm.linkedNotes(targets).size}", Ico.LINK, gap = true) { linked = true }
                             item("Note info", Ico.INFO) { info = true }
@@ -1859,10 +1870,11 @@ fun EditorScreen(
                     )
                     EditorToolbar(
                         vm, formatting, attaching,
-                        onFormat = { formatting = !formatting; attaching = false; sharing = false }, onHideKeyboard = { focusManager.clearFocus() },
+                        onFormat = { formatting = !formatting; attaching = false; sharing = false }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
                         onAttach = { attaching = !attaching; formatting = false; sharing = false }, onDraw = { drawing = null to null },
                         onNew = { formatting = false; attaching = false; onNewNote(vm.folderId) },
                     )
+                    if (vm.mathKeys && vm.focused) MathKeyboard(vm.value, vm::onValueChange, onLetters = { vm.mathKeys = false })
                 }
             }
         },
@@ -1903,7 +1915,7 @@ fun EditorScreen(
                     Text("Recover this note to edit it.", Modifier.padding(bottom = 10.dp), style = JType.small, color = jc.muted)
                 }
                 val density = LocalDensity.current
-                NoteField(
+                BlockPhoneKeyboard(vm.mathKeys) { NoteField(
                     vm, matches, findAt, Modifier.onGloballyPositioned { fieldTop = it.positionInParent().y.roundToInt() },
                     onReveal = { y -> scope.launch { scroll.animateScrollTo((fieldTop + y - with(density) { 96.dp.toPx() }).roundToInt().coerceAtLeast(0)) } },
                     onOpenDrawing = { line, d -> drawing = line to d },
@@ -1917,7 +1929,7 @@ fun EditorScreen(
                         if (target == null) Toast.makeText(context, "Note not found", Toast.LENGTH_SHORT).show()
                         else { haptic.performHapticFeedback(HapticFeedbackType.LongPress); peek = target }
                     },
-                )
+                ) }
                 // The note's tags; tapping one opens that tag's list.
                 val noteTags = remember(vm.doc.text) { findTags(vm.doc.text).map { it.second }.distinctBy(::tagKey) }
                 if (noteTags.isNotEmpty() && !vm.focused && !vm.readOnly) { // tag lists leave out deleted notes
@@ -2102,7 +2114,7 @@ enum class PasswordMode { CREATE, ENTER }
  * returns an error to show, or null when done.
  */
 @Composable
-private fun OldPasswordDialog(onDismiss: () -> Unit, onSubmit: suspend (CharArray) -> String?) {
+internal fun OldPasswordDialog(onDismiss: () -> Unit, onSubmit: suspend (CharArray) -> String?) {
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -2195,6 +2207,10 @@ private fun EditorToolbar(
         // Locked notes can't take attachments: the files wouldn't be encrypted.
         IconAction(Ico.ATTACH, "Attach", onAttach, color = if (attaching) jc.ink else jc.accent, enabled = !vm.locked)
         IconAction(Ico.PEN, "Draw", onDraw, enabled = !vm.locked)
+        if (vm.focused) GlyphAction(
+            "π", if (vm.mathKeys) "Phone keyboard" else "Math keyboard", { vm.mathKeys = !vm.mathKeys },
+            JType.rowTitle.copy(fontSize = 21.sp), color = if (vm.mathKeys) jc.ink else jc.accent,
+        )
         if (vm.focused) IconAction(Ico.HIDE_KEYBOARD, "Hide keyboard", onHideKeyboard)
         IconAction(Ico.COMPOSE, "New note", onNew)
     }
@@ -2611,6 +2627,9 @@ private const val QUOTE_GAP = 16f // sp between a quote's bar and its text
 /** Space in sp before a line's marker or text: its indent, then the quote bar. */
 private fun leadOf(meta: LineMeta) = INDENT_STEP * meta.indent + if (meta.quote) QUOTE_GAP else 0f
 
+/** Extra room under each line of text on four-line paper, as a share of its font size. */
+private const val FOUR_LINE_GAP = 0.6f
+
 @Composable
 private fun lineStyle(type: BlockType): TextStyle = when (type) {
     BlockType.TITLE -> JType.noteTitle
@@ -2643,6 +2662,18 @@ private fun NoteField(
     LaunchedEffect(Unit) {
         if (vm.focusOnOpen || vm.focused) runCatching { requester.requestFocus() }
         vm.focusOnOpen = false
+    }
+    // Switching between the math keypad and the phone's keyboard restarts the field's input, so the phone's
+    // keyboard goes away (or comes back) at once.
+    val focusManager = LocalFocusManager.current
+    var keysWere by remember { mutableStateOf(vm.mathKeys) }
+    LaunchedEffect(vm.mathKeys) {
+        if (keysWere == vm.mathKeys) return@LaunchedEffect
+        keysWere = vm.mathKeys
+        if (vm.focused) {
+            focusManager.clearFocus()
+            runCatching { requester.requestFocus() }
+        }
     }
     val doc = vm.doc
     val styles = BlockType.entries.associateWith { lineStyle(it) }
@@ -2709,7 +2740,10 @@ private fun NoteField(
     val linkPreviews = remember(doc, targets) { linkPreviewLines(doc, targets) }
     fun previewExtra(rows: Int) = with(px) { linkCardHeight(rows).toSp() }
     val findColor = jc.accent
-    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos) {
+    // Four-line paper: each line of text gets room for a gap under its band, like a copybook.
+    val fourLine = vm.paper == Paper.FOUR_LINE
+    fun textHeight(style: TextStyle) = if (fourLine) (style.lineHeight.value + style.fontSize.value * FOUR_LINE_GAP).sp else style.lineHeight
+    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine) {
         buildAnnotatedString {
             // Each ParagraphStyle range is already its own paragraph, so a real '\n' would add an empty one
             // after every line. Show a zero-width space in its place (same length, so offsets still map 1:1).
@@ -2724,12 +2758,13 @@ private fun NoteField(
                 val preview = linkPreviews[i]
                 val height = meta.table?.let { with(px) { tableHeight(it).toSp() } }
                     ?: meta.attachment?.let { if (it.isDrawing) drawingLine(it) else if (it.isImage) photoLine(it) else if (it.isPdf) pdfLine else fileLine }
-                    ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp } ?: style.lineHeight
+                    ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp } ?: textHeight(style)
                 // A one-row paragraph is trimmed to its font height by default; an attachment's line must keep its full height.
                 // A link with a preview keeps its text at the top, leaving the space below for the card.
                 val heightStyle = when {
                     meta.isObject -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
                     preview != null -> LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.None)
+                    fourLine -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
                     else -> null
                 }
                 addStyle(ParagraphStyle(lineHeight = height, textIndent = TextIndent(indent, indent), lineHeightStyle = heightStyle), start, paragraphEnd)
@@ -2828,6 +2863,17 @@ private fun NoteField(
         lastValue = v
     }
 
+    // Paper: rules go under text lines only; an attachment, table or link card keeps its own background.
+    val paper = vm.paper
+    val bodyLine = with(px) { textHeight(JType.body).toPx() }
+    val paperLine = paperColors()
+    // The paper runs on past the text to fill the rest of the screen (the note's scroll view clips it).
+    val pageBelow = with(px) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val lineStarts = remember(doc) { doc.texts.runningFold(0) { at, t -> at + t.length + 1 }.dropLast(1) }
+    fun docLine(offset: Int) = lineStarts.binarySearch(offset).let { if (it >= 0) it else -it - 2 }.coerceIn(0, doc.lines.lastIndex)
+    fun bareLine(offset: Int): Boolean = docLine(offset).let { i -> doc.lines[i].isObject || linkPreviews[i] != null }
+    val fontPx = styles.mapValues { (_, s) -> with(px) { s.fontSize.toPx() } }
+    val bodyFont = with(px) { JType.body.fontSize.toPx() }
     Box(modifier.fillMaxWidth().onSizeChanged { pageWidth = it.width }) {
         BasicTextField(
             value = vm.value,
@@ -2843,6 +2889,16 @@ private fun NoteField(
             visualTransformation = { TransformedText(annotated, OffsetMapping.Identity) },
             onTextLayout = { layout = it },
             modifier = Modifier.fillMaxWidth()
+                // The note's paper, under the text and lined up with it.
+                .drawBehind {
+                    val l = layout ?: return@drawBehind
+                    if (paper == Paper.PLAIN || l.layoutInput.text.length != doc.text.length) return@drawBehind
+                    drawNotePaper(
+                        paper, l, bodyLine, bodyFont,
+                        fontOf = { i -> fontPx.getValue(doc.lines[docLine(l.getLineStart(i))].type) },
+                        skip = { i -> bareLine(l.getLineStart(i)) }, colors = paperLine, below = pageBelow,
+                    )
+                }
                 // A tap on a link opens its note instead of placing the cursor; pressing and holding previews it.
                 // A tap on a phone number shows what to do with it.
                 // Notes each touch's position (without taking it) so [placeTap] can check where a tap put the cursor.
@@ -3016,6 +3072,7 @@ private fun NoteField(
             val (label, spoken) = when (math) {
                 is MathSuggestion.Answer -> math.text to "Answer ${math.text}. Tap to add it."
                 is MathSuggestion.Solution -> math.text to "${math.text}. Tap to add it."
+                is MathSuggestion.Solved -> math.text to "${math.text}. Tap to add it."
                 is MathSuggestion.Graph -> "Show graph" to "Show graph"
             }
             Popup(offset = IntOffset((at.right + with(density) { 6.dp.toPx() }).toInt(), (at.center.y - with(density) { 22.dp.toPx() }).toInt())) {
@@ -3026,6 +3083,7 @@ private fun NoteField(
                         val insert = when (math) {
                             is MathSuggestion.Answer -> if (t[c - 1] == ' ') math.text else " ${math.text}"
                             is MathSuggestion.Solution -> (if (t[c - 1] == ' ') "" else " ") + "→ ${math.text}"
+                            is MathSuggestion.Solved -> (if (t[c - 1] == ' ') "" else " ") + "→ ${math.text}"
                             is MathSuggestion.Graph -> { graphing = plotsIn(t); null }
                         }
                         if (insert != null && mathSuggestionAt(t, c) == math) {
@@ -3817,6 +3875,7 @@ fun JotterRoot(
             onSettings = { nav.push(Screen.Settings) },
             onTodos = { nav.push(Screen.Todos) },
             onReminders = { nav.push(Screen.Reminders) },
+            onJournal = { nav.push(Screen.Journal) },
             onBack = ::back,
         )
         Screen.EditFolders -> EditFoldersScreen(folders, onBack = ::back)
@@ -3825,6 +3884,10 @@ fun JotterRoot(
             val reminders by folders.reminders.collectAsState()
             val repeats by folders.reminderRepeats.collectAsState()
             RemindersScreen(all, reminders, repeats, onOpen = { nav.push(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
+        }
+        Screen.Journal -> {
+            val all by folders.liveNotes.collectAsState()
+            JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onBack = ::back) }
         }
         Screen.Todos -> {
             val all by folders.liveNotes.collectAsState()
@@ -3852,6 +3915,7 @@ fun JotterRoot(
                 is Screen.Editor -> "Back"
                 Screen.Todos -> "To-dos"
                 Screen.Reminders -> "Reminders"
+                Screen.Journal -> "Journal"
                 Screen.Settings -> "Settings"
                 else -> "Folders"
             },
@@ -3865,6 +3929,7 @@ fun JotterRoot(
                 is Screen.Editor -> "Back" // came here through a link
                 Screen.Todos -> "To-dos"
                 Screen.Reminders -> "Reminders"
+                Screen.Journal -> "Journal"
                 else -> "Folders"
             }
             EditorScreen(

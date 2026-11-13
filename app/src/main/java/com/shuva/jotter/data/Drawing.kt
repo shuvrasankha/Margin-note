@@ -10,8 +10,9 @@ const val DRAWING_MIME = "application/vnd.jotter.drawing+json"
 val Attachment.isDrawing get() = mime == DRAWING_MIME
 
 /**
- * Points are in the units of a [width] x [height] canvas (the one it was first drawn on). [grid] shows squared
- * paper behind the ink; older versions don't know the key and show plain paper.
+ * Points are in the units of a [width] x [height] canvas (the one it was first drawn on). The paper behind the
+ * ink is [paperStyle]: [grid] is squared paper (the only kind older versions know), and [paper] names any other
+ * kind. Older versions ignore [paper] and show those as plain.
  */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
@@ -20,7 +21,20 @@ data class Drawing(
     val height: Float,
     val strokes: List<PenStroke> = emptyList(),
     @EncodeDefault(EncodeDefault.Mode.NEVER) val grid: Boolean = false,
+    // A string, not a Paper: an unknown enum value would fail to decode, so a future kind falls back to plain.
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val paper: String? = null,
 )
+
+/** The paper a drawing is done on. */
+enum class Paper(val label: String) {
+    PLAIN("Plain"), SQUARES("Squares"), GRAPH("Graph paper"), RULED("Ruled"), FOUR_LINE("Four-line")
+}
+
+val Drawing.paperStyle: Paper
+    get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: if (grid) Paper.SQUARES else Paper.PLAIN
+
+/** This drawing on [p]. Squares stay in [Drawing.grid], so older versions still show them. */
+fun Drawing.withPaper(p: Paper) = copy(grid = p == Paper.SQUARES, paper = p.name.takeIf { p != Paper.PLAIN && p != Paper.SQUARES })
 
 /** How a stroke is drawn. */
 @Serializable
@@ -41,7 +55,7 @@ data class PenStroke(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val tool: PenTool = PenTool.PEN,
 )
 
-/** Grid spacing in drawing units. */
+/** Grid spacing in drawing units; also the gap between ruled lines. */
 const val GRID_STEP = 60f
 
 /** True when (x, y) is inside the closed polygon [poly] (x, y pairs), by ray casting. */
@@ -114,6 +128,14 @@ fun Drawing.cropped(pad: Float): Drawing {
     )
 }
 
+/** How far down [inkRows] cuts the drawing, in drawing units: where the paper's lines must shift to line up. */
+fun Drawing.inkTop(pad: Float): Float {
+    val ink = strokes.filterNot { it.erase }
+    if (ink.isEmpty()) return 0f
+    val half = ink.maxOf { it.width } / 2 + pad
+    return (ink.minOf { s -> s.points.filterIndexed { i, _ -> i % 2 == 1 }.minOrNull() ?: Float.MAX_VALUE } - half).coerceAtLeast(0f)
+}
+
 /**
  * The same drawing cut down to the rows its ink covers (plus [pad] above and below), keeping its full width
  * so strokes stay where they were drawn across the page. A drawing with no ink keeps a strip [pad] * 2 tall.
@@ -123,7 +145,7 @@ fun Drawing.inkRows(pad: Float): Drawing {
     if (ink.isEmpty()) return copy(height = minOf(height, pad * 2))
     val half = ink.maxOf { it.width } / 2 + pad
     val ys = ink.flatMap { s -> s.points.filterIndexed { i, _ -> i % 2 == 1 } }
-    val top = (ys.min() - half).coerceAtLeast(0f)
+    val top = inkTop(pad)
     val bottom = (ys.max() + half).coerceAtMost(height)
     return copy(height = bottom - top, strokes = strokes.map { s -> s.copy(points = s.points.mapIndexed { i, v -> if (i % 2 == 1) v - top else v }) })
 }

@@ -38,6 +38,19 @@ class DrawingTest {
         assertEquals(PenTool.PEN, JotterJson.decodeFromString<Drawing>(json).strokes[0].tool)
     }
 
+    @Test fun paperSurvivesJsonAndOldVersionsSeeSquares() {
+        val blank = Drawing(10f, 20f)
+        Paper.entries.forEach { p ->
+            val d = blank.withPaper(p)
+            assertEquals(p, JotterJson.decodeFromString<Drawing>(JotterJson.encodeToString(d)).paperStyle)
+        }
+        // Squares use the old grid key alone, so older versions still draw them.
+        assertEquals(blank.copy(grid = true), blank.withPaper(Paper.SQUARES))
+        assertFalse("paper" in JotterJson.encodeToString(blank.withPaper(Paper.PLAIN)))
+        // A paper kind from a newer version is shown plain rather than failing.
+        assertEquals(Paper.PLAIN, blank.copy(paper = "DOTTED").paperStyle)
+    }
+
     @Test fun lassoPicksStrokesMostlyInside() {
         val square = listOf(0f, 0f, 100f, 0f, 100f, 100f, 0f, 100f)
         assertTrue(pointInPolygon(50f, 50f, square))

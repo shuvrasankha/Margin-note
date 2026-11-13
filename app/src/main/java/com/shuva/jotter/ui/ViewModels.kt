@@ -14,6 +14,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuva.jotter.data.AppPrefs
+import com.shuva.jotter.data.paperStyle
 import com.shuva.jotter.data.ATTACHMENT_CHAR
 import com.shuva.jotter.data.NoteTable
 import com.shuva.jotter.data.PDF_MIME
@@ -46,6 +47,7 @@ import com.shuva.jotter.data.writeMarkdownZip
 import com.shuva.jotter.data.noteMarkdown
 import com.shuva.jotter.data.NotePdf
 import com.shuva.jotter.data.safeFileName
+import com.shuva.jotter.data.DEFAULT_FOLDER_ID
 import com.shuva.jotter.data.sharedNoteBlocks
 import com.shuva.jotter.data.LINK_MIME
 import com.shuva.jotter.data.hostOf
@@ -119,6 +121,8 @@ sealed interface Screen {
     data object Todos : Screen
     /** Notes with a reminder set on this phone. */
     data object Reminders : Screen
+    /** The journal calendar: a note per day. */
+    data object Journal : Screen
 }
 
 /** Something another app shared to Jotter: text (with an optional subject) and/or a photo. */
@@ -188,6 +192,16 @@ class FoldersViewModel @Inject constructor(
             val id = newId()
             repo.saveNote(id, folderId, sharedNoteBlocks(subject, text, attachment))
             onSaved(id)
+        }
+    }
+
+    /** Opens [day]'s journal entry, starting it (titled with the date, in Notes) when there isn't one. */
+    fun openJournal(day: java.time.LocalDate, onReady: (id: String, folderId: String) -> Unit) {
+        viewModelScope.launch {
+            val id = journalId(day)
+            // shortcut: an entry deleted for good can't be started again (saveNote keeps tombstones); give it a new id if that comes up.
+            val note = repo.getNote(id) ?: repo.saveNote(id, DEFAULT_FOLDER_ID, sharedNoteBlocks(journalTitle(day), null, null)).let { repo.getNote(id) }
+            onReady(id, note?.folderId ?: DEFAULT_FOLDER_ID)
         }
     }
 
@@ -525,12 +539,16 @@ class EditorViewModel @Inject constructor(
     var createdAt by mutableStateOf<Long?>(null); private set
     /** The open note's to-do target end date (an epoch day), or null. */
     var targetDate by mutableStateOf<Long?>(null); private set
+    /** The paper behind the note's text. */
+    var paper by mutableStateOf(com.shuva.jotter.data.Paper.PLAIN); private set
     var value by mutableStateOf(TextFieldValue()); private set
     var readOnly by mutableStateOf(false); private set
     var loaded by mutableStateOf(false); private set
     /** True right after a new note opens, so the UI puts the keyboard on the title. */
     var focusOnOpen by mutableStateOf(false)
     var focused by mutableStateOf(false)
+    /** The math keypad shows in place of the phone's keyboard. */
+    var mathKeys by mutableStateOf(false)
 
     /** The note is locked (its body is stored encrypted). */
     var locked by mutableStateOf(false); private set
@@ -576,6 +594,7 @@ class EditorViewModel @Inject constructor(
             pinned = note?.isPinned == true
             createdAt = note?.createdAt
             targetDate = note?.targetDate
+            paper = note?.paperStyle ?: com.shuva.jotter.data.Paper.PLAIN
             conflictWith = note?.takeIf { it.trashedAt == null && !it.isLocked }
                 ?.let { conflictOriginal(it, repo.liveNotes().first()) }?.takeIf { !it.isLocked }
             saved = true
@@ -592,6 +611,8 @@ class EditorViewModel @Inject constructor(
             readOnly = note?.trashedAt != null
             focusOnOpen = isNew
             loaded = true
+            // Journal entries are always locked notes (the journal itself asks for the passcode first).
+            if (noteId.startsWith("journal-") && !locked && !readOnly && session.unlocked.value) lock()
         }
     }
 
@@ -1191,6 +1212,13 @@ class EditorViewModel @Inject constructor(
         if (readOnly) return
         targetDate = day
         afterSave { repo.setTargetDate(it, day) }
+    }
+
+    /** Sets the paper behind the note's text; a new note is saved first. */
+    fun changePaper(p: com.shuva.jotter.data.Paper) {
+        if (readOnly) return
+        paper = p
+        afterSave { repo.setPaper(it, p) }
     }
 
     fun togglePin() { if (!readOnly) afterSave { repo.togglePin(it); pinned = repo.getNote(it)?.isPinned == true } }
