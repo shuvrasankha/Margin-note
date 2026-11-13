@@ -44,6 +44,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.shuva.jotter.data.reminderChoices
+import com.shuva.jotter.data.Repeat
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import com.shuva.jotter.data.isLocked
 import com.shuva.jotter.data.snippet
@@ -75,6 +78,10 @@ fun reminderLabel(context: Context, time: Long): String {
     }
 }
 
+/** [reminderLabel] with how it repeats: "Tomorrow, 9:00 AM · Weekly". */
+fun reminderLabel(context: Context, time: Long, repeat: Repeat): String =
+    reminderLabel(context, time) + if (repeat == Repeat.NEVER) "" else " · ${repeat.label}"
+
 private const val DAY_MS = 24 * 60 * 60 * 1000L
 
 /**
@@ -84,11 +91,14 @@ private const val DAY_MS = 24 * 60 * 60 * 1000L
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReminderDialog(current: Long?, onTime: Boolean, onPick: (Long) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+fun ReminderDialog(
+    current: Long?, currentRepeat: Repeat, onTime: Boolean, onPick: (Long, Repeat) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     var custom by remember { mutableStateOf(false) }
     var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var repeat by remember { mutableStateOf(if (current != null) currentRepeat else Repeat.NEVER) }
     val now = remember { ZonedDateTime.now() }
 
     // Wider than Android's default dialog: the calendar needs about 360dp.
@@ -102,11 +112,16 @@ fun ReminderDialog(current: Long?, onTime: Boolean, onPick: (Long) -> Unit, onRe
                 Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink,
             )
             current?.let {
-                if (!custom) Text("Set for ${reminderLabel(context, it)}", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+                if (!custom) Text("Set for ${reminderLabel(context, it, currentRepeat)}", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
             }
+            if (!custom) RepeatChips(repeat) { repeat = it }
             when {
                 !custom -> {
-                    Column(Modifier.padding(top = 10.dp)) {
+                    Column(Modifier.padding(top = 4.dp)) {
+                        // Only the repeat changed: keep the time already set.
+                        if (current != null && repeat != currentRepeat && current > System.currentTimeMillis()) {
+                            ChoiceRow(Ico.CHECK, "Keep this time", reminderLabel(context, current)) { onPick(current, repeat) }
+                        }
                         reminderChoices(now).forEach { (label, at) ->
                             val icon = when (label) {
                                 "This evening" -> Ico.SUNSET
@@ -114,7 +129,7 @@ fun ReminderDialog(current: Long?, onTime: Boolean, onPick: (Long) -> Unit, onRe
                                 "Next week" -> Ico.CALENDAR
                                 else -> Ico.CLOCK
                             }
-                            ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli()) }
+                            ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli(), repeat) }
                         }
                         ChoiceRow(Ico.CALENDAR_PICK, "Pick date & time…", null) { custom = true }
                         if (current != null) ChoiceRow(Ico.TRASH, "Remove reminder", null, danger = true, onClick = onRemove)
@@ -180,11 +195,32 @@ fun ReminderDialog(current: Long?, onTime: Boolean, onPick: (Long) -> Unit, onRe
                         TextAction("Set reminder", {
                             val at = ZonedDateTime.of(pickedDate, LocalTime.of(state.hour, state.minute), ZoneId.systemDefault()).toInstant().toEpochMilli()
                             if (at <= System.currentTimeMillis()) error = "That time has passed. Pick a later one."
-                            else onPick(at)
+                            else onPick(at, repeat)
                         }, bold = true)
                     }
                 }
             }
+        }
+    }
+}
+
+/** "Repeat" with a pill for each choice; the picked one is filled. */
+@Composable
+private fun RepeatChips(selected: Repeat, onSelect: (Repeat) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Repeat", style = JType.small, color = jc.muted)
+        Repeat.entries.forEach { r ->
+            val on = r == selected
+            Text(
+                r.label,
+                Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) jc.accent else jc.bg)
+                    .border(1.dp, if (on) jc.accent else jc.line, RoundedCornerShape(16.dp))
+                    .clickable(role = Role.RadioButton) { onSelect(r) }.padding(horizontal = 12.dp, vertical = 6.dp),
+                style = JType.small, color = if (on) jc.bg else jc.ink,
+            )
         }
     }
 }
@@ -206,7 +242,7 @@ private fun ChoiceRow(icon: String, label: String, detail: String?, danger: Bool
  * This week and Later. A reminder that has rung is gone (it was the notification), so only upcoming ones show.
  */
 @Composable
-fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit) {
+fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repeats: Map<String, Repeat>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val rows = remember(notes, reminders) {
         notes.mapNotNull { n -> reminders[n.id]?.let { n to it } }.sortedBy { it.second }
@@ -247,7 +283,7 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, onOpe
                         JIcon(Ico.BELL, jc.accent, size = 20.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(reminderLabel(context, at), style = JType.secondary, color = jc.accent, maxLines = 1)
+                            Text(reminderLabel(context, at, repeats[note.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)
                             if (!note.isLocked) note.snippet.takeIf { it.isNotBlank() }?.let {
                                 Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }

@@ -166,6 +166,7 @@ class FoldersViewModel @Inject constructor(
 ) : ViewModel() {
     /** Note id → when its reminder rings, for the Reminders list. */
     val reminders: StateFlow<Map<String, Long>> = reminders.all
+    val reminderRepeats: StateFlow<Map<String, com.shuva.jotter.data.Repeat>> = reminders.repeats
 
     /** Offline with changes waiting, or the last sync failed. Null when there's nothing to say. */
     val syncBanner: StateFlow<SyncBanner?> = combine(syncPrefs.status, connectivity.online, repo.pendingCount()) { s, online, pending ->
@@ -433,12 +434,20 @@ class EditorViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Sets the reminder; a new note is saved first (an empty one can't have a reminder). */
-    fun setReminder(time: Long) { if (noteId.isNotEmpty() && !readOnly) afterSave { reminders.set(it, time) } }
+    fun setReminder(time: Long, repeat: com.shuva.jotter.data.Repeat) { if (noteId.isNotEmpty() && !readOnly) afterSave { reminders.set(it, time, repeat) } }
+
+    /** How this note's reminder repeats. */
+    val reminderRepeat: StateFlow<com.shuva.jotter.data.Repeat> = combine(reminders.repeats, openId) { all, id -> all[id] ?: com.shuva.jotter.data.Repeat.NEVER }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.shuva.jotter.data.Repeat.NEVER)
 
     /** A reminder can be set: the note is stored, or has text that will be saved first. */
     val canRemind get() = !readOnly && !needsUnlock && (exists || doc.text.isNotBlank())
     fun clearReminder() { if (noteId.isNotEmpty()) reminders.clear(noteId) }
     val remindersOnTime get() = reminders.canRingOnTime()
+    /** Whether a ringing reminder may fill the screen (Android 14+ asks the user for this). */
+    val remindersFullScreen get() = reminders.canFillScreen()
+    /** Asks for the full-screen permission once only, so declining isn't met with the same screen every time. */
+    fun shouldAskFullScreen() = !remindersFullScreen && reminders.markAskedFullScreen()
 
     /** Tags from the other notes; this note's half-typed tag must not suggest itself. */
     val otherTags: StateFlow<List<TagCount>> = combine(repo.liveNotes(), openId) { all, id -> tagCounts(all.filter { it.id != id }) }

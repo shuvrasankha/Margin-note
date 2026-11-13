@@ -1629,6 +1629,7 @@ fun EditorScreen(
     }
     // Reminders: set from More, shown under the date line, rung as a notification.
     val reminderAt by vm.reminderAt.collectAsState()
+    val reminderRepeat by vm.reminderRepeat.collectAsState()
     var reminding by remember { mutableStateOf(false) }
     /** The to-do target date picker is open. */
     var pickingTarget by remember { mutableStateOf(false) }
@@ -1640,19 +1641,33 @@ fun EditorScreen(
             onDismiss = { pickingTarget = false },
         )
     }
+    // Without "Alarms & reminders" (off by default on Android 14+), Android rings a reminder up to an hour late.
+    // Then, once only, the full-screen alert (Android 14+), so a reminder on a locked phone fills the screen.
+    fun askForExactAlarms() {
+        val pkg = android.net.Uri.parse("package:${context.packageName}")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !vm.remindersOnTime) {
+            toast("To ring on time, allow Margin to set alarms.")
+            runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg)) }
+        } else if (Build.VERSION.SDK_INT >= 34 && vm.shouldAskFullScreen()) {
+            toast("To show reminders full screen on a locked phone, allow Margin here.")
+            runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)) }
+        }
+    }
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) toast("Reminder set, but notifications are off for Margin, so it won't show. Turn them on in the phone's settings.")
+        else askForExactAlarms()
     }
     if (reminding) {
         ReminderDialog(
-            current = reminderAt, onTime = vm.remindersOnTime,
-            onPick = { time ->
+            current = reminderAt, currentRepeat = reminderRepeat, onTime = vm.remindersOnTime,
+            onPick = { time, repeat ->
                 reminding = false
-                vm.setReminder(time)
-                toast("You'll be reminded " + reminderLabel(context, time).replaceFirstChar { it.lowercaseChar() } + ".")
+                vm.setReminder(time, repeat)
+                toast("You'll be reminded " + reminderLabel(context, time, repeat).replaceFirstChar { it.lowercaseChar() } + ".")
                 if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
                     != android.content.pm.PackageManager.PERMISSION_GRANTED
                 ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                else askForExactAlarms()
             },
             onRemove = { reminding = false; vm.clearReminder() },
             onDismiss = { reminding = false },
@@ -1679,7 +1694,7 @@ fun EditorScreen(
                     if (vm.focused) TextAction("Done", { focusManager.clearFocus() }, bold = true)
                     // Reminder: amber while one is set.
                     if (vm.canRemind) IconAction(
-                        Ico.BELL, reminderAt?.let { "Reminder, ${reminderLabel(context, it)}. Change it" } ?: "Remind me",
+                        Ico.BELL, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" } ?: "Remind me",
                         { reminding = true }, fill = reminderAt != null,
                     )
                     if (!vm.needsUnlock) IconAction(Ico.SHARE, "Share", { sharing = !sharing; formatting = false; attaching = false })
@@ -1868,11 +1883,11 @@ fun EditorScreen(
                     Row(
                         Modifier.padding(bottom = 10.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { reminding = true }
                             .background(jc.selected).padding(horizontal = 8.dp, vertical = 4.dp)
-                            .semantics { contentDescription = "Reminder: ${reminderLabel(context, at)}. Tap to change it." },
+                            .semantics { contentDescription = "Reminder: ${reminderLabel(context, at, reminderRepeat)}. Tap to change it." },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         JIcon(Ico.BELL, jc.accent, size = 14.dp, stroke = 2f)
-                        Text(reminderLabel(context, at), style = JType.small, color = jc.accent)
+                        Text(reminderLabel(context, at, reminderRepeat), style = JType.small, color = jc.accent)
                     }
                 }
                 // To-do progress: shown once the note has checklist lines or a target date.
@@ -3808,7 +3823,8 @@ fun JotterRoot(
         Screen.Reminders -> {
             val all by folders.liveNotes.collectAsState()
             val reminders by folders.reminders.collectAsState()
-            RemindersScreen(all, reminders, onOpen = { nav.push(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
+            val repeats by folders.reminderRepeats.collectAsState()
+            RemindersScreen(all, reminders, repeats, onOpen = { nav.push(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
         }
         Screen.Todos -> {
             val all by folders.liveNotes.collectAsState()
