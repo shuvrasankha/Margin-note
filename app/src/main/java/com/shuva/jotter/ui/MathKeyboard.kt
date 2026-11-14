@@ -80,14 +80,23 @@ private val FUNCTIONS = listOf(
     listOf(MathKey("d/dx", "d/dx ", spoken = "Derivative"), MathKey("∫", "∫ ", spoken = "Integral"), MathKey("dx", " dx"), MathKey("from", " from "), MathKey("to", " to "), DELETE),
 )
 
+/** Greek letters, sub- and superscript digits and the arrows science notes need (H₂O, x², A → B). */
+private val SYMBOLS = listOf(
+    listOf(MathKey("α"), MathKey("β"), MathKey("γ"), MathKey("δ"), MathKey("θ"), MathKey("λ"), MathKey("μ"), MathKey("ω")),
+    listOf(MathKey("Δ"), MathKey("Σ"), MathKey("Ω"), MathKey("ρ"), MathKey("σ"), MathKey("φ"), MathKey("ε"), MathKey("ν")),
+    listOf(MathKey("₀"), MathKey("₁"), MathKey("₂"), MathKey("₃"), MathKey("₄"), MathKey("⁰"), MathKey("¹"), MathKey("²")),
+    listOf(MathKey("₅"), MathKey("₆"), MathKey("₇"), MathKey("₈"), MathKey("₉"), MathKey("³"), MathKey("⁴"), MathKey("⁵")),
+    listOf(MathKey("→", spoken = "Arrow"), MathKey("⇌", spoken = "Equilibrium"), MathKey("±"), MathKey("≈"), MathKey("∝"), MathKey("∞"), MathKey("·"), DELETE),
+)
+
 /**
  * A keypad for math in place of the phone's keyboard: numbers and operators on one page, functions,
- * comparisons and calculus words on the other. It types into the note like any keyboard; "ABC" goes back to
+ * comparisons and calculus words on the second, Greek letters and symbols on the third. It types into the note like any keyboard; "ABC" goes back to
  * the phone's keyboard.
  */
 @Composable
 fun MathKeyboard(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, onLetters: () -> Unit) {
-    var functions by rememberSaveable { mutableStateOf(false) }
+    var page by rememberSaveable { mutableStateOf(0) } // 0 numbers, 1 functions, 2 symbols
     val current by rememberUpdatedState(value)
     fun type(text: String, back: Int) {
         val v = current
@@ -116,12 +125,12 @@ fun MathKeyboard(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, onLe
             KeyAction.LEFT -> onChange(v.copy(selection = TextRange((sel.min - if (sel.collapsed) 1 else 0).coerceAtLeast(0))))
             KeyAction.RIGHT -> onChange(v.copy(selection = TextRange((sel.max + if (sel.collapsed) 1 else 0).coerceAtMost(t.length))))
             KeyAction.LETTERS -> onLetters()
-            KeyAction.PAGE -> functions = !functions
+            KeyAction.PAGE -> page = (page + 1) % 3
         }
     }
     val bottom = listOf(
         MathKey("ABC", spoken = "Letters keyboard", action = KeyAction.LETTERS),
-        MathKey(if (functions) "123" else "f(x)", spoken = if (functions) "Numbers" else "Functions", action = KeyAction.PAGE),
+        MathKey(listOf("f(x)", "αβ", "123")[page], spoken = listOf("Functions", "Symbols", "Numbers")[page], action = KeyAction.PAGE),
         MathKey("←", spoken = "Move left", action = KeyAction.LEFT),
         MathKey("space", " ", spoken = "Space", weight = 2f),
         MathKey("→", spoken = "Move right", action = KeyAction.RIGHT),
@@ -132,7 +141,7 @@ fun MathKeyboard(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, onLe
         Modifier.fillMaxWidth().background(jc.surface).padding(horizontal = 6.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        (if (functions) FUNCTIONS else NUMBERS).plusElement(bottom).forEach { row ->
+        listOf(NUMBERS, FUNCTIONS, SYMBOLS)[page].plusElement(bottom).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { key -> Key(key, Modifier.weight(key.weight)) { press(key) } }
             }
@@ -154,7 +163,7 @@ private fun Key(key: MathKey, modifier: Modifier, onPress: () -> Unit) {
         else -> jc.bg
     }
     Box(
-        modifier.height(46.dp).clip(RoundedCornerShape(8.dp)).background(face)
+        modifier.height(46.dp).clip(JShape.xs).background(face)
             .semantics {
                 role = Role.Button
                 contentDescription = key.spoken

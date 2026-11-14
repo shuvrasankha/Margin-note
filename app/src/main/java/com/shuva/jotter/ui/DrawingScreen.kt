@@ -1,5 +1,11 @@
 package com.shuva.jotter.ui
 
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -135,7 +141,7 @@ private fun DrawScope.drawStroke(st: PenStroke, ink: (Long) -> Color) {
     val color = when {
         st.erase -> Color.Transparent
         st.tool == PenTool.MARKER -> base.copy(alpha = 0.35f)
-        st.tool == PenTool.PENCIL -> base.copy(alpha = 0.5f)
+        st.tool == PenTool.PENCIL -> base.copy(alpha = 0.22f) // a soft wash under the graphite grain
         else -> base
     }
     if (p.size == 2) { drawCircle(color, st.width / 2, Offset(p[0], p[1]), blendMode = blend); return }
@@ -143,9 +149,27 @@ private fun DrawScope.drawStroke(st: PenStroke, ink: (Long) -> Color) {
     val cap = if (st.tool == PenTool.MARKER && !st.erase) StrokeCap.Square else StrokeCap.Round
     drawPath(path, color, style = Stroke(st.width, cap = cap, join = StrokeJoin.Round), blendMode = blend)
     if (st.tool == PenTool.PENCIL && !st.erase) {
-        val grain = PathEffect.dashPathEffect(floatArrayOf(st.width * 0.6f, st.width * 0.9f))
-        drawPath(path, base.copy(alpha = 0.55f), style = Stroke(st.width * 0.55f, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = grain))
+        // Graphite: the same line through a speckled grain, so it reads like pencil on paper rather than a dashed pen.
+        drawPath(
+            path, PENCIL_GRAIN, style = Stroke(st.width, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            colorFilter = ColorFilter.tint(base, BlendMode.SrcIn),
+        )
     }
+}
+
+/** A tile of uneven grey dots (mostly solid, some gaps), repeated along pencil strokes. */
+private val PENCIL_GRAIN: ShaderBrush by lazy {
+    val n = 32
+    val rnd = java.util.Random(7)
+    val px = IntArray(n * n) {
+        val a = when (val r = rnd.nextFloat()) { in 0f..0.18f -> 0f; else -> 0.45f + 0.5f * r }
+        ((a * 255).toInt() shl 24) or 0xFFFFFF
+    }
+    val bmp = android.graphics.Bitmap.createBitmap(px, n, n, android.graphics.Bitmap.Config.ARGB_8888)
+    // Half-size cells: fine grain at the usual zoom.
+    ShaderBrush(ImageShader(bmp.asImageBitmap(), TileMode.Repeated, TileMode.Repeated).also {
+        it.setLocalMatrix(android.graphics.Matrix().apply { setScale(0.5f, 0.5f) })
+    })
 }
 
 /**
@@ -331,9 +355,9 @@ fun inlineHeight(drawing: Drawing, width: Float): Float =
 
 /**
  * [paper] behind a note's text laid out as [layout]. Ruled and four-line paper rule each line of text where
- * it sits (titles and headings included); squared and graph paper cover the page, with squares as tall as a
- * [bodyLine] (px). Lines where [skip] is true (photos, drawings, tables, link cards) are left bare: they
- * carry their own background.
+ * it sits; squared and graph paper cover the page, with squares as tall as a
+ * [bodyLine] (px). Lines where [skip] is true (titles and headings, photos, drawings, tables, link cards)
+ * are left bare.
  */
 fun DrawScope.drawNotePaper(
     paper: Paper, layout: TextLayoutResult, bodyLine: Float, bodyFont: Float, fontOf: (Int) -> Float,
@@ -404,7 +428,7 @@ fun PaperSwatch(paper: Paper, size: androidx.compose.ui.unit.Dp = 28.dp) {
 @Composable
 fun PaperDialog(current: Paper, onPick: (Paper) -> Unit, onDismiss: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        Column(Modifier.clip(RoundedCornerShape(20.dp)).background(jc.bg).padding(vertical = 16.dp)) {
+        Column(Modifier.clip(JShape.lg).background(jc.bg).padding(vertical = 16.dp)) {
             Text("Paper", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
             Text("Shown behind this note's text.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
             Spacer(Modifier.height(8.dp))
@@ -416,7 +440,7 @@ fun PaperDialog(current: Paper, onPick: (Paper) -> Unit, onDismiss: () -> Unit) 
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     PaperSwatch(p)
-                    Text(p.label, Modifier.weight(1f), style = JType.row.copy(fontSize = 16.sp), color = if (on) jc.accent else jc.ink)
+                    Text(p.label, Modifier.weight(1f), style = JType.item, color = if (on) jc.accent else jc.ink)
                     if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
                 }
             }
@@ -474,8 +498,10 @@ private fun ToolPen(tool: Tool, ink: Color, picked: Boolean, onPick: () -> Unit)
         listOf(tool.body, tool.cone, tool.tip, tool.band, tool.loop).map { d -> if (d.isEmpty()) null else PathParser().parsePathString(d).toPath() }
     }
     val lift by animateDpAsState(if (picked) 0.dp else 18.dp, label = "lift")
-    val outline = jc.line
+    val outline = Color.Black.copy(alpha = 0.14f)
     val bodyFill = Color(0xFFF7F7F8)
+    // A round barrel: lit from the left, shading off to the right.
+    val barrel = remember { Brush.horizontalGradient(0f to Color.White, 0.45f to Color(0xFFF4F4F6), 1f to Color(0xFFDCDCE1), startX = 5f, endX = 25f) }
     val erase = tool.mode == Mode.ERASER
     Canvas(
         Modifier.size(44.dp, 84.dp).offset(y = lift).clickable(role = Role.RadioButton, onClick = onPick)
@@ -487,10 +513,11 @@ private fun ToolPen(tool: Tool, ink: Color, picked: Boolean, onPick: () -> Unit)
                 val (body, cone, tip, band) = paths
                 val loop = paths[4]
                 val line = Stroke(1f)
-                body?.let { drawPath(it, Color.White); drawPath(it, outline, style = line) }
-                cone?.let { drawPath(it, tool.coneColor ?: if (erase) Color(0xFFE6E6EA) else bodyFill); drawPath(it, outline, style = line) }
-                tip?.let { drawPath(it, if (erase) Color(0xFF8E8E93) else ink) }
-                band?.let { drawPath(it, if (erase) Color(0xFFD4D4D8) else ink) }
+                body?.let { drawPath(it, barrel); drawPath(it, outline, style = line) }
+                cone?.let { drawPath(it, tool.coneColor ?: if (erase) Color(0xFFE6E6EA) else bodyFill); drawPath(it, barrel, alpha = 0.5f, blendMode = BlendMode.Multiply); drawPath(it, outline, style = line) }
+                // Outlined too, so a white ink (black on a dark page) still shows against the white barrel.
+                tip?.let { drawPath(it, if (erase) Color(0xFF8E8E93) else ink); drawPath(it, outline, style = line) }
+                band?.let { drawPath(it, if (erase) Color(0xFFD4D4D8) else ink); drawPath(it, outline, style = line) }
                 loop?.let { drawPath(it, Color(0xFF5C5C63), style = Stroke(1.6f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 2.5f)))) }
             }
         }
@@ -568,7 +595,7 @@ fun DrawingScreen(
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(title, style = JType.rowTitle, color = jc.ink)
                     if (noteTitle.isNotBlank()) {
-                        Text("In \u201C$noteTitle\u201D", style = JType.small.copy(fontSize = 12.sp), color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("In \u201C$noteTitle\u201D", style = JType.caption, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 if (onText != null) IconAction(Ico.HANDWRITING, "Convert handwriting to text", {
@@ -781,7 +808,7 @@ fun DrawingScreen(
                 }
                 Spacer(Modifier.weight(1f))
                 TOOLS.forEach { t ->
-                    ToolPen(t, inkOf(ink), picked = mode == t.mode) { mode = t.mode; if (t.mode != Mode.LASSO) selection = emptySet() }
+                    ToolPen(t, Color(ink), picked = mode == t.mode) { mode = t.mode; if (t.mode != Mode.LASSO) selection = emptySet() }
                 }
                 Spacer(Modifier.weight(1f))
                 Column(Modifier.align(Alignment.CenterVertically)) {
@@ -800,7 +827,7 @@ fun DrawingScreen(
                         Modifier.size(34.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent)
                             .clickable(role = Role.RadioButton) { width = w }.semantics { contentDescription = "$name stroke"; selected = on },
                         contentAlignment = Alignment.Center,
-                    ) { Box(Modifier.size(dot).clip(CircleShape).background(jc.ink)) }
+                    ) { Box(Modifier.size(dot).clip(CircleShape).background(if (mode == Mode.ERASER || mode == Mode.LASSO) jc.ink else inkOf(ink))) }
                 }
                 Spacer(Modifier.weight(1f))
                 Box(Modifier.size(1.dp, 28.dp).background(jc.line))

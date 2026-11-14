@@ -77,8 +77,8 @@ fun tableHeight(t: NoteTable): Dp = TABLE_ROW * t.rowCount + TABLE_GAP * 2 + 1.d
 
 /** A table in the note, read-only: the first row is the header. Tapping it opens [onOpen] (the editor). */
 @Composable
-fun TableCard(table: NoteTable, onOpen: () -> Unit, onRemove: (() -> Unit)?, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(10.dp)
+fun TableCard(table: NoteTable, onOpen: () -> Unit, onRemove: (() -> Unit)?, modifier: Modifier = Modifier, onGraph: (() -> Unit)? = null) {
+    val shape = JShape.sm
     Box(modifier) {
         Column(
             Modifier.fillMaxWidth().clip(shape).border(1.dp, jc.line, shape).clickable(role = Role.Button, onClick = onOpen)
@@ -99,9 +99,15 @@ fun TableCard(table: NoteTable, onOpen: () -> Unit, onRemove: (() -> Unit)?, mod
                 }
             }
         }
+        if (onGraph != null) {
+            Box(
+                Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(JShape.sm).background(jc.bg.copy(alpha = 0.9f))
+                    .clickable(role = Role.Button, onClick = onGraph).padding(horizontal = 10.dp, vertical = 3.dp),
+            ) { Text("Graph", style = JType.small, color = jc.accent, fontWeight = FontWeight.SemiBold) }
+        }
         if (onRemove != null) {
             Box(
-                Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(RoundedCornerShape(12.dp)).background(jc.bg.copy(alpha = 0.9f))
+                Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(JShape.sm).background(jc.bg.copy(alpha = 0.9f))
                     .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = "Remove table" },
                 contentAlignment = Alignment.Center,
             ) { JIcon(Ico.CLOSE, jc.muted, size = 12.dp, stroke = 2.4f) }
@@ -145,7 +151,7 @@ fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> U
                 val page = maxWidth - 32.dp
                 val cell = maxOf(page / table.columnCount, MIN_CELL)
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).horizontalScroll(rememberScrollState()).padding(16.dp)) {
-                    val shape = RoundedCornerShape(10.dp)
+                    val shape = JShape.sm
                     Column(Modifier.width(cell * table.columnCount).clip(shape).border(1.dp, jc.line, shape)) {
                         table.rows.forEachIndexed { r, cells ->
                             if (r > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
@@ -206,7 +212,7 @@ fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> U
 private fun RowScope.TableTool(icon: String, label: String, enabled: Boolean, onClick: () -> Unit) {
     val color = if (enabled) jc.accent else jc.muted.copy(alpha = 0.5f)
     Column(
-        Modifier.weight(1f).height(56.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        Modifier.weight(1f).height(56.dp).clip(JShape.sm).clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
     ) {
         JIcon(icon, color, size = 20.dp)

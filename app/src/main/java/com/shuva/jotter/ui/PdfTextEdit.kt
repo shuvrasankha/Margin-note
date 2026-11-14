@@ -310,7 +310,7 @@ private fun DraftView(d: Draft, scale: Float, editing: Boolean, onText: (String)
 @Composable
 private fun RowScope.EditTool(icon: String, label: String, on: Boolean = false, danger: Boolean = false, onClick: () -> Unit) {
     Column(
-        Modifier.widthIn(min = 56.dp).clip(RoundedCornerShape(10.dp)).background(if (on) jc.accent.copy(alpha = 0.14f) else Color.Transparent)
+        Modifier.widthIn(min = 56.dp).clip(JShape.sm).background(if (on) jc.accent.copy(alpha = 0.14f) else Color.Transparent)
             .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

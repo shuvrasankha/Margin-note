@@ -98,6 +98,14 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
+    /** Like [sendIntent], for several files at once (one file sends the same way). */
+    fun sendIntent(files: List<File>, mime: String, subject: String): Intent {
+        if (files.size == 1) return sendIntent(files[0], mime, subject)
+        val uris = ArrayList(files.map { FileProvider.getUriForFile(context, context.packageName + ".files", it) })
+        return Intent(Intent.ACTION_SEND_MULTIPLE).setType(mime).putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            .putExtra(Intent.EXTRA_SUBJECT, subject).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
     /** An intent that opens the attachment in another app, read-only. */
     fun viewIntent(a: Attachment): Intent {
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file(a))

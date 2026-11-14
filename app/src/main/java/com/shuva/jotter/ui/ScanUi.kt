@@ -45,7 +45,7 @@ fun ScanDialog(state: ScanState, onInsert: (String) -> Unit, onDismiss: () -> Un
     val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.padding(horizontal = 16.dp).widthIn(max = 480.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(jc.bg)
+            Modifier.padding(horizontal = 16.dp).widthIn(max = 480.dp).fillMaxWidth().clip(JShape.lg).background(jc.bg)
                 .padding(top = 18.dp, bottom = 8.dp),
         ) {
             Text(
@@ -65,7 +65,7 @@ fun ScanDialog(state: ScanState, onInsert: (String) -> Unit, onDismiss: () -> Un
                     Text("Check it and fix any mistakes before adding it.", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.small, color = jc.muted)
                     Box(
                         Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().heightIn(min = 120.dp, max = 360.dp)
-                            .clip(RoundedCornerShape(12.dp)).border(1.dp, jc.line, RoundedCornerShape(12.dp)).background(jc.surface)
+                            .clip(JShape.sm).border(1.dp, jc.line, JShape.sm).background(jc.surface)
                             .verticalScroll(rememberScrollState()).padding(12.dp),
                     ) {
                         BasicTextField(

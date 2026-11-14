@@ -97,6 +97,17 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         _welcomeDone.value = true
     }
 
+    /** Bring your own AI key: the provider, model and encrypted key (see [AiKeys]). */
+    private val _ai = MutableStateFlow(
+        AiConfig(aiProvider(prefs.getString(K_AI_PROVIDER, null)).id, prefs.getString(K_AI_MODEL, null).orEmpty(), prefs.getString(K_AI_KEY, null), prefs.getString(K_AI_MASK, null)),
+    )
+    val ai: StateFlow<AiConfig> = _ai
+
+    fun setAi(c: AiConfig) {
+        prefs.edit().putString(K_AI_PROVIDER, c.provider).putString(K_AI_MODEL, c.model).putString(K_AI_KEY, c.key).putString(K_AI_MASK, c.mask).apply()
+        _ai.value = c
+    }
+
     private inline fun <reified T : Enum<T>> enumOr(name: String?, fallback: T): T =
         runCatching { enumValueOf<T>(name!!) }.getOrDefault(fallback)
 
@@ -113,6 +124,10 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         const val K_DEFAULT_ASC = "defaultSortAscending"
         const val K_COLLAPSED = "collapsedPinned"
         const val K_KEEP_DELETED = "keepDeletedDays"
+        const val K_AI_PROVIDER = "aiProvider"
+        const val K_AI_MODEL = "aiModel"
+        const val K_AI_KEY = "aiKey"
+        const val K_AI_MASK = "aiKeyMask"
     }
 }
 

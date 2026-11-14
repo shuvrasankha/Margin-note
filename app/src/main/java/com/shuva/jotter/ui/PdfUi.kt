@@ -116,7 +116,7 @@ fun PdfCard(a: Attachment, file: File, onOpen: () -> Unit, onRemove: (() -> Unit
         if (info?.locked == false) value = Pdf.render(file, 0, 220)?.asImageBitmap()
     }
     Box(
-        modifier.clip(RoundedCornerShape(12.dp)).background(jc.surface).clickable(role = Role.Button, onClick = onOpen)
+        modifier.clip(JShape.sm).background(jc.surface).clickable(role = Role.Button, onClick = onOpen)
             .semantics { contentDescription = a.name + ", PDF" },
     ) {
         Row(Modifier.fillMaxSize().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -347,11 +347,11 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
 @Composable
 private fun PdfMenu(open: Boolean, onDismiss: () -> Unit, canEdit: Boolean, items: List<Triple<String, String, () -> Unit>>) {
     androidx.compose.material3.DropdownMenu(
-        expanded = open, onDismissRequest = onDismiss, modifier = Modifier.width(250.dp), shape = RoundedCornerShape(14.dp), containerColor = jc.bg,
+        expanded = open, onDismissRequest = onDismiss, modifier = Modifier.width(250.dp), shape = JShape.md, containerColor = jc.bg,
     ) {
         items.forEach { (label, icon, onClick) ->
             androidx.compose.material3.DropdownMenuItem(
-                text = { Text(label, style = JType.row.copy(fontSize = 16.sp), color = jc.ink) },
+                text = { Text(label, style = JType.item, color = jc.ink) },
                 leadingIcon = { JIcon(icon, jc.ink, size = 20.dp) },
                 onClick = { onDismiss(); onClick() },
             )
@@ -423,8 +423,8 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
                     val thumb by produceState<ImageBitmap?>(null, p.index) { value = Pdf.render(file, p.index, 260)?.asImageBitmap() }
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(
-                            Modifier.fillMaxWidth().aspectRatio(0.8f).clip(RoundedCornerShape(8.dp))
-                                .border(if (on) 3.dp else 1.dp, if (on) jc.accent else jc.line, RoundedCornerShape(8.dp))
+                            Modifier.fillMaxWidth().aspectRatio(0.8f).clip(JShape.xs)
+                                .border(if (on) 3.dp else 1.dp, if (on) jc.accent else jc.line, JShape.xs)
                                 .background(if (on) jc.accent.copy(alpha = 0.10f) else Color.Transparent)
                                 .clickable(role = Role.Checkbox) { if (on) picked.remove(pos) else picked.add(pos) }
                                 .semantics { contentDescription = "Page ${p.index + 1}"; selected = on }.padding(8.dp),
@@ -460,7 +460,7 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
 private fun RowScope.PageTool(icon: String, label: String, enabled: Boolean, danger: Boolean = false, onClick: () -> Unit) {
     val color = when { !enabled -> jc.muted.copy(alpha = 0.45f); danger -> jc.danger; else -> jc.accent }
     Column(
-        Modifier.weight(1f).height(58.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        Modifier.weight(1f).height(58.dp).clip(JShape.sm).clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
     ) {
         JIcon(icon, color, size = 20.dp, stroke = 1.9f)
@@ -509,13 +509,13 @@ private fun SplitDialog(count: Int, onDismiss: () -> Unit, onSplit: (List<Pair<S
 @Composable
 private fun ChoiceLine(label: String, on: Boolean, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(role = Role.RadioButton, onClick = onClick).padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().clip(JShape.xs).clickable(role = Role.RadioButton, onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(Modifier.size(20.dp).clip(CircleShape).border(2.dp, if (on) jc.accent else jc.muted, CircleShape), contentAlignment = Alignment.Center) {
             if (on) Box(Modifier.size(10.dp).clip(CircleShape).background(jc.accent))
         }
-        Text(label, style = JType.row.copy(fontSize = 16.sp), color = jc.ink)
+        Text(label, style = JType.item, color = jc.ink)
     }
 }
 
@@ -543,19 +543,19 @@ private fun MergeDialog(vm: EditorViewModel, others: List<Attachment>, onDismiss
                 Spacer(Modifier.height(4.dp))
                 others.forEach { o ->
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onMerge { o to vm.fileOf(o) } }.padding(vertical = 10.dp),
+                        Modifier.fillMaxWidth().clip(JShape.xs).clickable { onMerge { o to vm.fileOf(o) } }.padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         JIcon(ICON_PDF, jc.accent, size = 22.dp)
-                        Text(o.name, style = JType.row.copy(fontSize = 16.sp), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(o.name, style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { pick.launch(arrayOf(PDF_MIME)) }.padding(vertical = 10.dp),
+                    Modifier.fillMaxWidth().clip(JShape.xs).clickable { pick.launch(arrayOf(PDF_MIME)) }.padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     JIcon(Ico.FILE, jc.accent, size = 22.dp)
-                    Text("Choose a PDF on this phone…", style = JType.row.copy(fontSize = 16.sp), color = jc.accent)
+                    Text("Choose a PDF on this phone…", style = JType.item, color = jc.accent)
                 }
             }
         },

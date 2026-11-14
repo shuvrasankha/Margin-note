@@ -94,7 +94,7 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.padding(horizontal = 16.dp).widthIn(max = 480.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(jc.bg)
+            Modifier.padding(horizontal = 16.dp).widthIn(max = 480.dp).fillMaxWidth().clip(JShape.lg).background(jc.bg)
                 .padding(top = 18.dp, bottom = 8.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -127,7 +127,7 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
                 is InkState.Found -> {
                     Box(
                         Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().heightIn(min = 96.dp, max = 320.dp)
-                            .clip(RoundedCornerShape(12.dp)).border(1.dp, jc.line, RoundedCornerShape(12.dp)).background(jc.surface)
+                            .clip(JShape.sm).border(1.dp, jc.line, JShape.sm).background(jc.surface)
                             .verticalScroll(rememberScrollState()).padding(12.dp),
                     ) {
                         BasicTextField(

@@ -1,6 +1,15 @@
 package com.shuva.jotter.ui
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -99,6 +108,7 @@ object Ico {
     const val SORT = "M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3"
     const val CALENDAR = "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"
     const val CALENDAR_PICK = "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M12 13v5M9.5 15.5h5"
+    const val EYE = "M2.5 12C3.5 10 7 6 12 6s8.5 4 9.5 6c-1 2-4.5 6-9.5 6s-8.5-4-9.5-6zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
     const val EYE_OFF = "M3 3l18 18M10.6 6.1A9.7 9.7 0 0 1 12 6c5 0 8.5 4 9.5 6a13 13 0 0 1-2.6 3.3M6.6 7.6C4.5 8.9 3.1 10.7 2.5 12c1 2 4.5 6 9.5 6 1.6 0 3-.4 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2"
     const val ARCHIVE = "M4 4h16v5H4zM5 9v11h14V9M10 13h4"
     val KEY = circle(8f, 12f, 4f) + "M12 12h9M17 12v3M20 12v2"
@@ -133,6 +143,8 @@ object Ico {
     const val CLOUD_OFF = "M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18zM4 4l16 16"
     const val MARKDOWN = "M3 6h18v12H3zM6 15V9l3 3 3-3v6M17 9v6M15 13l2 2 2-2"
     const val TEXT = "M5 6h14M12 6v13M9 19h6"
+    /** A large four-point sparkle with a small one: AI. */
+    const val SPARKLE = "M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"
     const val PRINT = "M7 9V4h10v5M7 17H4V9h16v8h-3M7 14h10v6H7z"
     const val CAMERA = "M3 8h4l2-3h6l2 3h4v11H3zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"
     val GLOBE = circle(12f, 12f, 9f) + "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"
@@ -155,12 +167,26 @@ fun JIcon(d: String, color: Color, modifier: Modifier = Modifier, size: Dp = 22.
     }
 }
 
+/** Shrinks a little while pressed, then springs back. */
+fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.97f) = composed {
+    val down by source.collectIsPressedAsState()
+    val k by animateFloatAsState(if (down) pressed else 1f, if (down) JMotion.quick() else JMotion.bounce(), label = "press")
+    graphicsLayer { scaleX = k; scaleY = k }
+}
+
+/** [onClick] with a light tap felt on press (the phone's touch-feedback setting still applies). */
+@Composable
+fun tapped(onClick: () -> Unit): () -> Unit {
+    val view = LocalView.current
+    return { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onClick() }
+}
+
 /** A 44dp tap target holding an icon. */
 @Composable
 fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.accent, enabled: Boolean = true, size: Dp = 22.dp, fill: Boolean = false) {
     Box(
         Modifier.size(44.dp).clip(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { JIcon(d, if (enabled) color else jc.muted.copy(alpha = 0.4f), size = size, fill = fill) }
@@ -170,8 +196,8 @@ fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.
 @Composable
 fun TextAction(text: String, onClick: () -> Unit, color: Color = jc.accent, bold: Boolean = false, enabled: Boolean = true) {
     Box(
-        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 8.dp),
+        Modifier.heightIn(min = 44.dp).clip(JShape.xs)
+            .clickable(enabled = enabled, role = Role.Button, onClick = tapped(onClick)).padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -193,7 +219,7 @@ fun NavBar(
     ) {
         if (backLabel != null) {
             Row(
-                Modifier.heightIn(min = 44.dp).widthIn(max = 220.dp).clip(RoundedCornerShape(8.dp))
+                Modifier.heightIn(min = 44.dp).widthIn(max = 220.dp).clip(JShape.xs)
                     .clickable(role = Role.Button, onClick = onBack).padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -224,7 +250,7 @@ fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, 
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp)).background(jc.surface).padding(horizontal = 12.dp),
+        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).background(jc.surface).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -263,9 +289,10 @@ fun BottomBar(modifier: Modifier = Modifier, content: @Composable RowScope.() ->
 /** The big solid button (ink on page colour). */
 @Composable
 fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val press = remember { MutableInteractionSource() }
     Box(
-        modifier.height(52.dp).clip(RoundedCornerShape(14.dp)).background(if (enabled) jc.ink else jc.switchOff)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 24.dp),
+        modifier.height(52.dp).pressScale(press).clip(JShape.md).background(if (enabled) jc.ink else jc.switchOff)
+            .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick)).padding(horizontal = 24.dp),
         contentAlignment = Alignment.Center,
     ) { Text(text, style = JType.rowTitle, color = if (enabled) jc.bg else jc.muted) }
 }
@@ -296,15 +323,18 @@ fun MarginMark(size: Dp, modifier: Modifier = Modifier) {
 /** One choice in a row of pills; the selected one is filled. */
 @Composable
 fun Pill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val fill by animateColorAsState(if (selected) jc.ink else jc.ink.copy(alpha = 0f), JMotion.standard(), label = "pillFill")
+    val edge by animateColorAsState(if (selected) jc.ink else jc.line, JMotion.standard(), label = "pillEdge")
+    val text by animateColorAsState(if (selected) jc.bg else jc.ink, JMotion.standard(), label = "pillText")
     Box(
-        modifier.height(32.dp).clip(RoundedCornerShape(16.dp))
-            .background(if (selected) jc.ink else Color.Transparent)
-            .border(1.dp, if (selected) jc.ink else jc.line, RoundedCornerShape(16.dp))
-            .clickable(role = Role.RadioButton, onClick = onClick).padding(horizontal = 14.dp),
+        modifier.height(32.dp).clip(JShape.pill)
+            .background(fill)
+            .border(1.dp, edge, JShape.pill)
+            .clickable(role = Role.RadioButton, onClick = tapped(onClick)).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            label, style = JType.small.copy(fontSize = 14.sp), color = if (selected) jc.bg else jc.ink,
+            label, style = JType.label, color = text,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1,
         )
     }
@@ -314,8 +344,8 @@ fun Pill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifi
 @Composable
 fun Chip(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, trailing: String? = null, onLongClick: (() -> Unit)? = null) {
     Row(
-        modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).border(1.dp, jc.line, RoundedCornerShape(18.dp))
-            .combinedClickableCompat(onClick, onLongClick).padding(horizontal = 14.dp),
+        modifier.height(36.dp).clip(JShape.pill).border(1.dp, jc.line, JShape.pill)
+            .combinedClickableCompat(tapped(onClick), onLongClick).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -332,19 +362,20 @@ private fun Modifier.combinedClickableCompat(onClick: () -> Unit, onLongClick: (
 /** Round checkbox: filled accent with a tick when checked, an empty ring when not. */
 @Composable
 fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    if (checked) {
-        Box(modifier.size(size).clip(CircleShape).background(jc.accent), contentAlignment = Alignment.Center) {
-            JIcon(Ico.CHECK, jc.bg, size = size * 0.6f, stroke = 3.2f)
-        }
-    } else {
-        Box(modifier.size(size).border(1.5.dp, jc.muted, CircleShape))
+    val k by animateFloatAsState(if (checked) 1f else 0f, if (checked) JMotion.bounce() else JMotion.quick(), label = "check")
+    Box(modifier.size(size).border(1.5.dp, jc.muted.copy(alpha = 1f - k.coerceIn(0f, 1f)), CircleShape), contentAlignment = Alignment.Center) {
+        if (k > 0.01f) Box(
+            Modifier.size(size).graphicsLayer { scaleX = k; scaleY = k }.clip(CircleShape).background(jc.accent),
+            contentAlignment = Alignment.Center,
+        ) { JIcon(Ico.CHECK, jc.bg, size = size * 0.6f, stroke = 3.2f) }
     }
 }
 
 @Composable
 fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    val view = LocalView.current
     Switch(
-        checked = checked, onCheckedChange = onCheckedChange, enabled = enabled,
+        checked = checked, onCheckedChange = { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, enabled = enabled,
         colors = SwitchDefaults.colors(
             checkedTrackColor = jc.ink, checkedThumbColor = jc.bg, checkedBorderColor = jc.ink,
             uncheckedTrackColor = jc.switchOff, uncheckedThumbColor = Color.White, uncheckedBorderColor = jc.switchOff,
@@ -355,13 +386,13 @@ fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boole
 /** A rounded group on a grouped page (Settings). Rows inside are separated by inset hairlines. */
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(jc.card), content = content)
+    Column(modifier.fillMaxWidth().clip(JShape.md).background(jc.card), content = content)
 }
 
 /** A row's icon on a soft tinted square, as in Settings. */
 @Composable
 fun IconTile(icon: String, color: Color = jc.accent) {
-    Box(Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(30.dp).clip(JShape.xs).background(color.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
         JIcon(icon, color, size = 18.dp, stroke = 2f)
     }
 }
@@ -392,7 +423,7 @@ fun CardRow(
     ) {
         icon?.let { IconTile(it, if (labelColor == jc.danger) jc.danger else jc.accent) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(label, style = JType.row.copy(fontSize = 16.sp), color = labelColor)
+            Text(label, style = JType.item, color = labelColor)
             sub?.let { Text(it, style = JType.small, color = jc.muted) }
         }
         trailing()
@@ -417,7 +448,7 @@ fun FolderSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = jc.bg, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        containerColor = jc.bg, shape = JShape.sheet,
     ) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Box(Modifier.fillMaxWidth().height(52.dp)) {
@@ -426,7 +457,7 @@ fun FolderSheet(
             }
             if (subject != null) {
                 Column(
-                    Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp).clip(RoundedCornerShape(12.dp)).background(jc.surface).padding(14.dp),
+                    Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp).clip(JShape.sm).background(jc.surface).padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(subject, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -464,7 +495,7 @@ fun FolderSheet(
 @Composable
 fun GlyphAction(text: String, label: String, onClick: () -> Unit, style: TextStyle, color: Color = jc.accent, enabled: Boolean = true) {
     Box(
-        Modifier.size(44.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        Modifier.size(44.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { Text(text, style = style, color = if (enabled) color else jc.muted.copy(alpha = 0.4f)) }

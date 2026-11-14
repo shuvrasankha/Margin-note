@@ -93,6 +93,10 @@ data class Block(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val indent: Int = 0,
     /** A table shown as this whole line; [text] is then [ATTACHMENT_CHAR]. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val table: NoteTable? = null,
+    /** Written by AI: shown in a card labelled "AI". Older versions show plain text. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val ai: Boolean = false,
+    /** On the first line of an AI card: the card is folded down to its badge. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val folded: Boolean = false,
 )
 
 /** True for a line that is one card (attachment or table) rather than text. */
@@ -176,9 +180,19 @@ data class NoteEntity(
      * kind added later reads as plain here. Older versions ignore it when syncing.
      */
     val paper: String? = null,
+    /**
+     * The typeface of the note's text (schema v8): a [NoteFont] name, or null for the app's own. A string, so a
+     * font added later reads as the default here. Older versions ignore it when syncing.
+     */
+    val font: String? = null,
 )
 
 val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN
+
+/** Typefaces a note can be written in; all built into the phone, so nothing to download. */
+enum class NoteFont(val label: String) { DEFAULT("Default"), SANS("Phone font"), SERIF("Serif"), MONO("Mono"), HANDWRITING("Handwriting") }
+
+val NoteEntity.fontStyle: NoteFont get() = font?.let { f -> NoteFont.entries.firstOrNull { it.name == f } } ?: NoteFont.DEFAULT
 
 val NoteEntity.isLocked get() = cipher != null
 

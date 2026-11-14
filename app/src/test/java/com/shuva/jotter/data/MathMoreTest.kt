@@ -2,6 +2,7 @@ package com.shuva.jotter.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MathMoreTest {
@@ -17,8 +18,8 @@ class MathMoreTest {
         assertEquals("x = 1, y = 2, z = 3", solved("x + y + z = 6\n2x - y + z = 3\nx + 2y - z = 2"))
         assertEquals("(x, y) = (3, 4) or (4, 3)", solved("x^2 + y^2 = 25\nx + y = 7"))
         assertEquals("x = 1/3, y = 2/3", solved("x + y = 1, 2x - y = 0"))
-        // "x + y = 10" on its own line names nothing: y isn't 10.
-        assertNull(suggest("x + y = 10"))
+        // "x + y = 10" on its own line names nothing (y isn't 10); it's a line to draw.
+        assertTrue(suggest("x + y = 10") is MathSuggestion.Graph)
         assertNull(suggest("Let a=10 and b =2"))
     }
 

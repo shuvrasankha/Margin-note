@@ -68,10 +68,14 @@ private val CURVES = listOf(Color(0xFFE8890C), Color(0xFF3B82F6), Color(0xFF22A0
  * it's shown, as a picture for the note.
  */
 @Composable
-fun GraphDialog(plots: List<Plot>, onDismiss: () -> Unit, onAdd: ((ImageBitmap) -> Unit)? = null) {
+fun GraphDialog(
+    plots: List<Plot>, onDismiss: () -> Unit, onAdd: ((ImageBitmap) -> Unit)? = null,
+    /** Where the graph opens: the maths point at the middle, and how many units fit across for a view this wide for its height. */
+    centre: Offset = Offset.Zero, unitsAcross: (aspect: Float) -> Float = { 20f },
+) {
     // The view: the maths point at the middle of the canvas, and how many pixels one unit is.
-    var cx by remember { mutableFloatStateOf(0f) }
-    var cy by remember { mutableFloatStateOf(0f) }
+    var cx by remember { mutableFloatStateOf(centre.x) }
+    var cy by remember { mutableFloatStateOf(centre.y) }
     var scale by remember { mutableStateOf<Float?>(null) } // set from the canvas width on first draw
     val measurer = rememberTextMeasurer()
     val gridColor = jc.line
@@ -83,7 +87,7 @@ fun GraphDialog(plots: List<Plot>, onDismiss: () -> Unit, onAdd: ((ImageBitmap) 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(bg).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Reset", { cx = 0f; cy = 0f; scale = null })
+                TextAction("Reset", { cx = centre.x; cy = centre.y; scale = null })
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text("Graph", style = JType.rowTitle, color = jc.ink) }
                 if (onAdd != null) TextAction("Add to note", {
                     val s = scale ?: return@TextAction
@@ -116,7 +120,7 @@ fun GraphDialog(plots: List<Plot>, onDismiss: () -> Unit, onAdd: ((ImageBitmap) 
                         })
                     },
             ) {
-                val s = scale ?: (size.width / 20f).also { scale = it }
+                val s = scale ?: (size.width / unitsAcross(size.width / size.height)).also { scale = it }
                 drawGrid(cx, cy, s, s, gridColor, axisColor, measurer, labelStyle)
                 plots.forEachIndexed { i, p -> drawCurve(p, cx, cy, s, s, CURVES[i % CURVES.size]) }
             }
@@ -227,17 +231,37 @@ private fun DrawScope.drawGrid(
 
 /** The curve, sampled every 2px; it breaks where the function isn't defined or shoots off (tan's asymptotes). */
 private fun DrawScope.drawCurve(p: Plot, cx: Float, cy: Float, sx: Float, sy: Float, color: Color) {
+    drawCurve(p.f, cx, cy, sx, sy, color)
+    p.other?.let { drawCurve(it, cx, cy, sx, sy, color) }
+}
+
+private fun DrawScope.drawCurve(f: (Double) -> Double, cx: Float, cy: Float, sx: Float, sy: Float, color: Color) {
     val w = size.width
     val h = size.height
     val path = Path()
     var drawing = false
     var lastY = 0f
     var px = 0f
+    var lastFinite = false
+    fun xAt(px: Float) = (cx + (px - w / 2) / sx).toDouble()
+    fun pyAt(y: Double) = (h / 2 - (y - cy) * sy).toFloat()
+    // Where the curve starts or stops existing between two samples (√x at 0, a circle's sides): the last
+    // point on the curve's side, found by halving, so the curve reaches its end instead of stopping short.
+    fun edge(from: Float, to: Float): Offset? {
+        var inside = from; var outside = to
+        repeat(16) { val mid = (inside + outside) / 2; if (f(xAt(mid)).isFinite()) inside = mid else outside = mid }
+        val py = pyAt(f(xAt(inside)))
+        return if (py in -h * 4..h * 5) Offset(inside, py) else null
+    }
     while (px <= w) {
-        val x = cx + (px - w / 2) / sx
-        val y = p.f(x.toDouble())
-        val py = (h / 2 - (y - cy) * sy).toFloat()
+        val y = f(xAt(px))
+        val py = pyAt(y)
         val ok = y.isFinite() && py in -h * 4..h * 5
+        if (px > 0f && y.isFinite() != lastFinite) {
+            if (lastFinite) { if (drawing) edge(px - 2f, px)?.let { path.lineTo(it.x, it.y) } }
+            else edge(px, px - 2f)?.let { path.moveTo(it.x, it.y); drawing = true; lastY = it.y }
+        }
+        lastFinite = y.isFinite()
         when {
             !ok -> drawing = false
             drawing && abs(py - lastY) > h -> path.moveTo(px, py) // a jump across an asymptote

@@ -181,4 +181,17 @@ class EditorDocTableTest {
         val after = doc.applyEdit(typed, start)
         org.junit.Assert.assertEquals(true, after.lines.none { it.table != null })
     }
+
+    @Test
+    fun `an AI card survives a round trip, carries over on Enter and ends on Enter on an empty line`() {
+        val d = EditorDoc.fromBlocks(listOf(Block(id = "t", type = BlockType.TITLE, text = "T"), Block(id = "a", text = "answer", ai = true)))
+        assertEquals(listOf(false, true), d.toBlocks().map { it.ai })
+        val entered = d.applyEdit(d.text + "\n", d.text.length + 1)
+        assertEquals(listOf(false, true, true), entered.lines.map { it.ai })
+        val ended = entered.applyEdit(entered.text + "\n", entered.text.length + 1)
+        assertEquals(listOf(false, true, false), ended.lines.map { it.ai })
+        assertEquals(false, EditorDoc.fromBlocks(listOf(Block(type = BlockType.TITLE, text = "T", ai = true))).lines[0].ai)
+        val folded = EditorDoc.fromBlocks(listOf(Block(type = BlockType.TITLE, text = "T"), Block(ai = true, folded = true), Block(text = "x", ai = true)))
+        assertEquals(listOf(false, true, false), folded.toBlocks().map { it.folded })
+    }
 }

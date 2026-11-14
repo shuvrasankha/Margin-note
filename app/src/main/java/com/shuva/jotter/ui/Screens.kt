@@ -14,6 +14,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.DialogProperties
@@ -24,9 +28,24 @@ import com.shuva.jotter.data.MathSuggestion
 import com.shuva.jotter.data.Plot
 import com.shuva.jotter.data.mathSuggestionAt
 import com.shuva.jotter.data.plotsIn
+import com.shuva.jotter.data.TableGraph
+import com.shuva.jotter.data.tableGraph
 import com.shuva.jotter.data.effectiveParents
 import com.shuva.jotter.data.reorderGroup
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -179,10 +198,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -216,8 +239,11 @@ import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import com.shuva.jotter.data.BlockType
 import com.shuva.jotter.data.DEFAULT_FOLDER_ID
+import com.shuva.jotter.data.safeFileName
 import com.shuva.jotter.data.NoteEntity
 import com.shuva.jotter.data.Paper
+import com.shuva.jotter.data.NoteFont
+import com.shuva.jotter.data.plainAnswer
 import com.shuva.jotter.data.NoteSort
 import com.shuva.jotter.data.SmartFilter
 import com.shuva.jotter.data.TagCount
@@ -254,12 +280,18 @@ private fun fullTime(context: android.content.Context, time: Long): String {
 
 internal fun plural(n: Int, one: String, many: String = one + "s") = "$n " + if (n == 1) one else many
 
+/** A conical flask. */
+private const val ICON_FLASK = "M9 3h6M10 3v6l-5.5 9.5A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-2.5L14 9V3M7.5 15h9"
+
 private const val ICON_CALL = "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"
 private const val ICON_MESSAGE = "M4 5h16v11H9l-5 4z"
 private const val ICON_CHAT = "M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3zM9 9.5c0 3 2.5 5.5 5.5 5.5"
 private const val ICON_EDIT = "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"
 
 /** What to do with a phone number in a note: call, message, WhatsApp, copy, or (while editable) edit it. */
+/** Space between a note's title and its first line, in sp. */
+private const val TITLE_GAP = 12f
+
 @Composable
 private fun PhoneActions(number: String, onEdit: (() -> Unit)?, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -288,7 +320,7 @@ private fun PhoneActions(number: String, onEdit: (() -> Unit)?, onDismiss: () ->
             Column {
                 actions.forEach { (icon, label, action) ->
                     Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button, onClick = action)
+                        Modifier.fillMaxWidth().clip(JShape.sm).clickable(role = Role.Button, onClick = action)
                             .padding(horizontal = 4.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
@@ -398,8 +430,8 @@ private fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Unit
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Column(Modifier.fillMaxWidth().padding(top = 72.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             JIcon(Ico.SEARCH, jc.muted, size = 48.dp, stroke = 1.3f)
-            Text("No notes match “$query”", Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold), color = jc.ink, textAlign = TextAlign.Center)
-            Text("Searched titles, text, checklists and attachments.", style = JType.secondary.copy(fontSize = 15.sp, lineHeight = 21.sp), color = jc.muted, textAlign = TextAlign.Center)
+            Text("No notes match “$query”", Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading, color = jc.ink, textAlign = TextAlign.Center)
+            Text("Searched titles, text, checklists and attachments.", style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
         }
         val word = query.split(' ').firstOrNull { it.isNotBlank() }?.takeIf { it != query }
         val tries = listOfNotNull(
@@ -415,7 +447,7 @@ private fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Unit
                 ) {
                     JIcon(t.third, jc.accent, size = 18.dp, stroke = 1.8f)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(t.first, style = JType.row.copy(fontSize = 16.sp), color = jc.ink)
+                        Text(t.first, style = JType.item, color = jc.ink)
                         Text(t.second, style = JType.small, color = jc.muted)
                     }
                 }
@@ -423,12 +455,12 @@ private fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Unit
             }
         }
         Row(
-            Modifier.padding(top = 20.dp, bottom = 24.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(12.dp))
-                .border(1.dp, jc.line, RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onNew),
+            Modifier.padding(top = 20.dp, bottom = 24.dp).fillMaxWidth().height(48.dp).clip(JShape.sm)
+                .border(1.dp, jc.line, JShape.sm).clickable(role = Role.Button, onClick = onNew),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             JIcon(Ico.COMPOSE, jc.ink, size = 18.dp, stroke = 2f)
-            Text("New note “$query”", style = JType.row.copy(fontSize = 16.sp), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("New note “$query”", style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -439,7 +471,7 @@ private fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Unit
 @Composable
 fun FoldersScreen(
     vm: FoldersViewModel, onOpen: (String) -> Unit, onSearch: () -> Unit, onNew: () -> Unit, onEdit: () -> Unit, onSettings: () -> Unit,
-    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onBack: () -> Unit,
+    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onHabits: () -> Unit, onBack: () -> Unit,
 ) {
     val syncBanner by vm.syncBanner.collectAsState()
     val rows by vm.rows.collectAsState()
@@ -473,7 +505,7 @@ fun FoldersScreen(
             item {
                 // Opens All Notes with its search field focused.
                 Row(
-                    Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp).fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp).fillMaxWidth().height(40.dp).clip(JShape.sm)
                         .background(jc.surface).clickable(role = Role.Button, onClick = onSearch).semantics { contentDescription = "Search" }
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -505,10 +537,13 @@ fun FoldersScreen(
             item {
                 val notes by vm.liveNotes.collectAsState()
                 FolderListRow(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onClick = onJournal)
+                FolderListRow(ICON_HABITS, "Habits", remember(notes) { notes.count(::isHabit) }, onClick = onHabits)
             }
             item { SectionLabel("Folders") }
             items(regular, key = { it.folder.id }) { row ->
-                FolderListRow(Ico.FOLDER, row.folder.name, row.count, row.depth, onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row })
+                Column(Modifier.animateItem()) {
+                    FolderListRow(Ico.FOLDER, row.folder.name, row.count, row.depth, onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row })
+                }
             }
             if (smart.isNotEmpty()) {
                 item { SectionLabel("Smart folders") }
@@ -655,7 +690,7 @@ private fun NewFolderDialog(
         title = { Text("New Folder") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Folder name") }, shape = RoundedCornerShape(12.dp))
+                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Folder name") }, shape = JShape.sm)
                 if (allowSmart) Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Smart folder", style = JType.row, color = jc.ink)
@@ -867,7 +902,7 @@ private fun SmartFolderDialog(
         title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }, shape = RoundedCornerShape(12.dp))
+                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }, shape = JShape.sm)
                 Text("Shows notes that match all of these.", style = JType.small, color = jc.muted)
                 Text("Tags", Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
                 if (tags.isEmpty()) {
@@ -915,7 +950,7 @@ private fun SmartFolderDialog(
 }
 
 @Composable
-private fun NameDialog(
+internal fun NameDialog(
     title: String,
     initial: String,
     onDismiss: () -> Unit,
@@ -927,7 +962,7 @@ private fun NameDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(label) }, shape = RoundedCornerShape(12.dp)) },
+        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(label) }, shape = JShape.sm) },
         confirmButton = { TextButton(onClick = { onSave(name) }, enabled = isValid(name)) { Text("Save", fontWeight = FontWeight.SemiBold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -993,7 +1028,7 @@ fun NoteListScreen(
         snackbarHost = {
             SnackbarHost(snackbar) { data ->
                 Snackbar(
-                    data, shape = RoundedCornerShape(14.dp), containerColor = jc.ink, contentColor = jc.bg, actionColor = jc.bg,
+                    data, shape = JShape.md, containerColor = jc.ink, contentColor = jc.bg, actionColor = jc.bg,
                 )
             }
         },
@@ -1003,7 +1038,7 @@ fun NoteListScreen(
                 backLabel, onBack,
                 leading = if (backLabel != null) null else ({
                     Row(
-                        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onFolders)
+                        Modifier.heightIn(min = 44.dp).clip(JShape.xs).clickable(role = Role.Button, onClick = onFolders)
                             .padding(horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -1057,7 +1092,7 @@ fun NoteListScreen(
                 Text(
                     "Notes stay here for $keepDays days, then they're removed for good.",
                     Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp),
-                    style = JType.secondary.copy(lineHeight = 21.sp), color = jc.muted,
+                    style = JType.para, color = jc.muted,
                 )
             } else {
                 SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 20.dp), autoFocus = search)
@@ -1148,6 +1183,8 @@ private fun NoteList(
     onOpen: (NoteEntity) -> Unit,
     onMove: (NoteEntity) -> Unit,
 ) {
+    // The last note before a section header (or the end) has no line under it.
+    val ends = remember(entries) { entries.filterIndexed { i, e -> e is ListEntry.Row && entries.getOrNull(i + 1) !is ListEntry.Row }.toSet() }
     LazyColumn(Modifier.fillMaxSize()) {
         items(entries, key = {
             when (it) {
@@ -1156,6 +1193,7 @@ private fun NoteList(
                 is ListEntry.AttachmentRow -> "a:" + it.note.id + ":" + it.attachment.file
             }
         }) { entry ->
+            Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
             when (entry) {
                 is ListEntry.Header -> SectionHeader(entry.text, entry.collapsed, vm::togglePinnedCollapsed)
                 is ListEntry.AttachmentRow -> AttachmentHitRow(entry, query, folderNames[entry.note.folderId], onOpen)
@@ -1171,8 +1209,9 @@ private fun NoteList(
                         ).joinToString(" · ")
                     }
                     val search = if (query.isEmpty()) null else folderNames[note.folderId].orEmpty() to searchSnippet(note, query)
-                    NoteRow(note, note.sortTime(sortBy), isTrash, previewLines, trashMeta, vm, onOpen, onMove, query, search)
+                    NoteRow(note, note.sortTime(sortBy), isTrash, previewLines, trashMeta, vm, onOpen, onMove, query, search, divider = entry !in ends)
                 }
+            }
             }
         }
     }
@@ -1194,7 +1233,7 @@ private fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fold
         Modifier.fillMaxWidth().clickable { onOpen(entry.note) }.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(44.dp, 52.dp).clip(RoundedCornerShape(8.dp)).background(jc.surface), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.surface), contentAlignment = Alignment.Center) {
             val a = entry.attachment
             JIcon(if (a.isAudio) Ico.MIC else if (a.isImage) Ico.CAMERA else if (a.isPdf) ICON_PDF else Ico.FILE, jc.muted, size = 22.dp)
         }
@@ -1214,7 +1253,7 @@ private fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fold
 @Composable
 private fun SyncBannerRow(banner: com.shuva.jotter.sync.SyncBanner, onRetry: () -> Unit) {
     Row(
-        Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(jc.surface)
+        Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).background(jc.surface)
             .let { if (banner.retry) it.clickable(role = Role.Button, onClick = onRetry) else it }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -1324,7 +1363,7 @@ private fun ViewChoices(grid: Boolean, onPick: (Boolean) -> Unit) {
             text = { Text(text, style = JType.row, color = color, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal) },
             leadingIcon = { JIcon(icon, color, size = 20.dp, stroke = 2f) },
             onClick = { onPick(value) },
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp).clip(RoundedCornerShape(10.dp))
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp).clip(JShape.sm)
                 .background(if (on) jc.accent.copy(alpha = 0.12f) else Color.Transparent)
                 .semantics { selected = on },
         )
@@ -1343,9 +1382,13 @@ private fun NoteGrid(entries: List<ListEntry>, sortBy: NoteSort, vm: NotesViewMo
             when (entry) {
                 is ListEntry.Header -> item(key = "h:" + entry.text, span = StaggeredGridItemSpan.FullLine) {
                     // Nudged left so the header's text lines up with the text inside the cards.
-                    Box(Modifier.offset(x = (-4).dp)) { SectionHeader(entry.text, entry.collapsed, vm::togglePinnedCollapsed) }
+                    Box(Modifier.animateItem().offset(x = (-4).dp)) { SectionHeader(entry.text, entry.collapsed, vm::togglePinnedCollapsed) }
                 }
-                is ListEntry.Row -> item(key = entry.note.id) { NoteCard(entry.note, entry.note.sortTime(sortBy), vm, onOpen) }
+                is ListEntry.Row -> item(key = entry.note.id) {
+                    Box(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
+                        NoteCard(entry.note, entry.note.sortTime(sortBy), vm, onOpen)
+                    }
+                }
                 is ListEntry.AttachmentRow -> Unit // only in search results, which use the list
             }
         }
@@ -1361,11 +1404,15 @@ private fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: (
     val isSelected = note.id in vm.selected
     // The same preview text as the list rows (attachments read as "Drawing", "Voice note (1:52)"...), more of it.
     val body = remember(note) { note.searchText.lineSequence().filter { it.isNotBlank() }.take(8).joinToString("\n") { it.trim() } }
-    val shape = RoundedCornerShape(14.dp)
+    val shape = JShape.md
+    val fill by animateColorAsState(if (isSelected) jc.selected else jc.bg, JMotion.standard(), label = "cardFill")
+    val edge by animateColorAsState(if (isSelected) jc.accent else jc.line, JMotion.standard(), label = "cardEdge")
+    val press = remember { MutableInteractionSource() }
     Column(
-        Modifier.fillMaxWidth().clip(shape).background(if (isSelected) jc.selected else jc.bg)
-            .border(if (isSelected) 2.dp else 1.dp, if (isSelected) jc.accent else jc.line, shape)
+        Modifier.fillMaxWidth().pressScale(press).clip(shape).background(fill)
+            .border(if (isSelected) 2.dp else 1.dp, edge, shape)
             .combinedClickable(
+                interactionSource = press, indication = androidx.compose.material3.ripple(),
                 onClick = { if (selecting) vm.toggleSelected(note.id) else onOpen(note) },
                 onLongClick = { vm.toggleSelected(note.id) },
             )
@@ -1374,20 +1421,21 @@ private fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: (
     ) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (note.isLocked) JIcon(Ico.LOCK, jc.muted, size = 15.dp, stroke = 2f, modifier = Modifier.padding(top = 3.dp))
-            Text(note.displayTitle, Modifier.weight(1f), style = JType.rowTitle.copy(fontSize = 16.sp, lineHeight = 21.sp), color = jc.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(note.displayTitle, Modifier.weight(1f), style = JType.itemTitle, color = jc.ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (selecting) CheckCircle(isSelected)
             else if (note.isPinned) JIcon(Ico.PIN, jc.accent, size = 16.dp, stroke = 2f, modifier = Modifier.padding(top = 3.dp).semantics { contentDescription = "Pinned" })
         }
         Text(
             when {
                 journalDay(note) != null -> "Journal"
+                isHabit(note) -> "Habit"
                 note.isLocked -> "Locked"
                 body.isEmpty() -> "No additional text"
                 else -> body
             },
-            style = JType.small.copy(fontSize = 14.sp, lineHeight = 19.sp), color = jc.muted, maxLines = 8, overflow = TextOverflow.Ellipsis,
+            style = JType.label, color = jc.muted, maxLines = 8, overflow = TextOverflow.Ellipsis,
         )
-        Text(listTime(context, time), style = JType.small.copy(fontSize = 12.sp), color = jc.muted, maxLines = 1)
+        Text(listTime(context, time), style = JType.caption, color = jc.muted, maxLines = 1)
     }
 }
 
@@ -1397,7 +1445,10 @@ private fun SectionHeader(text: String, collapsed: Boolean? = null, onToggle: ()
     val modifier = if (collapsed == null) Modifier.fillMaxWidth() else Modifier.fillMaxWidth().clickable(onClick = onToggle)
     Row(modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, Modifier.weight(1f), style = JType.section, color = jc.muted)
-        if (collapsed != null) JIcon(if (collapsed) Ico.CHEVRON else "M6 9l6 6 6-6", jc.muted, size = 14.dp, stroke = 2.4f)
+        if (collapsed != null) {
+            val turn by animateFloatAsState(if (collapsed) 0f else 90f, JMotion.standard(), label = "chevron")
+            JIcon(Ico.CHEVRON, jc.muted, size = 14.dp, stroke = 2.4f, modifier = Modifier.graphicsLayer { rotationZ = turn })
+        }
     }
 }
 
@@ -1438,6 +1489,7 @@ private fun NoteRow(
     query: String = "",
     /** Search result: the folder name and the snippet around the match. */
     search: Pair<String, SearchSnippet>? = null,
+    divider: Boolean = true,
 ) {
     val context = LocalContext.current
     val selecting = vm.selected.isNotEmpty()
@@ -1448,10 +1500,11 @@ private fun NoteRow(
     val reveal = with(LocalDensity.current) { 160.dp.toPx() }
     var width by remember { mutableIntStateOf(1) }
     fun close() { scope.launch { settle(0f) } }
+    val rowFill by animateColorAsState(if (isSelected) jc.selected else jc.bg, JMotion.standard(), label = "rowFill")
     val content = @Composable {
         Row(
             Modifier.fillMaxWidth()
-                .background(if (isSelected) jc.selected else jc.bg)
+                .background(rowFill)
                 .combinedClickable(
                     onClick = { if (offset != 0f) close() else if (selecting) vm.toggleSelected(note.id) else onOpen(note) },
                     onLongClick = { vm.toggleSelected(note.id) },
@@ -1460,7 +1513,10 @@ private fun NoteRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            if (selecting) CheckCircle(isSelected)
+            androidx.compose.animation.AnimatedVisibility(
+                selecting, enter = fadeIn(JMotion.standard()) + expandHorizontally(JMotion.standard()),
+                exit = fadeOut(JMotion.quick()) + shrinkHorizontally(JMotion.standard()),
+            ) { CheckCircle(isSelected) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (note.isLocked) JIcon(Ico.LOCK, jc.muted, size = 15.dp, stroke = 2f)
@@ -1484,7 +1540,7 @@ private fun NoteRow(
                     return@Column
                 }
                 // Preview: 0 lines shows only the time; 2 lines adds the next line of text below.
-                val lines = if (journalDay(note) != null) listOf("Journal") else if (note.isLocked) listOf("Locked")
+                val lines = if (journalDay(note) != null) listOf("Journal") else if (isHabit(note)) listOf("Habit") else if (note.isLocked) listOf("Locked")
                 else note.searchText.lineSequence().filter { it.isNotBlank() }.take(2).toList().ifEmpty { listOf("No additional text") }
                 val signedIn by vm.signedIn.collectAsState()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1557,7 +1613,7 @@ private fun NoteRow(
             ) { content() }
         }
     }
-    HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = jc.line)
+    if (divider) HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = jc.line)
 }
 
 // ---------- Editor ----------
@@ -1584,6 +1640,7 @@ fun EditorScreen(
     var info by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
     var linked by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
     /** Find in note: null = closed. [findAt] is the current match. */
     var find by remember { mutableStateOf<String?>(null) }
     var findAt by remember { mutableIntStateOf(0) }
@@ -1610,6 +1667,8 @@ fun EditorScreen(
     var peek by remember { mutableStateOf<NoteEntity?>(null) }
     val haptic = LocalHapticFeedback.current
     var sharing by remember { mutableStateOf(false) }
+    /** Share as image: the card preview and style picker is open. */
+    var carding by remember { mutableStateOf(false) }
     /** The photo open in the viewer, by its line's id; null = closed. */
     var viewing by remember { mutableStateOf<String?>(null) }
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
@@ -1643,6 +1702,8 @@ fun EditorScreen(
     var pickingTarget by remember { mutableStateOf(false) }
     var pickingPaper by remember { mutableStateOf(false) }
     if (pickingPaper) PaperDialog(vm.paper, onPick = { pickingPaper = false; vm.changePaper(it) }, onDismiss = { pickingPaper = false })
+    var pickingFont by remember { mutableStateOf(false) }
+    if (pickingFont) FontDialog(vm.font, onPick = { pickingFont = false; vm.changeFont(it) }, onDismiss = { pickingFont = false })
     if (pickingTarget) {
         TargetDateDialog(
             vm.targetDate,
@@ -1712,7 +1773,7 @@ fun EditorScreen(
                         IconAction(Ico.MORE, "More", { menu = true }, fill = true)
                         DropdownMenu(
                             expanded = menu, onDismissRequest = { menu = false },
-                            modifier = Modifier.width(262.dp), shape = RoundedCornerShape(14.dp), containerColor = jc.bg,
+                            modifier = Modifier.width(262.dp), shape = JShape.md, containerColor = jc.bg,
                             border = BorderStroke(1.dp, jc.line), shadowElevation = 12.dp,
                         ) {
                             val lockTile: (() -> Unit)? = when {
@@ -1739,7 +1800,7 @@ fun EditorScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
                                     ) {
                                         JIcon(icon, jc.ink, size = 20.dp, stroke = 1.8f)
-                                        Text(label, style = JType.small.copy(fontSize = 12.sp), color = jc.ink)
+                                        Text(label, style = JType.caption, color = jc.ink)
                                     }
                                 }
                             }
@@ -1751,7 +1812,7 @@ fun EditorScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     val c = if (danger) jc.danger else jc.ink
-                                    Text(label, Modifier.weight(1f), style = JType.row.copy(fontSize = 16.sp), color = c)
+                                    Text(label, Modifier.weight(1f), style = JType.item, color = c)
                                     JIcon(icon, c, size = 18.dp, stroke = 1.8f)
                                 }
                             }
@@ -1762,6 +1823,8 @@ fun EditorScreen(
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
                             if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
+                            // Locked notes are never sent anywhere.
+                            if (!vm.locked && !vm.needsUnlock) item("Ask AI…", Ico.SPARKLE) { asking = true }
                             item("Linked notes · ${vm.linkedNotes(targets).size}", Ico.LINK, gap = true) { linked = true }
                             item("Note info", Ico.INFO) { info = true }
                             if (vm.exists && !vm.locked && !vm.needsUnlock) item("Version history", ICON_HISTORY) { history = true }
@@ -1783,8 +1846,40 @@ fun EditorScreen(
                     LinkSuggestions(vm.linkSuggestions(targets), vm.linkTyped(), folders, vm::completeLink)
                     TagSuggestions(vm.tagSuggestions(known), vm::completeTag)
                     if (formatting) FormatSheet(vm, onClose = { formatting = false })
+                    if (carding) {
+                        val blocks = remember { vm.doc.toBlocks() }
+                        val date = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(java.util.Date(vm.editedAt ?: System.currentTimeMillis())) }
+                        CardDialog(blocks, date, onDismiss = { carding = false }) { style ->
+                            carding = false
+                            scope.launch {
+                                val title = blocks.first().text.trim().ifEmpty { "Note" }
+                                val files = withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        val pages = noteCards(context, blocks, date, style)
+                                        pages.mapIndexed { i, draw ->
+                                            val bmp = draw()
+                                            val name = safeFileName(title) + (if (pages.size > 1) " ${i + 1}" else "") + ".png"
+                                            vm.files.exportFile(name).also { f -> f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
+                                                .also { bmp.recycle() }
+                                        }
+                                    }.getOrNull()
+                                } ?: return@launch toast("Couldn't make the image.")
+                                context.startActivity(Intent.createChooser(vm.files.sendIntent(files, "image/png", title), null))
+                            }
+                        }
+                    }
                     if (sharing) ShareSheet(
+                        title = vm.doc.texts.first().trim(),
+                        words = remember(vm.doc) { vm.doc.texts.drop(1).sumOf { t -> t.split(Regex("\\s+")).count { it.isNotBlank() } } },
                         onClose = { sharing = false },
+                        onCard = { sharing = false; carding = true },
+                        onCopy = {
+                            sharing = false
+                            context.getSystemService(android.content.ClipboardManager::class.java)
+                                .setPrimaryClip(android.content.ClipData.newPlainText(vm.doc.texts.first().trim(), shareText(vm.doc.toBlocks())))
+                            // Android 13+ shows its own copied notice.
+                            if (android.os.Build.VERSION.SDK_INT < 33) toast("Copied")
+                        },
                         onText = {
                             sharing = false
                             val send = Intent(Intent.ACTION_SEND).setType("text/plain")
@@ -1858,6 +1953,7 @@ fun EditorScreen(
                         },
                         onLink = { attaching = false; addingLink = true },
                         onTable = { attaching = false; vm.insertTable() },
+                        onLab = { attaching = false; vm.insertLabTemplate() },
                         onPdf = { attaching = false; picker.launch(arrayOf(com.shuva.jotter.data.PDF_MIME)) },
                         onScanDoc = { attaching = false; startDocScan() },
                         onScan = {
@@ -1873,6 +1969,7 @@ fun EditorScreen(
                         onFormat = { formatting = !formatting; attaching = false; sharing = false }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
                         onAttach = { attaching = !attaching; formatting = false; sharing = false }, onDraw = { drawing = null to null },
                         onNew = { formatting = false; attaching = false; onNewNote(vm.folderId) },
+                        onFont = { formatting = false; attaching = false; sharing = false; pickingFont = true },
                     )
                     if (vm.mathKeys && vm.focused) MathKeyboard(vm.value, vm::onValueChange, onLetters = { vm.mathKeys = false })
                 }
@@ -1893,7 +1990,7 @@ fun EditorScreen(
                 )
                 reminderAt?.takeIf { !vm.readOnly }?.let { at ->
                     Row(
-                        Modifier.padding(bottom = 10.dp).clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { reminding = true }
+                        Modifier.padding(bottom = 10.dp).clip(JShape.xs).clickable(role = Role.Button) { reminding = true }
                             .background(jc.selected).padding(horizontal = 8.dp, vertical = 4.dp)
                             .semantics { contentDescription = "Reminder: ${reminderLabel(context, at, reminderRepeat)}. Tap to change it." },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1936,7 +2033,7 @@ fun EditorScreen(
                     FlowRow(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         noteTags.forEach { name ->
                             Box(
-                                Modifier.height(28.dp).clip(RoundedCornerShape(14.dp)).background(jc.surface)
+                                Modifier.height(28.dp).clip(JShape.md).background(jc.surface)
                                     .clickable(role = Role.Button) { onOpenTag(tagKey(name)) }.padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.Center,
                             ) { Text("#$name", style = JType.small, color = jc.ink) }
@@ -1949,6 +2046,14 @@ fun EditorScreen(
     if (info) NoteInfoDialog(vm, folderName) { info = false }
     if (history) VersionHistory(vm) { history = false }
     peek?.let { n -> LinkedNotePreview(n, onOpen = { peek = null; onOpenNote(n) }, onDismiss = { peek = null }) }
+    if (asking) AiSheet(
+        vm.ai, noteText = shareText(vm.doc.toBlocks()),
+        // Added at the end of the note, not after wherever the cursor last was.
+        onInsert = if (vm.readOnly) null else ({ vm.insertText(plainAnswer(it), afterLine = vm.doc.lines.lastIndex, ai = true); asking = false }),
+        // Only a note of plain text can be replaced: its photos and files aren't sent, so they'd be lost.
+        onReplace = if (vm.readOnly || !vm.textOnly) null else ({ vm.replaceBody(plainAnswer(it)); asking = false }),
+        onClose = { asking = false },
+    )
     if (linked) {
         val notes = vm.linkedNotes(targets)
         AlertDialog(
@@ -2082,7 +2187,7 @@ private fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String) 
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     isError = vm.unlockError != null,
                     supportingText = vm.unlockError?.let { { Text(it) } },
-                    shape = RoundedCornerShape(12.dp), colors = passwordColors(),
+                    shape = JShape.sm, colors = passwordColors(),
                     modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
                 )
                 PrimaryButton(
@@ -2128,7 +2233,7 @@ internal fun OldPasswordDialog(onDismiss: () -> Unit, onSubmit: suspend (CharArr
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 isError = error != null, supportingText = error?.let { { Text(it) } },
-                shape = RoundedCornerShape(12.dp), colors = passwordColors(),
+                shape = JShape.sm, colors = passwordColors(),
             )
         },
         confirmButton = {
@@ -2162,8 +2267,8 @@ private fun LinkSuggestions(notes: List<NoteEntity>, typed: String, folders: Lis
     if (notes.isEmpty()) return
     val context = LocalContext.current
     Column(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clip(RoundedCornerShape(14.dp))
-            .border(1.dp, jc.line, RoundedCornerShape(14.dp)).background(jc.bg),
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clip(JShape.md)
+            .border(1.dp, jc.line, JShape.md).background(jc.bg),
     ) {
         Text("Link to note", Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp), style = JType.section.copy(fontSize = 12.sp), color = jc.muted)
         notes.take(3).forEachIndexed { i, note ->
@@ -2180,7 +2285,7 @@ private fun LinkSuggestions(notes: List<NoteEntity>, typed: String, folders: Lis
                     .clickable(role = Role.Button) { onPick(note.title) }.padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
             ) {
-                Text(title, style = JType.row.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = JType.itemTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(listOfNotNull(folder, listTime(context, note.lastEdited)).joinToString(" · "), style = JType.small, color = jc.muted, maxLines = 1)
             }
         }
@@ -2191,28 +2296,32 @@ private fun LinkSuggestions(notes: List<NoteEntity>, typed: String, folders: Lis
 @Composable
 private fun EditorToolbar(
     vm: EditorViewModel, formatting: Boolean, attaching: Boolean, onFormat: () -> Unit, onHideKeyboard: () -> Unit, onAttach: () -> Unit, onDraw: () -> Unit,
-    onNew: () -> Unit,
+    onNew: () -> Unit, onFont: () -> Unit,
 ) {
     val focusedType = if (vm.focused) vm.doc.lines.getOrNull(vm.cursorLine)?.type else null
     val canFormat = focusedType != null && focusedType != BlockType.TITLE
-    HorizontalDivider(color = jc.line)
-    // Design: accent icons spread across the bar.
+    // A floating rounded bar: tools share the width evenly, a tool that is on gets a tinted circle.
+    @Composable fun RowScope.Slot(on: Boolean = false, content: @Composable () -> Unit) = Box(
+        Modifier.weight(1f), contentAlignment = Alignment.Center,
+    ) { Box(Modifier.clip(CircleShape).background(if (on) jc.selected else Color.Transparent)) { content() } }
     Row(
-        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween,
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
+            .shadow(JElevation.card, JShape.pill).clip(JShape.pill).background(jc.card).border(1.dp, jc.line, JShape.pill)
+            .height(52.dp).padding(start = 4.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlyphAction("Aa", "Text style", onFormat, JType.rowTitle.copy(fontSize = 19.sp), color = if (formatting) jc.ink else jc.accent)
-        IconAction(Ico.CHECKLIST, "Checklist", { vm.setType(BlockType.CHECK) }, color = if (focusedType == BlockType.CHECK) jc.ink else jc.accent, enabled = canFormat)
-        if (vm.linksOn) IconAction(Ico.LINK, "Link to a note", vm::startLink, enabled = canFormat)
+        Slot(formatting) { GlyphAction("Aa", "Text style", onFormat, JType.rowTitle.copy(fontSize = 18.sp)) }
+        Slot { IconAction(Ico.TEXT, "Font · ${vm.font.label}", onFont, enabled = !vm.readOnly && !vm.needsUnlock, size = 20.dp) }
+        Slot(focusedType == BlockType.CHECK) { IconAction(Ico.CHECKLIST, "Checklist", { vm.setType(BlockType.CHECK) }, enabled = canFormat, size = 20.dp) }
+        if (vm.linksOn) Slot { IconAction(Ico.LINK, "Link to a note", vm::startLink, enabled = canFormat, size = 20.dp) }
         // Locked notes can't take attachments: the files wouldn't be encrypted.
-        IconAction(Ico.ATTACH, "Attach", onAttach, color = if (attaching) jc.ink else jc.accent, enabled = !vm.locked)
-        IconAction(Ico.PEN, "Draw", onDraw, enabled = !vm.locked)
-        if (vm.focused) GlyphAction(
-            "π", if (vm.mathKeys) "Phone keyboard" else "Math keyboard", { vm.mathKeys = !vm.mathKeys },
-            JType.rowTitle.copy(fontSize = 21.sp), color = if (vm.mathKeys) jc.ink else jc.accent,
-        )
-        if (vm.focused) IconAction(Ico.HIDE_KEYBOARD, "Hide keyboard", onHideKeyboard)
-        IconAction(Ico.COMPOSE, "New note", onNew)
+        Slot(attaching) { IconAction(Ico.ATTACH, "Attach", onAttach, enabled = !vm.locked, size = 20.dp) }
+        Slot { IconAction(Ico.PEN, "Draw", onDraw, enabled = !vm.locked, size = 20.dp) }
+        if (vm.focused) Slot(vm.mathKeys) {
+            GlyphAction("π", if (vm.mathKeys) "Phone keyboard" else "Math keyboard", { vm.mathKeys = !vm.mathKeys }, JType.rowTitle.copy(fontSize = 20.sp))
+        }
+        if (vm.focused) Slot { IconAction(Ico.HIDE_KEYBOARD, "Hide keyboard", onHideKeyboard, size = 20.dp) }
+        Slot { IconAction(Ico.COMPOSE, "New note", onNew, size = 20.dp) }
     }
 }
 
@@ -2220,8 +2329,8 @@ private fun EditorToolbar(
 @Composable
 private fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)).background(jc.bg)
-            .border(1.dp, jc.line, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+        Modifier.fillMaxWidth().clip(JShape.sheet).background(jc.bg)
+            .border(1.dp, jc.line, JShape.sheet)
             .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -2305,7 +2414,7 @@ private fun VersionHistory(vm: EditorViewModel, onClose: () -> Unit) {
                             Modifier.fillMaxWidth().clickable { open = ver }.padding(horizontal = 20.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
-                            Text(versionTime(context, ver.savedAt), style = JType.rowTitle.copy(fontSize = 16.sp), color = jc.ink)
+                            Text(versionTime(context, ver.savedAt), style = JType.itemTitle, color = jc.ink)
                             Text(
                                 (ver.blocks.firstOrNull()?.text?.ifBlank { null }?.let { "$it · " } ?: "") + preview,
                                 style = JType.secondary, color = jc.muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -2344,27 +2453,39 @@ private tailrec fun android.content.Context.findActivity(): Activity? = when (th
 @Composable
 private fun AttachSheet(
     onClose: () -> Unit, onFile: () -> Unit, onVoice: () -> Unit, onDraw: () -> Unit, onCamera: () -> Unit, onLink: () -> Unit,
-    onScan: () -> Unit, onTable: () -> Unit, onPdf: () -> Unit, onScanDoc: () -> Unit,
+    onScan: () -> Unit, onTable: () -> Unit, onPdf: () -> Unit, onScanDoc: () -> Unit, onLab: () -> Unit,
 ) {
-    val tiles = listOf(
-        Triple("Camera", Ico.CAMERA, onCamera), Triple("Photo or file", Ico.FILE, onFile), Triple("Voice note", Ico.MIC, onVoice),
-        Triple("Drawing", Ico.PEN, onDraw), Triple("Web link", Ico.GLOBE, onLink), Triple("Scan text", Ico.SCAN, onScan),
-        Triple("Table", ICON_TABLE, onTable), Triple("PDF", ICON_PDF, onPdf), Triple("Scan document", ICON_SCAN_DOC, onScanDoc),
+    // What's already out there (camera, files, scans), then what you make in the note.
+    val groups = listOf(
+        "Capture" to listOf(
+            Triple("Camera", Ico.CAMERA, onCamera), Triple("Photo or file", Ico.FILE, onFile), Triple("PDF", ICON_PDF, onPdf),
+            Triple("Voice note", Ico.MIC, onVoice), Triple("Scan text", Ico.SCAN, onScan), Triple("Scan document", ICON_SCAN_DOC, onScanDoc),
+        ),
+        "Create" to listOf(Triple("Drawing", Ico.PEN, onDraw), Triple("Table", ICON_TABLE, onTable), Triple("Web link", Ico.GLOBE, onLink), Triple("Lab note", ICON_FLASK, onLab)),
     )
     SheetPanel("Add to note", onClose) {
-        tiles.chunked(3).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            row.forEach { (label, icon, onClick) ->
-                Column(
-                    Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(14.dp)).border(1.dp, jc.line, RoundedCornerShape(14.dp))
-                        .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-                ) {
-                    JIcon(icon, jc.ink)
-                    Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1)
+        groups.forEach { (name, tiles) ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(name.uppercase(), style = JType.section, color = jc.muted)
+                tiles.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { (label, icon, onClick) ->
+                            Column(
+                                Modifier.weight(1f).height(92.dp).clip(JShape.md).background(jc.surface)
+                                    .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+                            ) {
+                                Box(Modifier.size(40.dp).clip(CircleShape).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+                                    JIcon(icon, jc.accent, size = 21.dp, stroke = 1.9f)
+                                }
+                                Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
                 }
             }
-            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
-        } }
+        }
     }
 }
 
@@ -2375,16 +2496,16 @@ private fun AttachSheet(
 @Composable
 private fun ConflictChooser(title: String, vm: EditorViewModel, onBack: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(14.dp)).border(1.dp, jc.line, RoundedCornerShape(14.dp)).padding(16.dp),
+        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(JShape.md).border(1.dp, jc.line, JShape.md).padding(16.dp),
     ) {
-        Text("Two versions", style = JType.rowTitle.copy(fontSize = 17.sp), color = jc.ink)
+        Text("Two versions", style = JType.rowTitle, color = jc.ink)
         Text(
             "“$title” was edited on two devices while one was offline. Nothing has been lost — this is the other version. Pick what to keep.",
-            Modifier.padding(top = 6.dp, bottom = 14.dp), style = JType.secondary.copy(fontSize = 15.sp, lineHeight = 21.sp), color = jc.muted,
+            Modifier.padding(top = 6.dp, bottom = 14.dp), style = JType.para, color = jc.muted,
         )
         PrimaryButton("Keep this version", { vm.keepThisVersion(onBack) }, Modifier.fillMaxWidth())
         Box(
-            Modifier.padding(top = 8.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(14.dp)).border(1.dp, jc.line, RoundedCornerShape(14.dp))
+            Modifier.padding(top = 8.dp).fillMaxWidth().height(48.dp).clip(JShape.md).border(1.dp, jc.line, JShape.md)
                 .clickable(role = Role.Button, onClick = vm::keepBothVersions),
             contentAlignment = Alignment.Center,
         ) { Text("Keep both as separate notes", style = JType.row, color = jc.ink) }
@@ -2393,25 +2514,54 @@ private fun ConflictChooser(title: String, vm: EditorViewModel, onBack: () -> Un
     }
 }
 
-/** Share note: send a copy as PDF, Markdown or plain text, or print it. */
+/** Share note: what's going out (title, size), the ways to send a copy, then copy and print. */
 @Composable
-private fun ShareSheet(onClose: () -> Unit, onText: () -> Unit, onFile: (pdf: Boolean, print: Boolean) -> Unit) {
+private fun ShareSheet(
+    title: String, words: Int, onClose: () -> Unit, onText: () -> Unit, onCopy: () -> Unit, onFile: (pdf: Boolean, print: Boolean) -> Unit,
+    onCard: () -> Unit,
+) {
     SheetPanel("Share note", onClose) {
-        Text("Send a copy", style = JType.section, color = jc.muted)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            listOf(
-                Triple("PDF", Ico.FILE) { onFile(true, false) },
-                Triple("Markdown", Ico.MARKDOWN) { onFile(false, false) },
-                Triple("Plain text", Ico.TEXT, onText),
-                Triple("Print", Ico.PRINT) { onFile(true, true) },
-            ).forEach { (label, icon, onClick) ->
-                Column(
-                    Modifier.weight(1f).height(80.dp).clip(RoundedCornerShape(14.dp)).border(1.dp, jc.line, RoundedCornerShape(14.dp))
-                        .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 2.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        Row(
+            Modifier.fillMaxWidth().clip(JShape.md).border(1.dp, jc.line, JShape.md).padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconTile(Ico.TEXT)
+            Column(Modifier.weight(1f)) {
+                Text(title.ifBlank { "New Note" }, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(plural(words, "word"), style = JType.small, color = jc.muted)
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("SEND A COPY AS", style = JType.section, color = jc.muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Triple("Image", Ico.CAMERA, onCard),
+                    Triple("Text", Ico.TEXT, onText),
+                    Triple("PDF", ICON_PDF) { onFile(true, false) },
+                    Triple("Markdown", Ico.MARKDOWN) { onFile(false, false) },
+                ).forEach { (label, icon, onClick) ->
+                    Column(
+                        Modifier.weight(1f).height(92.dp).clip(JShape.md).background(jc.surface)
+                            .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+                    ) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+                            JIcon(icon, jc.accent, size = 21.dp, stroke = 1.9f)
+                        }
+                        Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1)
+                    }
+                }
+            }
+        }
+        Column(Modifier.clip(JShape.md).background(jc.surface)) {
+            listOf(Triple("Copy text", Ico.COPY, onCopy), Triple("Print", Ico.PRINT) { onFile(true, true) }).forEachIndexed { i, (label, icon, onClick) ->
+                if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = jc.line)
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    JIcon(icon, jc.ink)
-                    Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1)
+                    IconTile(icon)
+                    Text(label, Modifier.weight(1f), style = JType.row, color = jc.ink)
                 }
             }
         }
@@ -2521,9 +2671,9 @@ private fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
             ).forEach { (type, label, style) ->
                 val on = focusedType == type
                 Box(
-                    Modifier.height(44.dp).clip(RoundedCornerShape(10.dp))
+                    Modifier.height(44.dp).clip(JShape.sm)
                         .background(if (on) jc.selected else jc.bg)
-                        .border(if (on) 1.5.dp else 1.dp, if (on) jc.accent else jc.line, RoundedCornerShape(10.dp))
+                        .border(if (on) 1.5.dp else 1.dp, if (on) jc.accent else jc.line, JShape.sm)
                         .clickable(enabled = enabled, role = Role.Button) { vm.setType(type) }.padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text(label, style = style, color = if (enabled) jc.ink else jc.muted) }
@@ -2532,7 +2682,7 @@ private fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
         // Character styles work on selected text, the title included.
         val hasSelection = vm.focused && !vm.value.selection.collapsed
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(jc.line),
+            Modifier.fillMaxWidth().clip(JShape.sm).background(jc.line),
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             listOf(
@@ -2558,7 +2708,7 @@ private fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
         }
         if (!hasSelection) Text("Select text to make it bold, italic, underlined or highlighted.", style = JType.small, color = jc.muted)
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(jc.line),
+            Modifier.fillMaxWidth().clip(JShape.sm).background(jc.line),
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             listOf(
@@ -2578,7 +2728,7 @@ private fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
         }
         val line = if (vm.focused) vm.doc.lines.getOrNull(vm.cursorLine) else null
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(jc.line),
+            Modifier.fillMaxWidth().clip(JShape.sm).background(jc.line),
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             listOf(
@@ -2625,19 +2775,84 @@ private const val INDENT_STEP = 24f // sp per indent step
 private const val QUOTE_GAP = 16f // sp between a quote's bar and its text
 
 /** Space in sp before a line's marker or text: its indent, then the quote bar. */
-private fun leadOf(meta: LineMeta) = INDENT_STEP * meta.indent + if (meta.quote) QUOTE_GAP else 0f
+private fun leadOf(meta: LineMeta) = INDENT_STEP * meta.indent + (if (meta.quote) QUOTE_GAP else 0f) + if (meta.ai) AI_LEAD else 0f
+private const val AI_LEAD = 8f // sp between an AI card's edge and its text
+private const val AI_HEADER = 44f // sp: the height of an AI card's badge row
+private const val AI_BADGE = 60f // sp kept free before an AI card's first line for its "AI" badge
+
+/** True for the first line of a run of AI lines: it carries the card's badge. */
+private fun aiRunStart(doc: EditorDoc, i: Int) = doc.lines[i].ai && doc.lines.getOrNull(i - 1)?.ai != true
+
+/** For each line, true when it sits in a folded AI card under the card's first line. */
+private fun aiFoldedLines(doc: EditorDoc): BooleanArray {
+    var folded = false
+    return BooleanArray(doc.lines.size) { i ->
+        val m = doc.lines[i]
+        if (aiRunStart(doc, i)) { folded = m.folded; false } else m.ai && folded
+    }
+}
+private val FOLDED_SIZE = 0.5.sp // a folded line still exists in the field, just too small to see
 
 /** Extra room under each line of text on four-line paper, as a share of its font size. */
 private const val FOUR_LINE_GAP = 0.6f
 
 @Composable
-private fun lineStyle(type: BlockType): TextStyle = when (type) {
-    BlockType.TITLE -> JType.noteTitle
-    BlockType.HEADING -> JType.heading
-    BlockType.SUBHEADING -> JType.subheading
+private fun lineStyle(type: BlockType, font: FontFamily = Inter): TextStyle = when (type) {
+    BlockType.TITLE -> JType.noteTitle.copy(fontFamily = font)
+    BlockType.HEADING -> JType.heading.copy(fontFamily = font)
+    BlockType.SUBHEADING -> JType.subheading.copy(fontFamily = font)
     BlockType.MONOSPACED -> TextStyle(fontSize = 15.sp, lineHeight = 22.sp, fontFamily = FontFamily.Monospace)
-    else -> JType.body
+    else -> JType.body.copy(fontFamily = font)
 }.copy(color = jc.ink)
+
+val NoteFont.family: FontFamily get() = when (this) {
+    NoteFont.DEFAULT -> Inter
+    NoteFont.SANS -> FontFamily.SansSerif
+    NoteFont.SERIF -> systemSerif
+    NoteFont.MONO -> FontFamily.Monospace
+    NoteFont.HANDWRITING -> FontFamily.Cursive
+}
+
+/**
+ * Noto Serif straight from the system's font files: Samsung's font styles swap the generic serif family for
+ * the phone's own font, so [FontFamily.Serif] can come out sans. Phones without the files get the generic one.
+ */
+private val systemSerif: FontFamily by lazy {
+    runCatching {
+        fun f(file: String, weight: FontWeight, style: androidx.compose.ui.text.font.FontStyle) =
+            java.io.File("/system/fonts/$file").takeIf { it.canRead() }?.let { androidx.compose.ui.text.font.Font(it, weight, style) }
+        val normal = androidx.compose.ui.text.font.FontStyle.Normal
+        val italic = androidx.compose.ui.text.font.FontStyle.Italic
+        listOfNotNull(
+            f("NotoSerif-Regular.ttf", FontWeight.Normal, normal), f("NotoSerif-Bold.ttf", FontWeight.Bold, normal),
+            f("NotoSerif-Italic.ttf", FontWeight.Normal, italic), f("NotoSerif-BoldItalic.ttf", FontWeight.Bold, italic),
+        ).takeIf { it.isNotEmpty() }?.let { FontFamily(it) }
+    }.getOrNull() ?: FontFamily.Serif
+}
+
+/** Picks the typeface of a note's text; each choice is shown in its own font. */
+@Composable
+private fun FontDialog(current: NoteFont, onPick: (NoteFont) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.clip(JShape.lg).background(jc.bg).padding(vertical = 16.dp)) {
+            Text("Font", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            Text("Used for this note's text.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+            Spacer(Modifier.height(8.dp))
+            NoteFont.entries.forEach { f ->
+                val on = f == current
+                Row(
+                    Modifier.fillMaxWidth().height(52.dp).clickable(role = Role.RadioButton) { onPick(f) }
+                        .semantics { selected = on }.padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Text("Aa", Modifier.width(36.dp), style = JType.item.copy(fontFamily = f.family, fontSize = 20.sp), color = jc.ink)
+                    Text(f.label, Modifier.weight(1f), style = JType.item.copy(fontFamily = f.family), color = if (on) jc.accent else jc.ink)
+                    if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
+                }
+            }
+        }
+    }
+}
 
 /**
  * The whole note in one text field, so Enter, Backspace and fast typing never move focus between
@@ -2676,10 +2891,14 @@ private fun NoteField(
         }
     }
     val doc = vm.doc
-    val styles = BlockType.entries.associateWith { lineStyle(it) }
+    val styles = BlockType.entries.associateWith { lineStyle(it, vm.font.family) }
     val muted = jc.muted
     val monoBackground = jc.surface
     val quoteBar = jc.muted.copy(alpha = 0.5f)
+    val aiTint = jc.accent
+    val aiMeasurer = rememberTextMeasurer()
+    val aiLabel = remember(aiMeasurer, aiTint) { aiMeasurer.measure("✦ AI", JType.caption.copy(color = aiTint, fontWeight = FontWeight.SemiBold)) }
+    val aiHiddenLabel = remember(aiMeasurer, muted) { aiMeasurer.measure("Hidden", JType.caption.copy(color = muted)) }
     val tagColor = jc.accent
     val targets by vm.linkTargets.collectAsState()
     val targetKeys = remember(targets) { targets.map { linkKey(it.title) }.toSet() }
@@ -2743,6 +2962,7 @@ private fun NoteField(
     // Four-line paper: each line of text gets room for a gap under its band, like a copybook.
     val fourLine = vm.paper == Paper.FOUR_LINE
     fun textHeight(style: TextStyle) = if (fourLine) (style.lineHeight.value + style.fontSize.value * FOUR_LINE_GAP).sp else style.lineHeight
+    val foldedLines = remember(doc) { aiFoldedLines(doc) }
     val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine) {
         buildAnnotatedString {
             // Each ParagraphStyle range is already its own paragraph, so a real '\n' would add an empty one
@@ -2755,19 +2975,31 @@ private fun NoteField(
                 val end = start + line.length
                 val paragraphEnd = if (i < doc.lines.lastIndex) end + 1 else end
                 val indent = (leadOf(meta) + if (meta.type in MARKER_TYPES) GUTTER.value else 0f).sp
+                val firstIndent = if (aiRunStart(doc, i)) (indent.value + AI_BADGE).sp else indent // old cards have text on the badge's line
                 val preview = linkPreviews[i]
                 val height = meta.table?.let { with(px) { tableHeight(it).toSp() } }
                     ?: meta.attachment?.let { if (it.isDrawing) drawingLine(it) else if (it.isImage) photoLine(it) else if (it.isPdf) pdfLine else fileLine }
-                    ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp } ?: textHeight(style)
+                    ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp }
+                    // shortcut: the gap goes under every row of a wrapped title, not just its last; fine while titles are short.
+                    ?: if (i == 0) (textHeight(style).value + TITLE_GAP).sp
+                    else if (aiRunStart(doc, i) && line.isEmpty()) AI_HEADER.sp else textHeight(style)
                 // A one-row paragraph is trimmed to its font height by default; an attachment's line must keep its full height.
                 // A link with a preview keeps its text at the top, leaving the space below for the card.
                 val heightStyle = when {
                     meta.isObject -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
                     preview != null -> LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.None)
                     fourLine -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+                    i == 0 -> LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.None) // the gap below the title
+                    meta.ai && line.isEmpty() -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
                     else -> null
                 }
-                addStyle(ParagraphStyle(lineHeight = height, textIndent = TextIndent(indent, indent), lineHeightStyle = heightStyle), start, paragraphEnd)
+                if (foldedLines[i]) {
+                    addStyle(ParagraphStyle(lineHeight = FOLDED_SIZE, lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both)), start, paragraphEnd)
+                    addStyle(SpanStyle(fontSize = FOLDED_SIZE, color = Color.Transparent), start, paragraphEnd)
+                    start = end + 1
+                    return@forEachIndexed
+                }
+                addStyle(ParagraphStyle(lineHeight = height, textIndent = TextIndent(firstIndent, indent), lineHeightStyle = heightStyle), start, paragraphEnd)
                 val checked = meta.type == BlockType.CHECK && meta.checked
                 addStyle(
                     style.toSpanStyle().copy(
@@ -2854,6 +3086,7 @@ private fun NoteField(
     var fixing by remember { mutableStateOf<Misspelling?>(null) }
     var grammarFix by remember { mutableStateOf<GrammarIssue?>(null) }
     var graphing by remember { mutableStateOf<List<Plot>?>(null) }
+    var tableGraph by remember { mutableStateOf<TableGraph?>(null) } // set with graphing when it came from a table
     var lastValue by remember { mutableStateOf(vm.value) }
     LaunchedEffect(vm.value) {
         val v = vm.value
@@ -2871,7 +3104,11 @@ private fun NoteField(
     val pageBelow = with(px) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val lineStarts = remember(doc) { doc.texts.runningFold(0) { at, t -> at + t.length + 1 }.dropLast(1) }
     fun docLine(offset: Int) = lineStarts.binarySearch(offset).let { if (it >= 0) it else -it - 2 }.coerceIn(0, doc.lines.lastIndex)
-    fun bareLine(offset: Int): Boolean = docLine(offset).let { i -> doc.lines[i].isObject || linkPreviews[i] != null }
+    // No paper under objects (they carry their own background) or under the title and headings.
+    fun bareLine(offset: Int): Boolean = docLine(offset).let { i ->
+        doc.lines[i].isObject || linkPreviews[i] != null ||
+            doc.lines[i].type in setOf(BlockType.TITLE, BlockType.HEADING, BlockType.SUBHEADING)
+    }
     val fontPx = styles.mapValues { (_, s) -> with(px) { s.fontSize.toPx() } }
     val bodyFont = with(px) { JType.body.fontSize.toPx() }
     Box(modifier.fillMaxWidth().onSizeChanged { pageWidth = it.width }) {
@@ -2884,7 +3121,7 @@ private fun NoteField(
             },
             readOnly = vm.readOnly,
             // A new note's only line is its empty title, with no characters at all to style: size it as a title.
-            textStyle = (if (doc.text.isEmpty()) styles.getValue(BlockType.TITLE) else JType.body).copy(color = jc.ink),
+            textStyle = (if (doc.text.isEmpty()) styles.getValue(BlockType.TITLE) else styles.getValue(BlockType.BODY)).copy(color = jc.ink),
             cursorBrush = SolidColor(Color.Transparent),
             visualTransformation = { TransformedText(annotated, OffsetMapping.Identity) },
             onTextLayout = { layout = it },
@@ -2893,11 +3130,15 @@ private fun NoteField(
                 .drawBehind {
                     val l = layout ?: return@drawBehind
                     if (paper == Paper.PLAIN || l.layoutInput.text.length != doc.text.length) return@drawBehind
-                    drawNotePaper(
-                        paper, l, bodyLine, bodyFont,
-                        fontOf = { i -> fontPx.getValue(doc.lines[docLine(l.getLineStart(i))].type) },
-                        skip = { i -> bareLine(l.getLineStart(i)) }, colors = paperLine, below = pageBelow,
-                    )
+                    // Out to the screen edges (past the page's 24dp margin), so the text sits inside the paper.
+                    val bleed = -24.dp.toPx()
+                    inset(bleed, 0f, bleed, 0f) {
+                        drawNotePaper(
+                            paper, l, bodyLine, bodyFont,
+                            fontOf = { i -> fontPx.getValue(doc.lines[docLine(l.getLineStart(i))].type) },
+                            skip = { i -> bareLine(l.getLineStart(i)) }, colors = paperLine, below = pageBelow,
+                        )
+                    }
                 }
                 // A tap on a link opens its note instead of placing the cursor; pressing and holding previews it.
                 // A tap on a phone number shows what to do with it.
@@ -3000,7 +3241,29 @@ private fun NoteField(
                 }
                 .drawBehind {
                     val l = layout ?: return@drawBehind
-                    forEachLineBounds(doc, l) { i, top, bottom, _ ->
+                    var aiTop = 0f
+                    forEachLineBounds(doc, l) { i, top, bottom, firstBottom ->
+                        // An AI run is one rounded card, with the badge in the room its first line keeps free.
+                        if (aiRunStart(doc, i)) aiTop = top
+                        if (doc.lines[i].ai && doc.lines.getOrNull(i + 1)?.ai != true) {
+                            val left = (INDENT_STEP * doc.lines[i].indent).sp.toPx() - 10.dp.toPx()
+                            // shortcut: the room under the last line is drawn over the next line's leading; give the card real bottom space if text below looks crowded.
+                            val end = if (foldedLines.getOrNull(i) == true) bottom else bottom + 10.dp.toPx()
+                            val box = Size(size.width - left + 10.dp.toPx(), end - aiTop)
+                            drawRoundRect(aiTint.copy(alpha = 0.06f), Offset(left, aiTop), box, CornerRadius(16.dp.toPx()))
+                            drawRoundRect(aiTint.copy(alpha = 0.22f), Offset(left, aiTop), box, CornerRadius(16.dp.toPx()), style = Stroke(1.dp.toPx()))
+                        }
+                        if (aiRunStart(doc, i)) {
+                            // The badge: a soft pill in the accent colour, centred in the first row.
+                            val x = (INDENT_STEP * doc.lines[i].indent + AI_LEAD).sp.toPx()
+                            val padX = 8.dp.toPx()
+                            val padY = 3.dp.toPx()
+                            val pill = Size(aiLabel.size.width + padX * 2, aiLabel.size.height + padY * 2)
+                            val y = (top + firstBottom - pill.height) / 2
+                            drawRoundRect(aiTint.copy(alpha = 0.14f), Offset(x, y), pill, CornerRadius(pill.height / 2))
+                            drawText(aiLabel, topLeft = Offset(x + padX, y + padY))
+                            if (doc.lines[i].folded) drawText(aiHiddenLabel, topLeft = Offset(x + pill.width + 8.dp.toPx(), y + padY))
+                        }
                         if (doc.lines[i].type == BlockType.MONOSPACED) {
                             drawRect(monoBackground, topLeft = Offset(-8.dp.toPx(), top), size = Size(size.width + 16.dp.toPx(), bottom - top))
                         }
@@ -3021,7 +3284,7 @@ private fun NoteField(
                 onDismissRequest = { fixing = null },
             ) {
                 Row(
-                    Modifier.clip(RoundedCornerShape(12.dp)).background(jc.bg).border(1.dp, jc.line, RoundedCornerShape(12.dp)).padding(4.dp),
+                    Modifier.clip(JShape.sm).background(jc.bg).border(1.dp, jc.line, JShape.sm).padding(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     m.suggestions.take(3).forEach { word ->
@@ -3044,8 +3307,8 @@ private fun NoteField(
                 onDismissRequest = { grammarFix = null },
             ) {
                 Column(
-                    Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(12.dp)).background(jc.bg)
-                        .border(1.dp, jc.line, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.widthIn(max = 300.dp).clip(JShape.sm).background(jc.bg)
+                        .border(1.dp, jc.line, JShape.sm).padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     Text(g.message, style = JType.small, color = jc.muted)
                     if (g.replacements.isNotEmpty()) Row(Modifier.offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -3076,7 +3339,7 @@ private fun NoteField(
                 is MathSuggestion.Graph -> "Show graph" to "Show graph"
             }
             Popup(offset = IntOffset((at.right + with(density) { 6.dp.toPx() }).toInt(), (at.center.y - with(density) { 22.dp.toPx() }).toInt())) {
-                Box(Modifier.clip(RoundedCornerShape(12.dp)).background(jc.accent.copy(alpha = 0.12f)).semantics { contentDescription = spoken }) {
+                Box(Modifier.clip(JShape.sm).background(jc.accent.copy(alpha = 0.12f)).semantics { contentDescription = spoken }) {
                     TextAction(label, {
                         val t = vm.value.text
                         val c = vm.value.selection.start
@@ -3084,7 +3347,7 @@ private fun NoteField(
                             is MathSuggestion.Answer -> if (t[c - 1] == ' ') math.text else " ${math.text}"
                             is MathSuggestion.Solution -> (if (t[c - 1] == ' ') "" else " ") + "→ ${math.text}"
                             is MathSuggestion.Solved -> (if (t[c - 1] == ' ') "" else " ") + "→ ${math.text}"
-                            is MathSuggestion.Graph -> { graphing = plotsIn(t); null }
+                            is MathSuggestion.Graph -> { tableGraph = null; graphing = plotsIn(t); null }
                         }
                         if (insert != null && mathSuggestionAt(t, c) == math) {
                             vm.onValueChange(TextFieldValue(t.replaceRange(c, c, insert), TextRange(c + insert.length)))
@@ -3095,16 +3358,32 @@ private fun NoteField(
         }
         graphing?.let { plots ->
             val context = LocalContext.current
-            GraphDialog(plots, onDismiss = { graphing = null }, onAdd = if (vm.canAddImage) { image ->
-                graphing = null
-                vm.addGraph(image, plots.joinToString(", ") { it.label }) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
-            } else null)
+            val tg = tableGraph
+            GraphDialog(
+                plots, onDismiss = { graphing = null },
+                onAdd = if (vm.canAddImage) { image ->
+                    graphing = null
+                    vm.addGraph(image, plots.joinToString(", ") { it.label }) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
+                } else null,
+                centre = if (tg != null) Offset(tg.centreX.toFloat(), tg.centreY.toFloat()) else Offset.Zero,
+                unitsAcross = if (tg != null) tg::unitsAcross else { { 20f } },
+            )
         }
         layout?.let { l ->
             var number = 0
             forEachLineBounds(doc, l) { i, top, bottom, firstBottom ->
                 val meta = doc.lines[i]
                 number = if (meta.type == BlockType.NUMBERED) number + 1 else 0
+                if (aiRunStart(doc, i) && !vm.readOnly) {
+                    // Hide / Remove on the card's badge line, at the right.
+                    Row(
+                        Modifier.offset { IntOffset(0, (top + firstBottom).toInt() / 2 - 18.dp.roundToPx()) }.fillMaxWidth().height(36.dp),
+                        horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        IconAction(if (meta.folded) Ico.EYE else Ico.EYE_OFF, if (meta.folded) "Show AI text" else "Hide AI text", { vm.toggleAiFold(i) }, color = jc.muted, size = 18.dp)
+                        IconAction(Ico.TRASH, "Remove AI text", { vm.removeAiCard(i) }, color = jc.muted, size = 18.dp)
+                    }
+                }
                 meta.table?.let { t ->
                     TableCard(
                         t,
@@ -3112,6 +3391,7 @@ private fun NoteField(
                         onRemove = if (vm.readOnly || !vm.focused) null else ({ vm.removeAttachment(i) }),
                         modifier = Modifier.offset { IntOffset(0, top.toInt()) }.fillMaxWidth()
                             .height(with(density) { (bottom - top).toDp() }).padding(vertical = TABLE_GAP),
+                        onGraph = remember(t) { tableGraph(t) }?.let { g -> { tableGraph = g; graphing = g.plots } },
                     )
                     return@forEachLineBounds
                 }
@@ -3180,7 +3460,7 @@ private fun NoteField(
                         else -> CheckCircle(
                             meta.checked,
                             size = with(density) { minOf(firstRow * 0.8f, GUTTER.toPx() * 0.75f).toDp() }.coerceAtMost(22.dp),
-                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.readOnly, role = Role.Checkbox) { vm.toggleChecked(i) }
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.readOnly, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) })
                                 .semantics { contentDescription = if (meta.checked) "Checked" else "Not checked" },
                         )
                     }
@@ -3228,7 +3508,7 @@ private fun linkPreviewLines(doc: EditorDoc, notes: List<NoteEntity>): Map<Int, 
 @Composable
 private fun LinkPreviewCard(rows: List<String>, onOpen: () -> Unit, modifier: Modifier) {
     Column(
-        modifier.clip(RoundedCornerShape(12.dp)).background(jc.surface).clickable(role = Role.Button, onClick = onOpen)
+        modifier.clip(JShape.sm).background(jc.surface).clickable(role = Role.Button, onClick = onOpen)
             .padding(horizontal = 12.dp, vertical = LINK_CARD_PADDING),
     ) {
         rows.forEach { row ->
@@ -3331,7 +3611,7 @@ private fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?)
         }
         val thumb = remember(preview) { preview?.image?.asImageBitmap() }
         Box(
-            modifier.clip(RoundedCornerShape(12.dp)).background(jc.surface).clickable(role = Role.Button) {
+            modifier.clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) {
                 val u = url ?: return@clickable
                 try { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u))) } catch (_: android.content.ActivityNotFoundException) {
                     Toast.makeText(context, "No app on this phone can open web links.", Toast.LENGTH_SHORT).show()
@@ -3355,27 +3635,30 @@ private fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?)
         return
     }
     if (a.isAudio) {
-        Box(modifier.clip(RoundedCornerShape(12.dp)).background(jc.surface)) {
+        Box(modifier.clip(JShape.sm).background(jc.surface)) {
             AudioCard(a, file, Modifier.fillMaxSize())
             if (onRemove != null) RemoveButton(a, onRemove, Modifier.align(Alignment.TopEnd))
         }
         return
     }
-    // A photo keeps its own shape: as tall as the card, as wide as its aspect ratio allows, with a thin border.
+    // A photo keeps its own shape: as tall as the card, as wide as its aspect ratio allows, in a frame like a print.
     image?.takeIf { drawing == null && it.width > 0 && it.height > 0 }?.let { img ->
         Box(modifier) {
-            val shape = RoundedCornerShape(12.dp)
+            val shape = JShape.sm
             Box(
-                Modifier.aspectRatio(img.width.toFloat() / img.height, matchHeightConstraintsFirst = true).clip(shape)
-                    .border(1.dp, jc.line, shape).clickable(role = Role.Button) { onOpen(null) }.semantics { contentDescription = a.name },
+                Modifier.padding(2.dp).shadow(JElevation.card, shape).clip(shape).background(jc.card).border(1.dp, jc.line, shape)
+                    .clickable(role = Role.Button) { onOpen(null) }.semantics { contentDescription = a.name }.padding(6.dp),
             ) {
-                Image(img, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                Image(
+                    img, null, Modifier.aspectRatio(img.width.toFloat() / img.height, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(4.dp)), contentScale = ContentScale.Fit,
+                )
                 if (onRemove != null) RemoveButton(a, onRemove, Modifier.align(Alignment.TopEnd))
             }
         }
         return
     }
-    Box(modifier.clip(RoundedCornerShape(12.dp)).background(jc.surface).clickable(role = Role.Button) { onOpen(drawing) }.semantics { contentDescription = a.name }) {
+    Box(modifier.clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) { onOpen(drawing) }.semantics { contentDescription = a.name }) {
         drawing?.let { InlineDrawing(it, Modifier.fillMaxSize()) } ?: Row(
             Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -3429,6 +3712,7 @@ private fun SettingsLabel(text: String) {
 }
 
 @Composable
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val status by vm.status.collectAsState()
     val pending by vm.pending.collectAsState()
@@ -3561,6 +3845,8 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                                 steps = TextSize.entries.size - 2,
                                 modifier = Modifier.weight(1f).semantics { stateDescription = appearance.textSize.label },
                                 colors = SliderDefaults.colors(thumbColor = jc.accent, activeTrackColor = jc.accent, inactiveTrackColor = jc.line),
+                                thumb = { Box(Modifier.size(24.dp).shadow(JElevation.card, CircleShape).background(jc.bg, CircleShape).border(2.dp, jc.accent, CircleShape)) },
+                                track = { state -> SizeTrack(state.value, state.valueRange.endInclusive) },
                             )
                             Text("A", style = JType.heading, color = jc.muted)
                         }
@@ -3596,6 +3882,9 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                         JSwitch(toggles(Toggle.CLOUD_GRAMMAR), { vm.setToggle(Toggle.CLOUD_GRAMMAR, it) }, enabled = toggles(Toggle.GRAMMAR))
                     }
                 }
+
+                SettingsLabel("AI")
+                AiSettingsCard(vm.ai)
 
                 SettingsLabel("Notes list")
                 Card {
@@ -3639,7 +3928,7 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                     } else {
                         CardRow(
                             plural(lockedCount, "locked note"), icon = Ico.LOCK,
-                            sub = if (unlocked) "Unlocked until Margin goes to the background." else "Locked.",
+                            sub = if (unlocked) "Unlocked until Margin goes to the background." else "Your passcode opens them and the journal.",
                         )
                         if (unlocked) {
                             CardDivider()
@@ -3682,6 +3971,11 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                             }
                         }
                     }
+                }
+                // Who and which version, quietly at the end.
+                Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    MarginMark(36.dp)
+                    Text("Margin " + com.shuva.jotter.BuildConfig.VERSION_NAME, Modifier.padding(top = 8.dp), style = JType.small, color = jc.muted)
                 }
             }
         }
@@ -3739,7 +4033,15 @@ fun LaunchScreen() {
         Modifier.fillMaxSize().background(jc.bg).semantics { contentDescription = "Margin. Write first. Organise later." },
         contentAlignment = Alignment.Center,
     ) {
-        Column {
+        // The lockup fades up and settles from slightly smaller.
+        val shown = remember { androidx.compose.animation.core.Animatable(0f) }
+        LaunchedEffect(Unit) { shown.animateTo(1f, tween(420, easing = JMotion.ease)) }
+        Column(Modifier.graphicsLayer {
+            alpha = shown.value
+            val k = 0.94f + 0.06f * shown.value
+            scaleX = k; scaleY = k
+            translationY = (1f - shown.value) * 12.dp.toPx()
+        }) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(icon * 0.32f)) {
                 MarginMark(icon)
                 Text(
@@ -3777,7 +4079,7 @@ fun WelcomeScreen(onStart: () -> Unit, onBackup: () -> Unit) {
                     Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) { JIcon(icon, jc.accent, size = 24.dp) }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(title, style = JType.rowTitle, color = jc.ink)
-                        Text(text, style = JType.secondary.copy(lineHeight = 21.sp), color = jc.muted)
+                        Text(text, style = JType.para, color = jc.muted)
                     }
                 }
             }
@@ -3851,8 +4153,12 @@ fun JotterRoot(
         )
         return
     }
+    /** Leaving the editor for another kind of screen: the note stays visible until its screen has slid away. */
+    fun leaveEditor() = editor.closeSoon(JMotion.screenMs + 80L) { nav.current !is Screen.Editor }
     fun back() {
-        if (nav.current is Screen.Editor) editor.close()
+        if (nav.current is Screen.Editor) {
+            if (nav.stack.getOrNull(nav.stack.lastIndex - 1) is Screen.Editor) editor.close() else leaveEditor()
+        }
         nav.pop()
     }
     fun listName(folderId: String) = when {
@@ -3862,9 +4168,43 @@ fun JotterRoot(
         folderId.startsWith(TAG_PREFIX) -> "#" + (tags.firstOrNull { TAG_PREFIX + it.key == folderId }?.name ?: folderId.removePrefix(TAG_PREFIX))
         else -> rows.firstOrNull { it.folder.id == folderId }?.folder?.name ?: "Notes"
     }
-    androidx.activity.compose.BackHandler(enabled = nav.stack.size > 1) { back() }
+    // Screens slide in over the one before and back off it; the back gesture drags the screen along with the finger.
+    val entry = NavEntry(nav.stack.size, nav.current)
+    val seek = remember { SeekableTransitionState(entry) }
+    val transition = rememberTransition(seek, label = "screen")
+    LaunchedEffect(entry) { seek.animateTo(entry) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = nav.stack.size > 1) { progress ->
+        val previous = nav.stack[nav.stack.lastIndex - 1]
+        // No peeking at a screen that shares this one's view model (it would load its own note or folder into it),
+        // nor at a note, which would be opened just to be looked at.
+        val peek = previous !is Screen.Editor && !(nav.current is Screen.Notes && previous is Screen.Notes)
+        try {
+            progress.collect { if (peek) seek.seekTo(it.progress, NavEntry(entry.depth - 1, previous)) }
+            back()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            if (peek) rootScope.launch { seek.animateTo(entry) }
+            throw e
+        }
+    }
 
-    when (val screen = nav.current) {
+    transition.AnimatedContent(
+        modifier = Modifier.fillMaxSize().background(jc.bg),
+        transitionSpec = {
+            val from = initialState
+            val to = targetState
+            val sameKind = (from.screen is Screen.Editor && to.screen is Screen.Editor) || (from.screen is Screen.Notes && to.screen is Screen.Notes)
+            when {
+                // Two notes or two lists share a view model, so the old one fades out before it can show the new one's content.
+                sameKind || from.depth == to.depth -> fadeIn(tween(200, delayMillis = 90)) togetherWith fadeOut(tween(90))
+                to.depth > from.depth -> slideInHorizontally(JMotion.screen()) { it } togetherWith slideOutHorizontally(JMotion.screen()) { -it / 4 }
+                else -> slideInHorizontally(JMotion.screen()) { -it / 4 } togetherWith slideOutHorizontally(JMotion.screen()) { it }
+            }.apply { targetContentZIndex = to.depth.toFloat() }
+        },
+    ) { shown ->
+    Box(Modifier.fillMaxSize().background(jc.bg)) {
+    /** The screen under this one. */
+    val below = nav.stack.getOrNull(shown.depth - 2)
+    when (val screen = shown.screen) {
         Screen.Folders -> FoldersScreen(
             folders,
             // All Notes is the screen underneath; go back to it rather than stacking another.
@@ -3876,6 +4216,7 @@ fun JotterRoot(
             onTodos = { nav.push(Screen.Todos) },
             onReminders = { nav.push(Screen.Reminders) },
             onJournal = { nav.push(Screen.Journal) },
+            onHabits = { nav.push(Screen.Habits) },
             onBack = ::back,
         )
         Screen.EditFolders -> EditFoldersScreen(folders, onBack = ::back)
@@ -3887,7 +4228,11 @@ fun JotterRoot(
         }
         Screen.Journal -> {
             val all by folders.liveNotes.collectAsState()
-            JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onBack = ::back) }
+            JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal, onBack = ::back) }
+        }
+        Screen.Habits -> {
+            val all by folders.liveNotes.collectAsState()
+            HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onDelete = folders::deleteHabit, onBack = ::back)
         }
         Screen.Todos -> {
             val all by folders.liveNotes.collectAsState()
@@ -3910,12 +4255,13 @@ fun JotterRoot(
             },
             onTrash = { nav.push(Screen.Notes(TRASH_ID)) },
             onSettings = { nav.push(Screen.Settings) },
-            backLabel = if (nav.stack.size == 1) null else when (val previous = nav.stack[nav.stack.lastIndex - 1]) {
+            backLabel = if (shown.depth == 1) null else when (val previous = below) {
                 is Screen.Notes -> listName(previous.folderId)
                 is Screen.Editor -> "Back"
                 Screen.Todos -> "To-dos"
                 Screen.Reminders -> "Reminders"
                 Screen.Journal -> "Journal"
+                Screen.Habits -> "Habits"
                 Screen.Settings -> "Settings"
                 else -> "Folders"
             },
@@ -3923,24 +4269,47 @@ fun JotterRoot(
             onBack = ::back,
         )
         is Screen.Editor -> {
-            val previous = nav.stack.getOrNull(nav.stack.lastIndex - 1)
-            val backLabel = when (previous) {
-                is Screen.Notes -> listName(previous.folderId)
+            val backLabel = when (below) {
+                is Screen.Notes -> listName(below.folderId)
                 is Screen.Editor -> "Back" // came here through a link
                 Screen.Todos -> "To-dos"
                 Screen.Reminders -> "Reminders"
                 Screen.Journal -> "Journal"
+                Screen.Habits -> "Habits"
                 else -> "Folders"
             }
             EditorScreen(
                 editor, screen.noteId, screen.folderId, rows, fingerprint, backLabel, onBack = ::back,
                 // Save and close the note first; coming back reopens it from the database.
-                onOpenTag = { key -> editor.close(); nav.push(Screen.Notes(TAG_PREFIX + key)) },
+                onOpenTag = { key -> leaveEditor(); nav.push(Screen.Notes(TAG_PREFIX + key)) },
                 onOpenNote = { note -> editor.close(); nav.push(Screen.Editor(note.id, note.folderId)) },
                 // Replaces this note, so Back goes where this note's Back went.
                 onNewNote = { folder -> editor.close(); nav.pop(); nav.push(Screen.Editor(newId(), folder)) },
             )
         }
         Screen.Settings -> SettingsScreen(settings, onBack = ::back)
+    }
+    // A screen on its way in or out takes no taps: a second tap on a note mustn't open it twice.
+    if (shown != entry) Box(Modifier.fillMaxSize().pointerInput(Unit) {})
+    }
+    }
+}
+
+/** A screen and how deep in the stack it is: deeper slides in from the right, shallower slides back. */
+private data class NavEntry(val depth: Int, val screen: Screen)
+
+/** The text-size track: a rounded line with a dot for each size, filled up to the chosen one. */
+@Composable
+private fun SizeTrack(value: Float, last: Float) {
+    val on = jc.accent
+    val off = jc.line
+    Canvas(Modifier.fillMaxWidth().height(24.dp)) {
+        val y = size.height / 2
+        val r = 12.dp.toPx() // keeps the ends under the thumb's centre
+        val w = size.width - 2 * r
+        val x = r + w * (value / last)
+        drawLine(off, Offset(r, y), Offset(r + w, y), 4.dp.toPx(), StrokeCap.Round)
+        drawLine(on, Offset(r, y), Offset(x, y), 4.dp.toPx(), StrokeCap.Round)
+        for (k in 0..last.toInt()) drawCircle(if (k <= value) on else off, 4.dp.toPx(), Offset(r + w * k / last, y))
     }
 }

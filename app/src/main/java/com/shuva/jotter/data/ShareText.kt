@@ -5,9 +5,12 @@ package com.shuva.jotter.data
  * ("• ", "- ", "1. ", "[ ] " / "[x] "), two spaces per indent step and "> " for a quote. Numbering restarts
  * after any non-numbered line.
  */
-fun shareText(blocks: List<Block>): String {
+fun shareText(blocks: List<Block>): String = shareLines(blocks).joinToString("\n").trimEnd()
+
+/** [shareText] as one string per block. */
+fun shareLines(blocks: List<Block>): List<String> {
     var number = 0
-    return blocks.joinToString("\n") { b ->
+    return blocks.map { b ->
         if (b.type == BlockType.NUMBERED) number++ else number = 0
         "  ".repeat(b.indent.coerceIn(0, MAX_INDENT)) + (if (b.quote) "> " else "") + when (b.type) {
             BlockType.BULLET -> "• "
@@ -16,5 +19,5 @@ fun shareText(blocks: List<Block>): String {
             BlockType.CHECK -> if (b.checked) "[x] " else "[ ] "
             else -> ""
         } + (b.attachment?.let { "[${it.name}]" } ?: b.table?.plainText ?: b.text)
-    }.trimEnd()
+    }
 }

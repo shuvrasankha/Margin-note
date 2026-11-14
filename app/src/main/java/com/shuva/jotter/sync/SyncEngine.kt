@@ -1,5 +1,7 @@
 package com.shuva.jotter.sync
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import com.shuva.jotter.data.FolderEntity
 import com.shuva.jotter.data.JotterJson
 import com.shuva.jotter.data.NoteEntity
@@ -96,8 +98,10 @@ class SyncEngine(
 
         if (toMarkSynced.isNotEmpty() || (manifestFile == null && merged.isNotEmpty())) {
             val content = JotterJson.encodeToString(Manifest(merged.sortedBy { it.id }))
-            drive.upload(MANIFEST_NAME, manifestFile?.fileId, content, merged.maxOf { it.updatedAt })
-            toMarkSynced.forEach { local.markFolderSynced(it.id, it.updatedAt) }
+            withContext(NonCancellable) { // see uploadNote
+                drive.upload(MANIFEST_NAME, manifestFile?.fileId, content, merged.maxOf { it.updatedAt })
+                toMarkSynced.forEach { local.markFolderSynced(it.id, it.updatedAt) }
+            }
             uploaded += toMarkSynced.size
         }
     }
@@ -128,8 +132,12 @@ class SyncEngine(
     }
 
     private suspend fun uploadNote(note: NoteEntity, fileId: String?) {
-        drive.upload(noteFileName(note.id), fileId, JotterJson.encodeToString(note), note.updatedAt)
-        local.markNoteSynced(note.id, note.updatedAt)
+        // Every edit replaces the running sync. Cut off between Drive taking the file and the mark here, the next
+        // sync saw an unsynced note with a Drive copy and split the note into a "(conflict)" copy of itself.
+        withContext(NonCancellable) {
+            drive.upload(noteFileName(note.id), fileId, JotterJson.encodeToString(note), note.updatedAt)
+            local.markNoteSynced(note.id, note.updatedAt)
+        }
         uploaded++
     }
 

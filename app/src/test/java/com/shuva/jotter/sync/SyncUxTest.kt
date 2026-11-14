@@ -25,7 +25,7 @@ class SyncUxTest {
 
     @Test
     fun `a conflict copy finds the note it came from`() {
-        val local = note("a", "Plan", edited = 5)
+        val local = note("a", "Plan", edited = 5).withBlocks(listOf(Block(type = BlockType.TITLE, text = "Plan"), Block(text = "old")), 5)
         val remote = note("a", "Plan", edited = 9).withBlocks(listOf(Block(type = BlockType.TITLE, text = "Plan"), Block(text = "changed")), 9)
         val copy = resolveNoteConflict(local, remote, "copy", 10).conflictCopy!!
         assertEquals("Plan (conflict)", copy.title)

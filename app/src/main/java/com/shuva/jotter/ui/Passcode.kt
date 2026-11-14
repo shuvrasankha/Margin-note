@@ -128,7 +128,7 @@ fun PasscodeDialog(
                 else -> intro ?: "Use it to open locked notes on all your devices. It's separate from your phone passcode."
             }
             // A fixed height keeps the dots in place between the create and confirm steps.
-            Text(sub, Modifier.widthIn(max = 290.dp).heightIn(min = 63.dp).padding(bottom = 32.dp - 12.dp), style = JType.secondary.copy(fontSize = 15.sp, lineHeight = 21.sp), color = jc.muted, textAlign = TextAlign.Center)
+            Text(sub, Modifier.widthIn(max = 290.dp).heightIn(min = 63.dp).padding(bottom = 32.dp - 12.dp), style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
             PasscodePad(error, enabled = !busy, onComplete = { code ->
                 error = null
                 when {

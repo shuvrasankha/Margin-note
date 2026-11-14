@@ -104,7 +104,7 @@ fun ReminderDialog(
     // Wider than Android's default dialog: the calendar needs about 360dp.
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.padding(horizontal = 16.dp).widthIn(max = 400.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(jc.bg).verticalScroll(rememberScrollState())
+            Modifier.padding(horizontal = 16.dp).widthIn(max = 400.dp).fillMaxWidth().clip(JShape.lg).background(jc.bg).verticalScroll(rememberScrollState())
                 .padding(vertical = 16.dp),
         ) {
             Text(
@@ -216,8 +216,8 @@ private fun RepeatChips(selected: Repeat, onSelect: (Repeat) -> Unit) {
             val on = r == selected
             Text(
                 r.label,
-                Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) jc.accent else jc.bg)
-                    .border(1.dp, if (on) jc.accent else jc.line, RoundedCornerShape(16.dp))
+                Modifier.clip(JShape.md).background(if (on) jc.accent else jc.bg)
+                    .border(1.dp, if (on) jc.accent else jc.line, JShape.md)
                     .clickable(role = Role.RadioButton) { onSelect(r) }.padding(horizontal = 12.dp, vertical = 6.dp),
                 style = JType.small, color = if (on) jc.bg else jc.ink,
             )
@@ -232,7 +232,7 @@ private fun ChoiceRow(icon: String, label: String, detail: String?, danger: Bool
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         JIcon(icon, if (danger) jc.danger else jc.accent, size = 20.dp, stroke = 1.9f)
-        Text(label, Modifier.weight(1f), style = JType.row.copy(fontSize = 16.sp), color = if (danger) jc.danger else jc.ink)
+        Text(label, Modifier.weight(1f), style = JType.item, color = if (danger) jc.danger else jc.ink)
         detail?.let { Text(it, style = JType.small, color = jc.muted) }
     }
 }

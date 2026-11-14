@@ -41,7 +41,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /** How long the logo shows on a cold start. */
-private const val LAUNCH_MS = 900L
+private const val LAUNCH_MS = 550L
 
 @AndroidEntryPoint
 // FragmentActivity: the fingerprint prompt needs one.

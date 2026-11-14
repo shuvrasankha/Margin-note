@@ -26,6 +26,8 @@ data class LineMeta(
     val quote: Boolean = false,
     val indent: Int = 0,
     val table: NoteTable? = null,
+    val ai: Boolean = false,
+    val folded: Boolean = false,
 ) {
     /** A line that is one card (attachment or table) rather than text. */
     val isObject get() = attachment != null || table != null
@@ -53,7 +55,7 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
                 s.copy(start = maxOf(s.start, start) - start, end = minOf(s.end, end) - start).takeIf { it.start < it.end }
             }
             start = end + 1
-            Block(m.id, m.type, t, m.checked, lineMarks, m.attachment, m.quote, m.indent, m.table)
+            Block(m.id, m.type, t, m.checked, lineMarks, m.attachment, m.quote, m.indent, m.table, m.ai, m.folded)
         }
     }
 
@@ -98,8 +100,8 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
     fun normalized() = copy(
         lines = lines.mapIndexed { i, m ->
             when {
-                i == 0 -> m.copy(type = BlockType.TITLE, checked = false, quote = false, indent = 0)
-                m.isObject -> m.copy(type = BlockType.BODY, checked = false, quote = false, indent = 0)
+                i == 0 -> m.copy(type = BlockType.TITLE, checked = false, quote = false, indent = 0, ai = false, folded = false)
+                m.isObject -> m.copy(type = BlockType.BODY, checked = false, quote = false, indent = 0, ai = false, folded = false)
                 m.type == BlockType.TITLE -> m.copy(type = BlockType.BODY)
                 m.type != BlockType.CHECK && m.checked -> m.copy(checked = false)
                 else -> m
@@ -130,8 +132,8 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
         val currentText = texts[line]
 
         // Enter on an empty list, monospaced or quote line ends that style instead of adding a line.
-        if (removedText.isEmpty() && insertedText == "\n" && currentText.isEmpty() && (current.type in CONTINUING_TYPES || current.quote)) {
-            return copy(lines = lines.toMutableList().apply { this[line] = current.copy(type = BlockType.BODY, checked = false, quote = false) })
+        if (removedText.isEmpty() && insertedText == "\n" && currentText.isEmpty() && (current.type in CONTINUING_TYPES || current.quote || current.ai)) {
+            return copy(lines = lines.toMutableList().apply { this[line] = current.copy(type = BlockType.BODY, checked = false, quote = false, ai = false, folded = false) })
         }
 
         val newLines = if (removed == 0 && added > 0 && insertedText.all { it == '\n' } &&
@@ -139,10 +141,10 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
         ) {
             // Enter at the very start of a line: new empty line(s) go above; this line keeps its style.
             val type = if (current.type in CONTINUING_TYPES) current.type else BlockType.BODY
-            lines.subList(0, line) + List(added) { LineMeta(newId(), type, quote = current.quote, indent = current.indent) } + lines.subList(line, lines.size)
+            lines.subList(0, line) + List(added) { LineMeta(newId(), type, quote = current.quote, indent = current.indent, ai = current.ai) } + lines.subList(line, lines.size)
         } else {
             lines.subList(0, line + 1) +
-                List(added) { LineMeta(newId(), nextType(current.type), quote = current.quote, indent = current.indent) } +
+                List(added) { LineMeta(newId(), nextType(current.type), quote = current.quote, indent = current.indent, ai = current.ai) } +
                 lines.subList(line + 1 + removed, lines.size)
         }
         val newMarks = marks.mapNotNull { it.shifted(p, old.length - s, insertedText.length) }
@@ -262,7 +264,7 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
             }
             return EditorDoc(
                 list.joinToString("\n") { it.text.replace('\n', ' ') },
-                list.map { LineMeta(it.id, it.type, it.checked, it.attachment, it.quote, it.indent, it.table) },
+                list.map { LineMeta(it.id, it.type, it.checked, it.attachment, it.quote, it.indent, it.table, it.ai, it.folded) },
                 marks,
             ).normalized()
         }

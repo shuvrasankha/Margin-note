@@ -81,6 +81,39 @@ class MathEvalTest {
         assertEquals(listOf("y = x^2", "g(t) = t + 1"), plotsIn("Notes\ny = x^2\n5 + 5 =\ng(t) = t + 1").map { it.label })
     }
 
+    @Test fun graphsOfEquationsInXAndY() {
+        fun plot(line: String) = (suggest(line) as MathSuggestion.Graph).plot
+        assertEquals(9.0, plot("Y = x^2").f(3.0), 1e-9) // phone keyboards capitalise the line's first letter
+        assertEquals(2.0, plot("2x + y = 4").f(1.0), 1e-9)
+        assertEquals(3.0, plot("y - 2x = 1").f(1.0), 1e-9)
+        assertEquals(3.0, plot("x y = 6").f(2.0), 1e-9)
+        assertNull(plot("2x + y = 4").other)
+        val circle = plot("x^2 + y^2 = 25")
+        assertEquals(4.0, circle.f(3.0), 1e-9)
+        assertEquals(-4.0, circle.other!!(3.0), 1e-9)
+        assertTrue(circle.f(6.0).isNaN()) // outside the circle
+        assertEquals(setOf(2.0, -2.0), plot("x = y^2").let { setOf(it.f(4.0), it.other!!(4.0)) })
+        // A function under another equation is still a graph, not a pair to solve.
+        assertTrue(suggest("y = x^2\ny = 2x + 1") is MathSuggestion.Graph)
+        assertTrue(suggest("x y = 6\nY = 8e^(-x^2)sin(5x)") is MathSuggestion.Graph)
+        assertNull(suggest("x + sin(y) = 1")) // not drawn, and not "solved" from the part after x
+        assertTrue(suggest("2x + y = 4\nx - y = 2") !is MathSuggestion.Graph) // a pair is still solved
+    }
+
+    @Test fun graphsOfFunctionPowersAndLogBases() {
+        fun y(line: String, x: Double) = (suggest(line) as MathSuggestion.Graph).plot.f(x)
+        val s = Math.sin(1.0)
+        assertEquals(s * s, y("y = sin²(x)", 1.0), 1e-9)
+        assertEquals(s * s, y("y = sin^2(x)", 1.0), 1e-9)
+        assertEquals(s * s * 3, y("y = 3sin^2 x", 1.0), 1e-9)
+        assertEquals(Math.PI / 2, y("y = sin⁻¹(x)", 1.0), 1e-9)
+        assertEquals(Math.PI / 4, y("y = tan^-1(x)", 1.0), 1e-9)
+        assertEquals(2.0, y("y = log10(x)", 100.0), 1e-9)
+        assertEquals(3.0, y("y = log₂(x)", 8.0), 1e-9)
+        assertEquals(3.0, y("y = log2(x)", 8.0), 1e-9)
+        assertEquals(Math.sin(4.0), y("y = sin(x^2)", 2.0), 1e-9) // a power inside the brackets is untouched
+    }
+
     @Test fun onlyTheCursorsLineCounts() {
         val text = "1 + 1 =\n2 × 3 =\nnext"
         assertEquals("2", mathAnswerAt(text, 7))
@@ -115,4 +148,13 @@ class MathEvalTest {
     }
 
     private fun suggestAnswer(text: String) = (suggest(text) as? MathSuggestion.Answer)?.text
+
+    @Test fun aTableGraphsItsNumberColumnsAgainstTheFirst() {
+        val g = tableGraph(NoteTable(listOf(listOf("t", "height", "note"), listOf("1", "2", "ok"), listOf("3", "6", ""), listOf("2", "4", "x"))))!!
+        assertEquals(listOf("height"), g.plots.map { it.label })
+        assertEquals(5.0, g.plots[0].f(2.5), 1e-9)
+        assertTrue(g.plots[0].f(0.0).isNaN()) // nothing drawn outside the points
+        assertEquals(2.0, g.centreX, 1e-9)
+        assertNull(tableGraph(NoteTable(listOf(listOf("a", "b"), listOf("1", "x")))))
+    }
 }

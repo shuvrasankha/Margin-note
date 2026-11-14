@@ -128,7 +128,7 @@ fun TodoHeader(count: TodoCount, startDay: Long, target: Long?, editable: Boolea
             val label = target?.let { "Target " + targetLabel(context, it) } ?: if (editable) "Add target date" else null
             if (label != null) {
                 Row(
-                    Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = editable, role = Role.Button, onClick = onPickTarget)
+                    Modifier.clip(JShape.xs).clickable(enabled = editable, role = Role.Button, onClick = onPickTarget)
                         .background(if (target != null) jc.selected else androidx.compose.ui.graphics.Color.Transparent)
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                         .semantics { contentDescription = if (target != null) "$label. Tap to change it." else label },
@@ -163,7 +163,7 @@ fun TargetDateDialog(current: Long?, onPick: (Long) -> Unit, onRemove: () -> Uni
     )
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.padding(horizontal = 16.dp).widthIn(max = 400.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(jc.bg)
+            Modifier.padding(horizontal = 16.dp).widthIn(max = 400.dp).fillMaxWidth().clip(JShape.lg).background(jc.bg)
                 .verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
         ) {
             Text("Target end date", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
@@ -247,7 +247,7 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
 @Composable
 private fun Summary(report: com.shuva.jotter.data.TodoReport, today: Long) {
     Column(
-        Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(jc.surface)
+        Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp).fillMaxWidth().clip(JShape.md).background(jc.surface)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -273,7 +273,7 @@ private fun Summary(report: com.shuva.jotter.data.TodoReport, today: Long) {
                 stats.forEach { (n, label, color) ->
                     Column {
                         Text("$n", style = JType.rowTitle, color = color)
-                        Text(label, style = JType.small.copy(fontSize = 12.sp), color = jc.muted)
+                        Text(label, style = JType.caption, color = jc.muted)
                     }
                 }
             }

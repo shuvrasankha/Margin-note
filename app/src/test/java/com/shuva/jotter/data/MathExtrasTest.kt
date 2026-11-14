@@ -38,4 +38,14 @@ class MathExtrasTest {
         assertNull(convert("5 apples in pears"))
         assertEquals("15", answer("Note\n10 + 5 ="))
     }
+
+    @Test fun physicsConstantsFillInOnlyWhatIsLeftUndefined() {
+        assertEquals("599584916", answer("Note\nc × 2 ="))
+        assertEquals("19.6133", answer("Note\nm = 2\nF = m g ="))
+        assertEquals("20", answer("Note\ng = 10\n2 g =")) // a value in the note wins
+        assertEquals("1.60218 × 10^-19 J", answer("Note\n1 eV in J ="))
+        assertEquals("202.65 kPa", answer("Note\n2 atm in kPa ="))
+        // Single letters still solve as unknowns.
+        assertEquals(listOf("5"), (mathSuggestionAt("Note\n2h = 10", 12) as MathSuggestion.Solution).values)
+    }
 }

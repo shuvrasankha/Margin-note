@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuva.jotter.data.AppPrefs
 import com.shuva.jotter.data.paperStyle
+import com.shuva.jotter.data.fontStyle
 import com.shuva.jotter.data.ATTACHMENT_CHAR
 import com.shuva.jotter.data.NoteTable
 import com.shuva.jotter.data.PDF_MIME
@@ -109,6 +110,9 @@ const val ALL_ID = "all"
 const val PINNED_ID = "pinned"
 
 /** A list that isn't a stored folder. */
+/** Journal entries and habits have their own screens, so All Notes leaves them out (search still finds them). */
+fun inAllNotes(note: NoteEntity) = !isHabit(note) && journalDay(note) == null
+
 fun isVirtualList(id: String) = id == TRASH_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
 
 sealed interface Screen {
@@ -123,6 +127,7 @@ sealed interface Screen {
     data object Reminders : Screen
     /** The journal calendar: a note per day. */
     data object Journal : Screen
+    data object Habits : Screen
 }
 
 /** Something another app shared to Jotter: text (with an optional subject) and/or a photo. */
@@ -200,10 +205,28 @@ class FoldersViewModel @Inject constructor(
         viewModelScope.launch {
             val id = journalId(day)
             // shortcut: an entry deleted for good can't be started again (saveNote keeps tombstones); give it a new id if that comes up.
+            // A deleted entry comes back from Recently Deleted rather than leaving the day stuck on it.
+            if (repo.getNote(id)?.trashedAt != null) repo.recover(id)
             val note = repo.getNote(id) ?: repo.saveNote(id, DEFAULT_FOLDER_ID, sharedNoteBlocks(journalTitle(day), null, null)).let { repo.getNote(id) }
             onReady(id, note?.folderId ?: DEFAULT_FOLDER_ID)
         }
     }
+
+    fun addHabit(name: String) = viewModelScope.launch {
+        if (name.isNotBlank()) repo.saveNote("habit-" + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
+    }
+    /** Ticks [day] off for the habit [note], or unticks it: the body is rewritten as one line per day, newest first. */
+    fun toggleHabit(note: NoteEntity, day: java.time.LocalDate) = viewModelScope.launch {
+        val days = habitDays(note).let { if (day in it) it - day else it + day }.sortedDescending()
+        repo.saveNote(note.id, note.folderId, listOf(note.blocks.first()) + days.map { Block(text = it.toString()) })
+    }
+    fun renameHabit(note: NoteEntity, name: String) = viewModelScope.launch {
+        if (name.isNotBlank()) repo.saveNote(note.id, note.folderId, listOf(note.blocks.first().copy(text = name.trim())) + note.blocks.drop(1))
+    }
+    fun deleteHabit(note: NoteEntity) = viewModelScope.launch { repo.moveToTrash(note.id) }
+
+    /** Moves [day]'s journal entry to Recently Deleted. */
+    fun deleteJournal(day: java.time.LocalDate) = viewModelScope.launch { repo.moveToTrash(journalId(day)) }
 
     val rows: StateFlow<List<FolderRow>> = combine(repo.liveFolders(), repo.folderCounts(), repo.liveNotes()) { folders, counts, notes ->
         val byId = counts.associate { it.folderId to it.count }
@@ -220,7 +243,7 @@ class FoldersViewModel @Inject constructor(
     /** Every note outside Recently Deleted, for the to-do report. */
     val liveNotes: StateFlow<List<NoteEntity>> = repo.liveNotes().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val libraryCounts: StateFlow<Pair<Int, Int>> = repo.liveNotes().map { all -> all.size to all.count { it.isPinned } }
+    val libraryCounts: StateFlow<Pair<Int, Int>> = repo.liveNotes().map { all -> all.count(::inAllNotes) to all.count { it.isPinned } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0 to 0)
 
     /** Tags used in notes outside Recently Deleted, with note counts. */
@@ -263,7 +286,7 @@ class NotesViewModel @Inject constructor(
                 q.isNotEmpty() -> combine(repo.search(q), appPrefs.toggles) { found, t -> // all folders, excludes Recently Deleted
                     if (t(Toggle.HIDE_LOCKED_IN_SEARCH)) found.filterNot { it.isLocked } else found
                 }
-                f == ALL_ID -> repo.liveNotes()
+                f == ALL_ID -> repo.liveNotes().map { all -> all.filter(::inAllNotes) }
                 f == PINNED_ID -> repo.liveNotes().map { all -> all.filter { it.isPinned } }
                 f.startsWith(TAG_PREFIX) -> repo.liveNotes().map { all ->
                     val key = f.removePrefix(TAG_PREFIX)
@@ -435,6 +458,7 @@ class EditorViewModel @Inject constructor(
     private val session: LockSession,
     val files: AttachmentFiles,
     private val reminders: com.shuva.jotter.data.Reminders,
+    val ai: com.shuva.jotter.data.AiKeys,
 ) : ViewModel() {
     companion object {
         const val START_SCAN = "scan"
@@ -541,6 +565,7 @@ class EditorViewModel @Inject constructor(
     var targetDate by mutableStateOf<Long?>(null); private set
     /** The paper behind the note's text. */
     var paper by mutableStateOf(com.shuva.jotter.data.Paper.PLAIN); private set
+    var font by mutableStateOf(com.shuva.jotter.data.NoteFont.DEFAULT); private set
     var value by mutableStateOf(TextFieldValue()); private set
     var readOnly by mutableStateOf(false); private set
     var loaded by mutableStateOf(false); private set
@@ -595,6 +620,7 @@ class EditorViewModel @Inject constructor(
             createdAt = note?.createdAt
             targetDate = note?.targetDate
             paper = note?.paperStyle ?: com.shuva.jotter.data.Paper.PLAIN
+            font = note?.fontStyle ?: com.shuva.jotter.data.NoteFont.DEFAULT
             conflictWith = note?.takeIf { it.trashedAt == null && !it.isLocked }
                 ?.let { conflictOriginal(it, repo.liveNotes().first()) }?.takeIf { !it.isLocked }
             saved = true
@@ -709,6 +735,24 @@ class EditorViewModel @Inject constructor(
         editingTable = doc.lines[at].id
     }
 
+    /** Adds a lab write-up skeleton (aim, materials, method, an observations table, result, conclusion) after the cursor's line. */
+    fun insertLabTemplate() {
+        if (readOnly || needsUnlock) return
+        val blocks = doc.toBlocks().toMutableList()
+        val at = cursorLine + 1
+        val skeleton = buildList {
+            fun section(name: String) { add(Block(type = BlockType.HEADING, text = name)); add(Block()) }
+            section("Aim"); section("Materials"); section("Method")
+            add(Block(type = BlockType.HEADING, text = "Observations"))
+            add(Block(text = ATTACHMENT_CHAR.toString(), table = NoteTable(listOf(listOf("Trial", "Reading", "Notes")) + List(3) { List(3) { "" } })))
+            section("Result"); section("Conclusion")
+        }
+        blocks.addAll(at, skeleton)
+        doc = EditorDoc.fromBlocks(blocks)
+        value = TextFieldValue(doc.text, TextRange(doc.lineStart(at + 1)))
+        changed()
+    }
+
     /** Replaces the table on the line with id [lineId] (an edit from the table editor; Undo brings the old one back). */
     fun updateTable(lineId: String, table: NoteTable) {
         if (readOnly) return
@@ -805,11 +849,11 @@ class EditorViewModel @Inject constructor(
     fun dismissScan() { scanJob?.cancel(); scan = null }
 
     /** Adds [text] as note lines after line [afterLine] (default: the cursor's line) and puts the cursor after it. */
-    fun insertText(text: String, afterLine: Int? = null) {
+    fun insertText(text: String, afterLine: Int? = null, ai: Boolean = false) {
         scan = null
         if (readOnly || needsUnlock || text.isBlank()) return
         val blocks = doc.toBlocks().toMutableList()
-        addLines(blocks, (afterLine ?: cursorLine) + 1, text)
+        addLines(blocks, (afterLine ?: cursorLine) + 1, text, ai)
     }
 
     // ---------- PDF tools ----------
@@ -872,10 +916,12 @@ class EditorViewModel @Inject constructor(
     suspend fun importForMerge(uri: android.net.Uri): Attachment = files.import(uri)
 
     /** [text] as lines at block [index] of [blocks], which becomes the note, with the cursor after the text. */
-    private fun addLines(blocks: MutableList<Block>, index: Int, text: String) {
-        val at = index.coerceIn(1, blocks.size)
+    private fun addLines(blocks: MutableList<Block>, index: Int, text: String, ai: Boolean = false) {
+        val from = index.coerceIn(1, blocks.size)
         val lines = text.trimEnd().lines()
-        blocks.addAll(at, lines.map { Block(text = it) })
+        // An AI card starts with an empty line that holds its badge and buttons.
+        blocks.addAll(from, (if (ai) listOf(Block(ai = true)) else emptyList()) + lines.map { Block(text = it, ai = ai) })
+        val at = if (ai) from + 1 else from
         val last = at + lines.size - 1
         if (last == blocks.lastIndex) blocks.add(Block()) // a line to keep typing on
         doc = EditorDoc.fromBlocks(blocks)
@@ -1009,12 +1055,56 @@ class EditorViewModel @Inject constructor(
     /** This note's earlier versions, newest first (see NoteRepository.keepVersion). */
     fun versions() = repo.versionsOf(noteId)
 
+    /** True when every line is text, so the body can be swapped for new text without losing anything. */
+    val textOnly get() = doc.lines.none { it.isObject }
+
+    /**
+     * Swaps everything under the title for [text] as one edit, so Undo brings the old text back. Only for a
+     * [textOnly] note; a first line repeating the title is dropped.
+     */
+    fun replaceBody(text: String) {
+        if (readOnly || needsUnlock || !textOnly || text.isBlank()) return
+        val title = doc.toBlocks().first()
+        val lines = text.trim().lines().let { if (it.first().trim() == title.text.trim()) it.drop(1) else it }.dropWhile { it.isBlank() }
+        if (lines.isEmpty()) return
+        lastChangeAt = 0 // its own undo step
+        doc = EditorDoc.fromBlocks(listOf(title) + lines.map { com.shuva.jotter.data.Block(text = it) })
+        value = TextFieldValue(doc.text, TextRange(0))
+        changed()
+    }
+
     /** Puts an earlier version back as an ordinary edit, so Undo returns to what was there. */
     fun restoreVersion(blocks: List<com.shuva.jotter.data.Block>) {
         if (readOnly || needsUnlock || locked) return
         lastChangeAt = 0 // its own undo step
         doc = EditorDoc.fromBlocks(blocks)
         value = TextFieldValue(doc.text, TextRange(0))
+        changed()
+    }
+
+    /** The lines of the AI card that starts on line [start]. */
+    private fun aiRun(start: Int): IntRange {
+        var end = start
+        while (doc.lines.getOrNull(end + 1)?.ai == true) end++
+        return start..end
+    }
+
+    /** Folds the AI card starting on line [start] down to its badge, or opens it again. */
+    fun toggleAiFold(start: Int) {
+        val meta = doc.lines.getOrNull(start)?.takeIf { it.ai } ?: return
+        if (readOnly) return
+        doc = doc.copy(lines = doc.lines.toMutableList().apply { this[start] = meta.copy(folded = !meta.folded) })
+        value = TextFieldValue(doc.text, TextRange(doc.lineStart(start) + doc.texts[start].length))
+        changed()
+    }
+
+    /** Deletes the AI card starting on line [start], text and all. */
+    fun removeAiCard(start: Int) {
+        if (readOnly || doc.lines.getOrNull(start)?.ai != true) return
+        val run = aiRun(start)
+        lastChangeAt = 0 // its own undo step
+        doc = EditorDoc.fromBlocks(doc.toBlocks().filterIndexed { i, _ -> i !in run })
+        value = TextFieldValue(doc.text, TextRange(doc.lineStart(start.coerceAtMost(doc.lines.lastIndex))))
         changed()
     }
 
@@ -1064,16 +1154,31 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch { persist() }
     }
 
-    fun close() {
+    fun close(keepShown: Boolean = false) {
         flush()
         val id = noteId
         val newTitle = doc.texts.first().trim()
         if (loaded && !readOnly && !needsUnlock && id.isNotEmpty() && titleAtOpen.isNotBlank()) {
             val oldTitle = titleAtOpen
             viewModelScope.launch { repo.renameLinks(id, oldTitle, newTitle) }
+            if (keepShown) titleAtOpen = newTitle // the close that follows has nothing left to rename
         }
+        if (keepShown) return
         noteId = ""
         loaded = false // the next note must not briefly show this one
+    }
+
+    /**
+     * [close] for a note whose screen is animating away: saved now, but it stays on screen for [ms] so the
+     * screen doesn't go blank as it slides off. Skipped if the note was opened again meanwhile ([gone] is false).
+     */
+    fun closeSoon(ms: Long, gone: () -> Boolean) {
+        val id = noteId
+        close(keepShown = true)
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(ms)
+            if (noteId == id && gone()) close()
+        }
     }
 
     /** Line the cursor is on, and the range of lines the selection covers. */
@@ -1221,6 +1326,13 @@ class EditorViewModel @Inject constructor(
         afterSave { repo.setPaper(it, p) }
     }
 
+    /** Sets the typeface of the note's text; a new note is saved first. */
+    fun changeFont(f: com.shuva.jotter.data.NoteFont) {
+        if (readOnly) return
+        font = f
+        afterSave { repo.setFont(it, f) }
+    }
+
     fun togglePin() { if (!readOnly) afterSave { repo.togglePin(it); pinned = repo.getNote(it)?.isPinned == true } }
 
     fun duplicate(onDone: (NoteEntity) -> Unit) { if (!readOnly && !needsUnlock) afterSave { id -> repo.duplicate(id)?.let(onDone) } }
@@ -1287,6 +1399,7 @@ class SettingsViewModel @Inject constructor(
     private val session: LockSession,
     private val repo: NoteRepository,
     private val files: AttachmentFiles,
+    val ai: com.shuva.jotter.data.AiKeys,
     connectivity: Connectivity,
 ) : ViewModel() {
     val status = prefs.status

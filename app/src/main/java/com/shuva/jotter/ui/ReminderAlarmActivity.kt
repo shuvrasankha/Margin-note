@@ -137,7 +137,7 @@ private fun AlarmScreen(title: String, body: String?, repeat: Repeat, onSnooze: 
 @Composable
 private fun AlarmButton(label: String, container: Color, content: Color, modifier: Modifier, onClick: () -> Unit) {
     Box(
-        modifier.height(56.dp).clip(RoundedCornerShape(28.dp)).background(container).clickable(role = Role.Button, onClick = onClick),
+        modifier.height(56.dp).clip(JShape.pill).background(container).clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(label, style = JType.row.copy(fontSize = 17.sp), color = content) }
+    ) { Text(label, style = JType.row, color = content) }
 }

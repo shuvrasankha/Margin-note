@@ -42,6 +42,15 @@ class SyncMergeTest {
     }
 
     @Test
+    fun `an older copy holding only the title is dropped, not kept as a conflict copy`() {
+        val result = resolveNoteConflict(note(updatedAt = 20, text = "2+4 = 6"), note(updatedAt = 10), "c", 30)
+        assertTrue(result.localWins)
+        assertEquals(null, result.conflictCopy)
+        // A different title, or any text, is still kept.
+        assertTrue(resolveNoteConflict(note(updatedAt = 20, text = "x"), note(updatedAt = 10, text = "y"), "c", 30).conflictCopy != null)
+    }
+
+    @Test
     fun `Recently Deleted expires after exactly 30 days`() {
         val trashed = note(updatedAt = 0).copy(trashedAt = 1_000)
         assertFalse(trashed.isTrashExpired(1_000 + TRASH_RETENTION_MS - 1))

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,7 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,6 +37,21 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import com.shuva.jotter.data.NoteEntity
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -90,72 +106,138 @@ fun journalDay(note: NoteEntity): LocalDate? =
 /** A new entry's title: the day written out ("Friday, 13 November 2026"). */
 fun journalTitle(day: LocalDate): String = day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL))
 
-/** A month at a time; days with an entry carry a dot. Tapping a day opens its entry, starting one if needed. */
+/**
+ * A month at a time (swipe or the arrows to move), with the days around it greyed in so each week is whole;
+ * the week holding today sits on a band. Days with an entry carry a dot, days to come can't be opened.
+ * Below: a button for today's entry and the month's entries, newest first, as an agenda.
+ */
 @Composable
-fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onBack: () -> Unit) {
+fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit) {
     val today = LocalDate.now()
-    var month by rememberSaveable { mutableStateOf(YearMonth.from(today).toString()) }
+    val thisMonth = YearMonth.from(today)
+    var month by rememberSaveable { mutableStateOf(thisMonth.toString()) }
     val shown = YearMonth.parse(month)
     val written = remember(notes) { notes.mapNotNull(::journalDay).toSet() }
     val locale = Locale.getDefault()
     val firstDay = WeekFields.of(locale).firstDayOfWeek
     val blanks = (shown.atDay(1).dayOfWeek.value - firstDay.value + 7) % 7
-    Scaffold(topBar = { NavBar("Folders", onBack) }) { padding ->
+    val canGoOn = shown < thisMonth
+    var drag by remember { mutableFloatStateOf(0f) }
+    var deleting by remember { mutableStateOf<LocalDate?>(null) }
+    deleting?.let { day ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete this entry?") },
+            text = { Text("${journalTitle(day)} moves to Recently Deleted. Opening the day again brings it back.") },
+            confirmButton = { TextButton(onClick = { onDelete(day); deleting = null }) { Text("Delete", color = jc.danger) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
+    }
+    Scaffold(topBar = {
+        NavBar("Folders", onBack) {
+            if (shown != thisMonth) TextAction("Today", { month = thisMonth.toString() })
+            IconAction(Ico.BACK, "Previous month", { month = shown.minusMonths(1).toString() })
+            IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() }, enabled = canGoOn)
+        }
+    }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
-            PageTitle("Journal")
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconAction(Ico.BACK, "Previous month", { month = shown.minusMonths(1).toString() })
-                Text(
-                    shown.month.getDisplayName(TextStyle.FULL_STANDALONE, locale) + " " + shown.year,
-                    Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-                IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() })
-            }
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Row {
+            Text("Journal", Modifier.padding(start = 20.dp), style = JType.rowTitle, color = jc.accent)
+            Text(
+                buildAnnotatedString {
+                    append(shown.month.getDisplayName(TextStyle.FULL_STANDALONE, locale) + " ")
+                    withStyle(SpanStyle(color = jc.accent)) { append(shown.year.toString()) }
+                },
+                Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp).semantics { heading() },
+                style = JType.pageTitle, color = jc.ink,
+            )
+            Column(
+                Modifier.padding(horizontal = 8.dp)
+                    // Swipe left for the next month, right for the one before.
+                    .pointerInput(canGoOn) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { drag = 0f },
+                            onDragEnd = {
+                                if (drag < -80.dp.toPx() && canGoOn) month = shown.plusMonths(1).toString()
+                                else if (drag > 80.dp.toPx()) month = shown.minusMonths(1).toString()
+                            },
+                        ) { _, dx -> drag += dx }
+                    },
+            ) {
+                Row(Modifier.padding(bottom = 2.dp)) {
                     for (k in 0 until 7) {
+                        val dow = DayOfWeek.of((firstDay.value - 1 + k) % 7 + 1)
                         Text(
-                            DayOfWeek.of((firstDay.value - 1 + k) % 7 + 1).getDisplayName(TextStyle.NARROW, locale),
-                            Modifier.weight(1f), style = JType.small, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            dow.getDisplayName(TextStyle.SHORT_STANDALONE, locale).uppercase(locale),
+                            Modifier.weight(1f), style = JType.section.copy(fontSize = 11.sp, letterSpacing = 0.06.em),
+                            color = if (shown == thisMonth && dow == today.dayOfWeek) jc.accent else jc.muted, textAlign = TextAlign.Center,
                         )
                     }
                 }
-                val cells = List(blanks) { null } + (1..shown.lengthOfMonth()).map { shown.atDay(it) }
-                cells.chunked(7).forEach { week ->
-                    Row {
+                val first = shown.atDay(1).minusDays(blanks.toLong())
+                val weeks = (blanks + shown.lengthOfMonth() + 6) / 7
+                for (w in 0 until weeks) {
+                    val week = (0 until 7).map { first.plusDays(w * 7L + it) }
+                    Row(
+                        Modifier.padding(vertical = 2.dp).clip(JShape.sm)
+                            .then(if (today in week) Modifier.background(jc.surface) else Modifier),
+                    ) {
                         week.forEach { day ->
-                            Box(Modifier.weight(1f).aspectRatio(1f), contentAlignment = Alignment.Center) {
-                                if (day != null) DayCell(day, day == today, day in written) { onOpenDay(day) }
+                            Box(Modifier.weight(1f).height(50.dp), contentAlignment = Alignment.Center) {
+                                DayCell(day, day == today, day > today, YearMonth.from(day) != shown, day in written) { onOpenDay(day) }
                             }
                         }
-                        repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
-            val count = written.count { YearMonth.from(it) == shown }
-            Text(
-                when (count) { 0 -> "No entries this month. Tap a day to write one."; 1 -> "1 entry this month"; else -> "$count entries this month" },
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), style = JType.secondary, color = jc.muted,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            PrimaryButton(
+                if (today in written) "Open today's entry" else "Write today's entry", { onOpenDay(today) },
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
             )
+            HorizontalDivider(color = jc.line)
+            val entries = written.filter { YearMonth.from(it) == shown }.sortedDescending()
+            Text(
+                if (entries.isEmpty()) "NO ENTRIES" else plural(entries.size, "entry", "entries").uppercase(locale),
+                Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp), style = JType.section, color = jc.accent,
+            )
+            if (entries.isEmpty()) Text(
+                "Tap a day to write about it.", Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted,
+            )
+            entries.forEach { day ->
+                Row(
+                    Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenDay(day) }.padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (day == today) jc.accent else jc.accent.copy(alpha = 0.45f)))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (day == today) "Today" else day.dayOfWeek.getDisplayName(TextStyle.FULL_STANDALONE, locale),
+                            style = JType.secondary, color = jc.muted,
+                        )
+                        Text(day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)), style = JType.row, color = jc.ink)
+                    }
+                    IconAction(Ico.TRASH, "Delete entry for " + journalTitle(day), { deleting = day }, color = jc.muted, size = 20.dp)
+                }
+            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun DayCell(day: LocalDate, isToday: Boolean, hasEntry: Boolean, onClick: () -> Unit) {
-    val label = journalTitle(day) + if (hasEntry) ", has an entry" else ""
+internal fun DayCell(day: LocalDate, isToday: Boolean, isLater: Boolean, outside: Boolean, hasEntry: Boolean, onClick: () -> Unit) {
+    val label = journalTitle(day) + (if (isToday) ", today" else "") + if (hasEntry) ", has an entry" else ""
     Column(
-        Modifier.size(44.dp).clip(CircleShape)
-            .then(if (isToday) Modifier.border(1.5.dp, jc.accent, CircleShape) else Modifier)
-            .clickable(role = Role.Button, onClick = onClick)
+        Modifier.size(42.dp).clip(CircleShape)
+            .then(if (isToday) Modifier.background(jc.accent) else Modifier)
+            .clickable(enabled = !isLater, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            day.dayOfMonth.toString(), style = JType.body.copy(fontWeight = if (hasEntry) FontWeight.SemiBold else FontWeight.Normal),
-            color = if (isToday) jc.accent else jc.ink,
+            day.dayOfMonth.toString(),
+            style = JType.row.copy(fontSize = 18.sp, fontWeight = if (hasEntry || isToday) FontWeight.SemiBold else FontWeight.Normal),
+            color = when { isToday -> jc.bg; isLater || outside -> jc.muted.copy(alpha = 0.5f); else -> jc.ink },
         )
-        Box(Modifier.padding(top = 2.dp).size(5.dp).clip(CircleShape).background(if (hasEntry) jc.accent else androidx.compose.ui.graphics.Color.Transparent))
+        Box(Modifier.padding(top = 2.dp).size(4.dp).clip(CircleShape).background(when { !hasEntry -> Color.Transparent; isToday -> jc.bg; else -> jc.accent }))
     }
 }

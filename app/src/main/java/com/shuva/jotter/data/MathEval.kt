@@ -38,7 +38,8 @@ sealed interface MathSuggestion {
 }
 
 /** A curve to draw: its [label] as written and y for a given x (NaN where it isn't defined). */
-class Plot(val label: String, val f: (Double) -> Double)
+/** A curve: [f] gives y for an x (NaN where there is none). [other] is the other half of a curve with two ys for an x (a circle). */
+class Plot(val label: String, val other: ((Double) -> Double)? = null, val f: (Double) -> Double)
 
 /**
  * What to offer for [text] with the cursor at [cursor], or null. Only when the cursor ends its line (spaces
@@ -57,8 +58,49 @@ fun mathSuggestionAt(text: String, cursor: Int): MathSuggestion? {
     TOTAL.matchEntire(line)?.let { m -> return totalOf(m.groupValues[1], above.drop(1).dropLast(1))?.let(MathSuggestion::Answer) }
     val scope = mathScope(above)
     if (comparison != null) return inequality(comparison, scope)
+    // "y = x²" is a curve to draw even right under another equation; only other pairs are solved together.
+    functionGraph(line, scope)?.let { return MathSuggestion.Graph(it) }
     systemAt(line, above.dropLast(1), scope)?.let { return it }
-    return suggestionFor(line, scope)
+    // Physics constants only fill in what's left over, so "2h = 10" still solves for h while "E = m c² =" works.
+    return suggestionFor(line, scope) ?: suggestionFor(line, scope.withPhysics())
+}
+
+/** A table drawn as curves, with the box the points fill so the graph can open on them. */
+class TableGraph(val plots: List<Plot>, val xMin: Double, val xMax: Double, val yMin: Double, val yMax: Double) {
+    val centreX get() = (xMin + xMax) / 2
+    val centreY get() = (yMin + yMax) / 2
+    /** Units across a view [aspect] (width / height) wide that shows every point with a margin. */
+    fun unitsAcross(aspect: Float): Float = (maxOf(xMax - xMin, (yMax - yMin) * aspect, 1e-9) * 1.3).toFloat()
+}
+
+/**
+ * Each numeric column of [t] plotted against its first column (the header names the curves), the points joined
+ * with straight lines. Null unless two or more rows give numbers in the first column and some other.
+ */
+// shortcut: points are joined with straight lines (no markers, no fit); add a point-style Plot if it matters.
+fun tableGraph(t: NoteTable): TableGraph? {
+    val header = t.rows.firstOrNull() ?: return null
+    val body = t.rows.drop(1)
+    fun number(s: String?) = s?.replace(",", "")?.trim()?.toDoubleOrNull()?.takeIf { it.isFinite() }
+    val xs = body.map { number(it.getOrNull(0)) }
+    val series = (1 until header.size).mapNotNull { c ->
+        val pts = body.indices.mapNotNull { r -> xs[r]?.let { x -> number(body[r].getOrNull(c))?.let { y -> x to y } } }
+            .sortedBy { it.first }.distinctBy { it.first }
+        if (pts.size < 2) null else (header[c].trim().ifBlank { "Column ${c + 1}" }) to pts
+    }
+    if (series.isEmpty()) return null
+    val all = series.flatMap { it.second }
+    val plots = series.map { (label, pts) ->
+        Plot(label) { x ->
+            val i = pts.indexOfFirst { it.first >= x }
+            when {
+                i < 0 || x < pts.first().first -> Double.NaN
+                i == 0 -> pts[0].second
+                else -> { val (x0, y0) = pts[i - 1]; val (x1, y1) = pts[i]; y0 + (y1 - y0) * (x - x0) / (x1 - x0) }
+            }
+        }
+    }
+    return TableGraph(plots, all.minOf { it.first }, all.maxOf { it.first }, all.minOf { it.second }, all.maxOf { it.second })
 }
 
 /** The plot of every graphable line in [text] (each "y = …" and "f(x) = …"), top to bottom. */
@@ -83,6 +125,8 @@ private fun suggestionFor(line: String, scope: Scope): MathSuggestion? {
     }
     if (line.count { it == '=' } != 1) return null
     graphOf(line, scope)?.let { return MathSuggestion.Graph(it) }
+    // One equation can't give both x and y; solving the part after x would be a wrong answer.
+    if (xyEquation(line, scope) != null) return null
     val (lhs, rhs) = line.split('=')
     if (DEFINITION.matches(lhs)) return null // "rent = 1200" names a value
     val right = parseOrNull(rhs) ?: return null
@@ -118,15 +162,59 @@ private fun noRealRoots(name: String, f: (Double) -> Double): MathSuggestion {
 /** Where "2x + 2 = 2(x + 1)" is checked for being true whatever x is. */
 private val IDENTITY_PROBES = listOf(-3.7, 0.0, 1.3, 10.1, 52.9)
 
-/** "y = <x stuff>" or "f(x) = <x stuff>" → a plot; anything else null. */
-private fun graphOf(line: String, scope: Scope): Plot? {
+/** "y = <x stuff>", "f(x) = <x stuff>" or an equation in x and y ("2x + y = 4") → a plot; anything else null. */
+private fun graphOf(line: String, scope: Scope): Plot? = functionGraph(line, scope) ?: if (line.count { it == '=' } == 1) curveInY(line, scope) else null
+
+/** "y = <x stuff>" or "f(x) = <x stuff>" → a plot. */
+private fun functionGraph(line: String, scope: Scope): Plot? {
     if (line.count { it == '=' } != 1) return null
     val (lhs, rhs) = line.split('=')
-    val param = FUNCTION_DEF.matchEntire(lhs.trim())?.groupValues?.get(2) ?: if (lhs.trim() == "y") "x" else return null
+    // "Y": phone keyboards capitalise the first letter of a line.
+    val param = FUNCTION_DEF.matchEntire(lhs.trim())?.groupValues?.get(2) ?: if (lhs.trim() == "y" || lhs.trim() == "Y") "x" else return null
     val body = parseOrNull(rhs) ?: return null
     // x is the graph's own, even if an earlier line gave x a value.
     if (body.unknowns(scope.without(param)) != setOf(param)) return null
     return Plot(line) { x -> body.eval(scope.with(param, x)) }
+}
+
+/** The names [line]'s two sides leave unknown (x and y count even if an earlier line gave them values), or null if a side isn't a sum. */
+private fun xyEquation(line: String, scope: Scope): Triple<Node, Node, Scope>? {
+    val (lhs, rhs) = line.split('=')
+    val left = parseOrNull(lhs) ?: return null
+    val right = parseOrNull(rhs) ?: return null
+    val s = scope.without("x").without("y")
+    return if (left.unknowns(s) + right.unknowns(s) == setOf("x", "y")) Triple(left, right, s) else null
+}
+
+/**
+ * "2x + y = 4", "x y = 6", "x² + y² = 25", "x = y²": an equation in x and y with y to the first or second
+ * power, drawn as the y (or the two ys) it gives for each x. Null for anything else.
+ */
+// shortcut: y only to the power 1 or 2 (lines, circles, ellipses, parabolas, hyperbolas); sample the plane (marching squares) for y³ or sin(y).
+private fun curveInY(line: String, scope: Scope): Plot? {
+    val (left, right, s) = xyEquation(line, scope) ?: return null
+    val f = { x: Double, y: Double -> val v = s.with("x", x).with("y", y); left.eval(v) - right.eval(v) }
+    // a·y² + b·y + c at this x, from three values.
+    fun abc(x: Double): Triple<Double, Double, Double> {
+        val c = f(x, 0.0); val up = f(x, 1.0); val down = f(x, -1.0)
+        return Triple((up + down) / 2 - c, (up - down) / 2, c)
+    }
+    fun flat(a: Double, b: Double, c: Double) = abs(a) < 1e-9 * maxOf(1.0, abs(b), abs(c))
+    val probes = listOf(-3.7, 1.3, 10.1)
+    // The formula below only holds if the equation really is a·y² + b·y + c: checked at another y.
+    val fits = probes.all { x ->
+        val (a, b, c) = abc(x)
+        val v = f(x, 2.7)
+        v.isFinite() && abs(v - (a * 2.7 * 2.7 + b * 2.7 + c)) < 1e-9 * maxOf(1.0, abs(v))
+    }
+    if (!fits) return null
+    fun root(x: Double, sign: Double): Double {
+        val (a, b, c) = abc(x)
+        if (flat(a, b, c)) return if (sign > 0) -c / b else Double.NaN
+        return (-b + sign * Math.sqrt(b * b - 4 * a * c)) / (2 * a)
+    }
+    val line1 = probes.all { x -> abc(x).let { (a, b, c) -> flat(a, b, c) } }
+    return Plot(line, other = if (line1) null else ({ x -> root(x, -1.0) })) { x -> root(x, 1.0) }
 }
 
 private val DEFINITION = Regex("""\s*\p{L}+\s*""")
@@ -830,11 +918,18 @@ class Scope(
     fun with(name: String, value: Double) = Scope(vars + (name to value), functions)
     fun without(name: String) = Scope(vars - name, functions)
     fun withFunction(name: String, param: String, body: Node) = Scope(vars, functions + (name to (param to body)))
+    fun withPhysics() = Scope(PHYSICS + vars, functions)
     fun value(name: String): Double? = vars[name] ?: CONSTANTS[name]
     fun function(name: String) = functions[name]
 }
 
 private val CONSTANTS = mapOf("pi" to Math.PI, "π" to Math.PI, "e" to Math.E, "τ" to 2 * Math.PI)
+
+/** Physics constants (SI), used only for names a line leaves undefined: see [mathSuggestionAt]. */
+private val PHYSICS = mapOf(
+    "c" to 299_792_458.0, "g" to 9.80665, "G" to 6.674e-11, "h" to 6.626e-34, "ħ" to 1.0546e-34, "hbar" to 1.0546e-34,
+    "NA" to 6.02214076e23, "kB" to 1.380649e-23, "R" to 8.314,
+)
 
 private val FUNCTIONS: Map<String, (Double) -> Double> = mapOf(
     "sin" to Math::sin, "cos" to Math::cos, "tan" to Math::tan,
@@ -1021,8 +1116,11 @@ private fun tokenize(s: String): List<Tok> {
                 val start = i
                 while (i < s.length && s[i].isLetter()) i++
                 // log2 is a name with a digit in it.
-                if (s.substring(start, i) == "log" && s.getOrNull(i) == '2') i++
-                val word = s.substring(start, i)
+                var word = s.substring(start, i)
+                if (word == "log") when {
+                    s.startsWith("10", i) || s.startsWith("₁₀", i) -> i += 2 // log is already base 10
+                    s.getOrNull(i) == '2' || s.getOrNull(i) == '₂' -> { i++; word = "log2" }
+                }
                 val prev = out.lastOrNull()
                 val next = s.substring(i).trimStart().firstOrNull()
                 when {
@@ -1036,10 +1134,13 @@ private fun tokenize(s: String): List<Tok> {
                     else -> out += Tok.Id(word)
                 }
             }
-            c in SUPERSCRIPTS -> {
+            c in SUPERSCRIPTS || (c == '⁻' && s.getOrNull(i + 1)?.let { it in SUPERSCRIPTS } == true) -> {
+                if (c == '⁻') i++
                 var v = 0
                 while (i < s.length && s[i] in SUPERSCRIPTS) { v = v * 10 + SUPERSCRIPTS.indexOf(s[i]); i++ }
-                out += Tok.Op('^'); out += Tok.N(v.toDouble())
+                out += Tok.Op('^')
+                if (c == '⁻') out += Tok.Op('-')
+                out += Tok.N(v.toDouble())
             }
             else -> {
                 out += Tok.Op(
@@ -1155,6 +1256,14 @@ private class Parser(s: String) {
                         i++
                         if (args.size == 1 && single) Fn1(lower, args[0]) else FnN(lower, args)
                     }
+                    // sin²(x), sin^2 x: the power is the function's. sin⁻¹(x) is the inverse, not 1 / sin.
+                    single && isOp('^') && (t.getOrNull(i + 1) is Tok.N || (t.getOrNull(i + 1) == Tok.Op('-') && t.getOrNull(i + 2) is Tok.N)) -> {
+                        i++
+                        val minus = isOp('-').also { if (it) i++ }
+                        val n = (t[i++] as Tok.N).v * if (minus) -1 else 1
+                        val arg = if (isOp('(')) { i++; group() } else power()
+                        if (n == -1.0 && "a$lower" in FUNCTIONS) Fn1("a$lower", arg) else Bin('^', Fn1(lower, arg), Num(n))
+                    }
                     // sin x / sin 30° without brackets.
                     single -> Fn1(lower, power())
                     isOp('(') -> { i++; CallOrTimes(tok.s, group()) }
@@ -1208,7 +1317,7 @@ private val TOTAL_DONE = Regex("""(?i)\b(total|subtotal|sum|average|avg|mean)\s*
 
 // ---------- Units ----------
 
-private enum class Dim { LENGTH, MASS, VOLUME, TIME, DATA, SPEED, AREA, TEMPERATURE }
+private enum class Dim { LENGTH, MASS, VOLUME, TIME, DATA, SPEED, AREA, TEMPERATURE, ENERGY, FORCE, PRESSURE, POWER, FREQUENCY }
 
 /** Each unit's size in its dimension's base unit (metre, kilogram, litre, second, byte, m/s, m²). */
 private val UNITS: Map<String, Pair<Dim, Double>> = buildMap {
@@ -1260,6 +1369,15 @@ private val UNITS: Map<String, Pair<Dim, Double>> = buildMap {
     add(Dim.AREA, 4046.8564224, "acre")
     add(Dim.AREA, 0.09290304, "ft2", "ft²", "sqft")
     add(Dim.TEMPERATURE, 0.0, "c", "°c", "celsius", "f", "°f", "fahrenheit", "k", "kelvin")
+    add(Dim.ENERGY, 1.0, "j", "joule"); add(Dim.ENERGY, 1e3, "kj"); add(Dim.ENERGY, 1e6, "mj")
+    add(Dim.ENERGY, 4.184, "cal", "calorie"); add(Dim.ENERGY, 4184.0, "kcal")
+    add(Dim.ENERGY, 1.602176634e-19, "ev"); add(Dim.ENERGY, 3600.0, "wh"); add(Dim.ENERGY, 3.6e6, "kwh")
+    add(Dim.FORCE, 1.0, "n", "newton"); add(Dim.FORCE, 1e3, "kn"); add(Dim.FORCE, 4.4482216152605, "lbf")
+    add(Dim.PRESSURE, 1.0, "pa", "pascal"); add(Dim.PRESSURE, 1e3, "kpa"); add(Dim.PRESSURE, 1e6, "mpa")
+    add(Dim.PRESSURE, 1e5, "bar"); add(Dim.PRESSURE, 101325.0, "atm"); add(Dim.PRESSURE, 133.322387415, "mmhg", "torr")
+    add(Dim.PRESSURE, 6894.757293168, "psi")
+    add(Dim.POWER, 1.0, "w", "watt"); add(Dim.POWER, 1e3, "kw"); add(Dim.POWER, 1e6, "mw"); add(Dim.POWER, 745.69987158227, "hp")
+    add(Dim.FREQUENCY, 1.0, "hz", "hertz"); add(Dim.FREQUENCY, 1e3, "khz"); add(Dim.FREQUENCY, 1e6, "mhz"); add(Dim.FREQUENCY, 1e9, "ghz")
 }
 
 private fun unit(word: String): Pair<Dim, Double>? {
@@ -1284,5 +1402,5 @@ internal fun convert(text: String, scope: Scope = Scope()): String? {
         val kelvin = when (fromWord.lowercase().trimStart('°').first()) { 'c' -> amount + 273.15; 'f' -> (amount - 32) * 5 / 9 + 273.15; else -> amount }
         when (toWord.lowercase().trimStart('°').first()) { 'c' -> kelvin - 273.15; 'f' -> (kelvin - 273.15) * 9 / 5 + 32; else -> kelvin }
     } else amount * from.second / to.second
-    return formatNumber(if (abs(v) < 1e-12) 0.0 else v, 6) + " " + toWord
+    return formatNumber(if (from.first == Dim.TEMPERATURE && abs(v) < 1e-9) 0.0 else v, 6) + " " + toWord // -0.0000 °C
 }

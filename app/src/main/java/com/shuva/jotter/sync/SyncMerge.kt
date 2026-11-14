@@ -36,13 +36,19 @@ fun resolveNoteConflict(local: NoteEntity, remote: NoteEntity, copyId: String, n
     if (sameContent(local, remote)) return NoteConflictResult(localWins = false, conflictCopy = null)
     val localWins = local.updatedAt > remote.updatedAt
     val loser = if (localWins) remote else local
-    val copy = if (loser.deleted) null else conflictCopyOf(loser, copyId, now)
+    val winner = if (localWins) local else remote
+    val copy = if (loser.deleted || isEmptyVersionOf(loser, winner)) null else conflictCopyOf(loser, copyId, now)
     return NoteConflictResult(localWins, copy)
 }
 
 /** Folders have no body to preserve: plain last-write-wins, tie to remote. */
 fun folderLocalWins(local: FolderEntity, remote: FolderEntity): Boolean =
     local.copy(syncedUpdatedAt = null) != remote && local.updatedAt > remote.updatedAt
+
+/** [loser] is only [winner]'s title (a note caught by a sync just after it was started): keeping it saves nothing. */
+private fun isEmptyVersionOf(loser: NoteEntity, winner: NoteEntity) =
+    loser.cipher == null && loser.title.trim() == winner.title.trim() &&
+        loser.blocks.drop(1).all { it.text.isBlank() && it.attachment == null && it.table == null }
 
 private fun sameContent(a: NoteEntity, b: NoteEntity) =
     a.copy(updatedAt = 0, syncedUpdatedAt = null) == b.copy(updatedAt = 0, syncedUpdatedAt = null)

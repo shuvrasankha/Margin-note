@@ -1,6 +1,12 @@
 package com.shuva.jotter.ui
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import com.shuva.jotter.R
 import androidx.compose.ui.text.font.Font
@@ -79,6 +85,38 @@ object JType {
     val secondary = TextStyle(fontFamily = Inter, fontSize = 15.sp, lineHeight = 20.sp)
     val small = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp)
     val section = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    /** A denser row (cards, grid titles, options). */
+    val item = TextStyle(fontFamily = Inter, fontSize = 16.sp, lineHeight = 22.sp)
+    val itemTitle = TextStyle(fontFamily = Inter, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+    /** Grey explanation that runs over a few lines. */
+    val para = TextStyle(fontFamily = Inter, fontSize = 15.sp, lineHeight = 21.sp)
+    val label = TextStyle(fontFamily = Inter, fontSize = 14.sp, lineHeight = 19.sp)
+    val caption = TextStyle(fontFamily = Inter, fontSize = 12.sp, lineHeight = 16.sp)
+}
+
+/** Corner radii: [xs] for small tap targets, [sm] for fields and banners, [md] for cards and buttons, [lg] for sheets. */
+object JShape {
+    val xs = RoundedCornerShape(8.dp)
+    val sm = RoundedCornerShape(12.dp)
+    val md = RoundedCornerShape(16.dp)
+    val lg = RoundedCornerShape(20.dp)
+    val pill = RoundedCornerShape(50)
+    val sheet = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+}
+
+object JElevation {
+    val card = 2.dp
+    val sheet = 12.dp
+}
+
+/** Animation timings: [quick] for a control changing state, [standard] for things moving, [screenMs] for a screen change. */
+object JMotion {
+    const val screenMs = 320
+    val ease = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    fun <T> quick() = tween<T>(140, easing = ease)
+    fun <T> standard() = tween<T>(240, easing = ease)
+    fun <T> screen() = tween<T>(screenMs, easing = ease)
+    fun <T> bounce() = spring<T>(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
 }
 
 /** Accent colour for light and dark pages. */
