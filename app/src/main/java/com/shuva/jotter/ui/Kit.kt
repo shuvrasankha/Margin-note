@@ -100,9 +100,6 @@ object Ico {
     val INFO = circle(12f, 12f, 9f) + "M12 11v6M12 7.5v.5"
     const val SETTINGS = "M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"
     const val SYNC = "M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"
-    const val RESTORE = "M12 4v11M7.5 10.5L12 15l4.5-4.5M4 17v3h16v-3"
-    const val SIGN_IN = "M14 4h5v16h-5M9 8l4 4-4 4M13 12H3"
-    const val SIGN_OUT = "M10 4H5v16h5M15 8l4 4-4 4M19 12H9"
     const val SINK = "M4 6h10M4 11h10M4 16h6M18 5v13M15 15l3 3 3-3"
     const val GRAMMAR = "M3 17l4-11 4 11M4.5 13h5M13.5 14l2.5 2.5L21 11"
     const val SORT = "M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3"
@@ -114,8 +111,6 @@ object Ico {
     val KEY = circle(8f, 12f, 4f) + "M12 12h9M17 12v3M20 12v2"
     const val FINGERPRINT = "M7.5 6.5A7 7 0 0 1 19 12v1.5M5 10a7 7 0 0 0-.2 1.8V15M8.5 19.5A11 11 0 0 0 9 16v-4a3 3 0 0 1 6 0v1.5M12 12v4a14 14 0 0 1-1 5M15 16.5a17 17 0 0 1-.7 3.5M18.6 17a20 20 0 0 1-.4 2"
     const val MOON = "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"
-    val PALETTE = "M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.9 1.2-1.8-.5-1 .1-2.2 1.3-2.2H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10z" +
-        circle(7.5f, 11.5f, 1f) + circle(10.5f, 7.5f, 1f) + circle(15.5f, 8f, 1f)
     const val TEXT_SIZE = "M3 18l4-11 4 11M4.5 14h5M14 18l3-8 3 8M15 15.5h4"
     const val LINES = "M4 6h16M4 11h16M4 16h10"
     val CLOCK = circle(12f, 12f, 9f) + "M12 7v5l3 2"

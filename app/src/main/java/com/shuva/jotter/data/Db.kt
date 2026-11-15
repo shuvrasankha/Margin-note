@@ -54,7 +54,7 @@ interface FolderDao {
 
 @Dao
 interface NoteDao {
-    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deleted = 0 AND trashedAt IS NULL ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC")
+    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC")
     fun observeInFolder(folderId: String): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE deleted = 0 AND trashedAt IS NOT NULL ORDER BY trashedAt DESC")
@@ -68,7 +68,7 @@ interface NoteDao {
     )
     fun observeSearch(pattern: String): Flow<List<NoteEntity>>
 
-    @Query("SELECT folderId, COUNT(*) AS count FROM notes WHERE deleted = 0 AND trashedAt IS NULL GROUP BY folderId")
+    @Query("SELECT folderId, COUNT(*) AS count FROM notes WHERE deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' GROUP BY folderId")
     fun observeCounts(): Flow<List<FolderCount>>
 
     @Query("SELECT COUNT(*) FROM notes WHERE deleted = 0 AND trashedAt IS NOT NULL")
@@ -158,7 +158,7 @@ interface NoteVersionDao {
     suspend fun allBlocks(): List<String>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 8, exportSchema = true)
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 9, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class JotterDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
@@ -171,6 +171,13 @@ abstract class JotterDatabase : RoomDatabase() {
 val MIGRATION_7_8 = object : Migration(7, 8) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE notes ADD COLUMN font TEXT")
+    }
+}
+
+/** v9: the template new notes in a folder start from. Existing folders start blank (null). */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE folders ADD COLUMN template TEXT")
     }
 }
 

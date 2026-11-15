@@ -158,7 +158,7 @@ internal fun cardPages(count: Int, top: (Int) -> Int, bottom: (Int) -> Int, firs
 }
 
 private const val CARD_TOP = 120f
-private const val CARD_BOTTOM = CARD_H - 200f
+private const val CARD_BOTTOM = CARD_H - 130f
 
 /** One card: the paper, the [title] (if any) and lines [from] until [to] of [body], and the foot with [footNote]. */
 private fun drawCard(context: Context, style: CardStyle, footNote: String, title: StaticLayout?, body: StaticLayout?, from: Int, to: Int, center: Boolean, ai: List<IntRange> = emptyList()): Bitmap {
@@ -187,7 +187,7 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
     val left = 150f
     // The margin rule down the left, as on the app icon.
     val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.rule.toInt(); strokeWidth = 8f; strokeCap = Paint.Cap.ROUND }
-    c.drawLine(100f, 0f.takeIf { style.lines != null } ?: 110f, 100f, if (style.lines != null) CARD_H.toFloat() else CARD_H - 190f, rule)
+    c.drawLine(100f, 0f.takeIf { style.lines != null } ?: 110f, 100f, if (style.lines != null) CARD_H.toFloat() else CARD_H - 122f, rule)
 
     val titleH = title?.let { it.height + 48f } ?: 0f
     val slice = if (body != null && to > from) (body.getLineBottom(to - 1) - body.getLineTop(from)).toFloat() else 0f
@@ -202,7 +202,7 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
         } ?: ((bodyTop + 40f) to 70f)
         var at = first
         while (at - pitch > y + (title?.height ?: 0)) at -= pitch
-        while (at < CARD_H - 160f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
+        while (at < CARD_H - 118f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
     }
     title?.let { c.save(); c.translate(left, y); it.draw(c); c.restore() }
     if (body != null && to > from) {
@@ -226,10 +226,10 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
 
     // Foot: a hairline, then the mark and the name.
     val hair = Paint().apply { color = style.hair.toInt(); strokeWidth = 2f }
-    if (style.lines == null) c.drawLine(96f, CARD_H - 150f, CARD_W - 96f, CARD_H - 150f, hair)
+    if (style.lines == null) c.drawLine(96f, CARD_H - 112f, CARD_W - 96f, CARD_H - 112f, hair)
     val mark = 64f
     val mx = if (style.lines != null) 150f else 96f
-    val my = CARD_H - 108f
+    val my = CARD_H - 92f
     drawMark(c, mx, my, mark, edge = style == CardStyle.NIGHT)
     val name = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = ink; textSize = 38f; typeface = font(R.font.inter_semibold) }
     c.drawText("Margin", mx + mark + 22f, my + mark / 2 + 13f, name)

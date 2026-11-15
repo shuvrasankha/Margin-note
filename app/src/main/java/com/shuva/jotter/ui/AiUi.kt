@@ -115,7 +115,7 @@ fun AiSettingsCard(ai: AiKeys) {
     }
 }
 
-private const val AI_SYSTEM = "You help with a note in a notes app. Answer in plain text without Markdown, in the note's language. Be brief."
+private const val AI_SYSTEM = "You help with a note in a notes app. Answer in plain text without Markdown, in the note's language. Be brief. Don't add hashtags."
 
 /** The most note text one request carries. */
 private const val AI_MAX_CHARS = 24_000
@@ -129,6 +129,12 @@ private val AI_ASKS = listOf(
     AiAsk("Improve writing", "Rewrite this note with clearer wording and correct grammar. Keep its meaning, its language and its line structure. Answer with only the rewritten note, without its title.", rewrites = true),
     AiAsk("Fix spelling", "Correct only the spelling and grammar mistakes in this note. Change nothing else. Answer with only the corrected note, without its title.", rewrites = true),
 )
+
+/** Languages offered by Translate; any other can be asked for in the question field. */
+private val TRANSLATE_TO = listOf("English", "বাংলা (Bengali)", "हिन्दी (Hindi)", "Español", "Français", "Deutsch", "العربية (Arabic)", "中文 (Chinese)", "日本語 (Japanese)")
+
+internal fun translateRequest(language: String) =
+    "Translate this note into $language. Keep its line structure. Answer with only the translation, without its title."
 
 /**
  * Ask AI about the open note: a ready-made request or the user's own question goes with [noteText] to their
@@ -147,6 +153,7 @@ fun AiSheet(ai: AiKeys, noteText: String, onInsert: ((String) -> Unit)?, onRepla
     var error by remember { mutableStateOf<String?>(null) }
     /** The answer is a rewrite of the whole note. */
     var rewrite by remember { mutableStateOf(false) }
+    var translating by remember { mutableStateOf(false) }
     val busy = job?.isActive == true
     fun ask(request: String, rewrites: Boolean = false) {
         if (busy) return
@@ -174,7 +181,17 @@ fun AiSheet(ai: AiKeys, noteText: String, onInsert: ((String) -> Unit)?, onRepla
             } else if (noteText.isBlank()) {
                 Text("This note is empty.", style = JType.para, color = jc.muted)
             } else {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { AI_ASKS.forEach { a -> Chip(a.label, { ask(a.request, a.rewrites) }) } }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
+                    AI_ASKS.forEach { a -> Chip(a.label, { ask(a.request, a.rewrites) }) }
+                    Box {
+                        Chip("Translate", { translating = true }, trailing = "▾")
+                        DropdownMenu(translating, { translating = false }, containerColor = jc.card) {
+                            TRANSLATE_TO.forEach { lang ->
+                                DropdownMenuItem({ Text(lang, color = jc.ink) }, { translating = false; ask(translateRequest(lang), rewrites = true) })
+                            }
+                        }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedTextField(question, { question = it }, Modifier.weight(1f), shape = JShape.sm, label = { Text("Ask about this note") }, maxLines = 3)
                     TextAction("Ask", { ask(question.trim()) }, bold = true, enabled = question.isNotBlank() && !busy)

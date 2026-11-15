@@ -19,10 +19,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
-import com.shuva.jotter.data.Accent
 import com.shuva.jotter.data.Appearance
 import com.shuva.jotter.data.ThemeMode
 import androidx.compose.ui.text.TextStyle
@@ -119,16 +117,6 @@ object JMotion {
     fun <T> bounce() = spring<T>(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)
 }
 
-/** Accent colour for light and dark pages. */
-fun accentColors(accent: Accent): Pair<Color, Color> = when (accent) {
-    Accent.AMBER -> Color(0xFFB25E00) to Color(0xFFFFB340)
-    Accent.BLUE -> Color(0xFF0A60C2) to Color(0xFF6AAEFF)
-    Accent.GREEN -> Color(0xFF1C7A3A) to Color(0xFF5FD37E)
-    Accent.ROSE -> Color(0xFFC0245E) to Color(0xFFFF7EAA)
-    Accent.VIOLET -> Color(0xFF6B40C4) to Color(0xFFB9A0FF)
-    Accent.GRAPHITE -> Color(0xFF111111) to Color(0xFFF5F5F7)
-}
-
 @Composable
 fun isDark(theme: ThemeMode) = when (theme) {
     ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -136,15 +124,11 @@ fun isDark(theme: ThemeMode) = when (theme) {
     ThemeMode.DARK -> true
 }
 
-/** Light and dark follow the system setting unless [appearance] picks one; accent and text size come from it too. */
+/** Light and dark follow the system setting unless [appearance] picks one; text size comes from it too. */
 @Composable
 fun JotterTheme(appearance: Appearance = Appearance(), content: @Composable () -> Unit) {
     val dark = isDark(appearance.theme)
-    val base0 = if (dark) Dark else Light
-    val accent = accentColors(appearance.accent).let { if (dark) it.second else it.first }
-    // The amber tint is tuned by hand; other accents get the same 10-12% mix of accent over the page.
-    val c = if (appearance.accent == Accent.AMBER) base0
-    else base0.copy(accent = accent, selected = lerp(base0.bg, accent, if (dark) 0.16f else 0.10f))
+    val c = if (dark) Dark else Light
     val base = if (dark) darkColorScheme() else lightColorScheme()
     val scheme = base.copy(
         primary = c.accent, onPrimary = c.bg, secondary = c.accent,

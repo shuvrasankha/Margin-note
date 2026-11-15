@@ -140,6 +140,8 @@ data class FolderEntity(
     val smartFilter: SmartFilter? = null,
     /** Position among the folders it's listed with (schema v4); ties go A to Z. Set by Edit folders. */
     @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /** What a new note here starts from (schema v9): a [templateKey]; null = blank. Older versions ignore it. */
+    val template: String? = null,
 )
 
 val FolderEntity.isSmart get() = smartFilter != null

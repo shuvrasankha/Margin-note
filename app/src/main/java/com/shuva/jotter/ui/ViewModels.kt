@@ -38,6 +38,7 @@ import com.shuva.jotter.data.recognizeText
 import com.shuva.jotter.data.isPasscode
 import com.shuva.jotter.data.backlinks
 import com.shuva.jotter.data.Block
+import com.shuva.jotter.data.isTemplate
 import com.shuva.jotter.data.BlockType
 import com.shuva.jotter.data.FolderEntity
 import com.shuva.jotter.data.LockSession
@@ -111,7 +112,7 @@ const val PINNED_ID = "pinned"
 
 /** A list that isn't a stored folder. */
 /** Journal entries and habits have their own screens, so All Notes leaves them out (search still finds them). */
-fun inAllNotes(note: NoteEntity) = !isHabit(note) && journalDay(note) == null
+fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTemplate(note) && journalDay(note) == null
 
 fun isVirtualList(id: String) = id == TRASH_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
 
@@ -284,13 +285,13 @@ class NotesViewModel @Inject constructor(
                 f == null -> flowOf(emptyList())
                 f == TRASH_ID -> repo.trash()
                 q.isNotEmpty() -> combine(repo.search(q), appPrefs.toggles) { found, t -> // all folders, excludes Recently Deleted
-                    if (t(Toggle.HIDE_LOCKED_IN_SEARCH)) found.filterNot { it.isLocked } else found
+                    (if (t(Toggle.HIDE_LOCKED_IN_SEARCH)) found.filterNot { it.isLocked } else found).filterNot(::isTemplate)
                 }
                 f == ALL_ID -> repo.liveNotes().map { all -> all.filter(::inAllNotes) }
                 f == PINNED_ID -> repo.liveNotes().map { all -> all.filter { it.isPinned } }
                 f.startsWith(TAG_PREFIX) -> repo.liveNotes().map { all ->
                     val key = f.removePrefix(TAG_PREFIX)
-                    all.filter { key in it.tagKeys }
+                    all.filter { key in it.tagKeys && !isTemplate(it) }
                 }
                 else -> repo.folder(f).flatMapLatest { folder ->
                     val filter = folder?.smartFilter
@@ -414,6 +415,15 @@ class NotesViewModel @Inject constructor(
     }
 
     fun undoExpired(action: UndoAction) { if (undo === action) undo = null }
+
+    /** Saved templates, for a folder's "New notes start from" choice. */
+    val templates: StateFlow<List<NoteEntity>> = repo.templates().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** New notes in the open folder start from template [key] (null: blank). */
+    fun setFolderTemplate(key: String?) {
+        val f = folderId.value ?: return
+        if (!isVirtualList(f)) viewModelScope.launch { repo.setFolderTemplate(f, key) }
+    }
 
     fun setSort(sortBy: NoteSort, ascending: Boolean) {
         val f = folderId.value ?: return
@@ -632,7 +642,11 @@ class EditorViewModel @Inject constructor(
             unlockError = null
             val body = sealed?.let { session.open(it) }
             needsUnlock = locked && body == null
-            show(if (body != null) stored.take(1) + body else stored)
+            // A new note in a folder with a template starts from it; left untouched, it still isn't saved.
+            val start = if (isNew && !noteId.startsWith("journal-") && !noteId.startsWith("habit-"))
+                repo.folder(this@EditorViewModel.folderId).first()?.template?.let { repo.templateBody(it) } else null
+            show(if (start != null) listOf(Block(type = BlockType.TITLE)) + start else if (body != null) stored.take(1) + body else stored)
+            if (start != null) value = TextFieldValue(doc.text, TextRange(0)) // type the title first
             if (isNew) lastSaved = doc.toBlocks()
             readOnly = note?.trashedAt != null
             focusOnOpen = isNew
@@ -735,22 +749,45 @@ class EditorViewModel @Inject constructor(
         editingTable = doc.lines[at].id
     }
 
-    /** Adds a lab write-up skeleton (aim, materials, method, an observations table, result, conclusion) after the cursor's line. */
-    fun insertLabTemplate() {
+    /** Saved templates, for Add to note. */
+    val templates: StateFlow<List<NoteEntity>> = repo.templates().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** True when this note can be saved as a template: open, readable and not itself a template. */
+    val canSaveTemplate get() = loaded && !needsUnlock && !locked && !isTemplate(noteId) && doc.toBlocks().any { it.text.isNotBlank() }
+
+    /** Saves this note (without attachments) as a template, then calls [onDone] with its name. */
+    fun saveAsTemplate(onDone: (String) -> Unit) {
+        if (!canSaveTemplate) return
+        val blocks = doc.toBlocks()
+        viewModelScope.launch {
+            repo.saveTemplate(blocks)
+            onDone(blocks.first().text.ifBlank { "Untitled" })
+        }
+    }
+
+    /** Adds saved template [id]'s body after the cursor's line. */
+    fun insertSavedTemplate(id: String) {
         if (readOnly || needsUnlock) return
+        viewModelScope.launch { repo.templateBody(id)?.let { insertBlocks(it) } }
+    }
+
+    /** Moves saved template [id] to Recently Deleted. */
+    fun deleteTemplate(id: String) = viewModelScope.launch { repo.moveToTrash(id) }
+
+    private fun insertBlocks(body: List<Block>) {
+        if (body.isEmpty()) return
         val blocks = doc.toBlocks().toMutableList()
         val at = cursorLine + 1
-        val skeleton = buildList {
-            fun section(name: String) { add(Block(type = BlockType.HEADING, text = name)); add(Block()) }
-            section("Aim"); section("Materials"); section("Method")
-            add(Block(type = BlockType.HEADING, text = "Observations"))
-            add(Block(text = ATTACHMENT_CHAR.toString(), table = NoteTable(listOf(listOf("Trial", "Reading", "Notes")) + List(3) { List(3) { "" } })))
-            section("Result"); section("Conclusion")
-        }
-        blocks.addAll(at, skeleton)
+        blocks.addAll(at, body)
         doc = EditorDoc.fromBlocks(blocks)
         value = TextFieldValue(doc.text, TextRange(doc.lineStart(at + 1)))
         changed()
+    }
+
+    /** Adds [template]'s skeleton after the cursor's line, with the cursor on its first empty line. */
+    fun insertTemplate(template: com.shuva.jotter.data.NoteTemplate) {
+        if (readOnly || needsUnlock) return
+        insertBlocks(template.blocks())
     }
 
     /** Replaces the table on the line with id [lineId] (an edit from the table editor; Undo brings the old one back). */

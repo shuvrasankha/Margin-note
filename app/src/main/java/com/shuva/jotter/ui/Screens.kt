@@ -122,7 +122,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.semantics.selected
-import com.shuva.jotter.data.Accent
 import com.shuva.jotter.data.TextSize
 import com.shuva.jotter.data.ThemeMode
 import com.shuva.jotter.data.shareText
@@ -238,6 +237,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
 import com.shuva.jotter.data.BlockType
+import com.shuva.jotter.data.NoteTemplate
 import com.shuva.jotter.data.DEFAULT_FOLDER_ID
 import com.shuva.jotter.data.safeFileName
 import com.shuva.jotter.data.NoteEntity
@@ -281,6 +281,18 @@ private fun fullTime(context: android.content.Context, time: Long): String {
 internal fun plural(n: Int, one: String, many: String = one + "s") = "$n " + if (n == 1) one else many
 
 /** A conical flask. */
+private fun templateIcon(t: NoteTemplate) = when (t) {
+    NoteTemplate.LAB -> ICON_FLASK
+    NoteTemplate.MEETING -> "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4-5.7"
+    NoteTemplate.LECTURE -> "M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M22 9v6"
+    NoteTemplate.DAILY -> Ico.SUN
+    NoteTemplate.RECIPE -> "M4 11h16M5 11v6a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-6M9 4v4M12 3v5M15 4v4"
+    NoteTemplate.TRIP -> "M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12zM12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5"
+}
+
+/** A page with lines to fill in: a template. */
+private const val ICON_TEMPLATE = "M6 3h12v18H6zM9 8h6M9 12h6M9 16h3"
+
 private const val ICON_FLASK = "M9 3h6M10 3v6l-5.5 9.5A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-2.5L14 9V3M7.5 15h9"
 
 private const val ICON_CALL = "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"
@@ -1014,6 +1026,11 @@ fun NoteListScreen(
     var confirmEmpty by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var picking by remember { mutableStateOf(false) }
+    var pickingTemplate by remember { mutableStateOf(false) }
+    val savedTemplates by vm.templates.collectAsState()
+    if (pickingTemplate) folder?.let { f ->
+        TemplatePicker(f.template, savedTemplates, onDismiss = { pickingTemplate = false }) { vm.setFolderTemplate(it); pickingTemplate = false }
+    }
     /** Notes being moved: the selection or one swiped note. */
     var moving by remember { mutableStateOf<Set<String>?>(null) }
     val selecting = vm.selected.isNotEmpty()
@@ -1049,7 +1066,10 @@ fun NoteListScreen(
             ) {
                 if (!isTrash && query.isBlank()) {
                     val f = folder
-                    if (f != null) SortMenu(f.sortBy, f.sortAscending, grid = grid, onGrid = onGrid, onChange = vm::setSort)
+                    if (f != null) SortMenu(
+                        f.sortBy, f.sortAscending, grid = grid, onGrid = onGrid, onChange = vm::setSort,
+                        templateLabel = if (f.isSmart) null else templateLabel(f.template, savedTemplates), onTemplate = { pickingTemplate = true },
+                    )
                     else ViewMenu(grid, onGrid)
                 }
                 IconAction(Ico.SETTINGS, "Settings", onSettings)
@@ -1310,6 +1330,8 @@ private fun SortMenu(
     /** Shown with a View as section (List or Grid) when set. */
     grid: Boolean? = null, onGrid: (Boolean) -> Unit = {},
     onChange: (NoteSort, Boolean) -> Unit,
+    /** When set, a "New notes start from" item showing this template's name, which calls [onTemplate]. */
+    templateLabel: String? = null, onTemplate: () -> Unit = {},
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
@@ -1333,8 +1355,45 @@ private fun SortMenu(
             val (first, second) = if (sortBy == NoteSort.TITLE) "A to Z" to "Z to A" else "Oldest first" to "Newest first"
             listOf(Triple(true, first, Ico.ARROW_UP), Triple(false, second, Ico.ARROW_DOWN))
                 .forEach { (asc, text, icon) -> item(text, icon, asc == ascending) { onChange(sortBy, asc) } }
+            if (templateLabel != null) {
+                HorizontalDivider(color = jc.line)
+                item("New notes: $templateLabel", ICON_TEMPLATE, false, onTemplate)
+            }
         }
     }
+}
+
+/** The name of template [key] (a folder's [FolderEntity.template]); "Blank" for none or one that's gone. */
+private fun templateLabel(key: String?, saved: List<NoteEntity>): String =
+    key?.let { k -> com.shuva.jotter.data.builtInTemplate(k)?.label ?: saved.firstOrNull { it.id == k }?.title?.ifBlank { "Untitled" } } ?: "Blank"
+
+/** Picks what new notes in a folder start from: blank, a built-in template or a saved one. */
+@Composable
+private fun TemplatePicker(current: String?, saved: List<NoteEntity>, onDismiss: () -> Unit, onPick: (String?) -> Unit) {
+    val options = listOf<Pair<String?, String>>(null to "Blank") +
+        NoteTemplate.entries.map { com.shuva.jotter.data.templateKey(it) to it.label } +
+        saved.map { it.id to it.title.ifBlank { "Untitled" } }
+    // A saved template that was deleted reads as Blank.
+    val on = current?.takeIf { k -> options.any { it.first == k } }
+    AlertDialog(
+        onDismissRequest = onDismiss, containerColor = jc.card,
+        title = { Text("New notes start from", style = JType.rowTitle, color = jc.ink) },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                options.forEach { (key, label) ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(JShape.sm).clickable(role = Role.RadioButton) { onPick(key) }
+                            .semantics { selected = key == on }.padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, Modifier.weight(1f), style = JType.row, color = if (key == on) jc.accent else jc.ink)
+                        if (key == on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextAction("Cancel", onDismiss) },
+    )
 }
 
 /** Lists without their own sort (smart lists): just List or Grid. */
@@ -1641,6 +1700,7 @@ fun EditorScreen(
     var history by remember { mutableStateOf(false) }
     var linked by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
+    val savedTemplates by vm.templates.collectAsState()
     /** Find in note: null = closed. [findAt] is the current match. */
     var find by remember { mutableStateOf<String?>(null) }
     var findAt by remember { mutableIntStateOf(0) }
@@ -1823,6 +1883,7 @@ fun EditorScreen(
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
                             if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
+                            if (vm.canSaveTemplate) item("Save as template", ICON_TEMPLATE) { vm.saveAsTemplate { toast("Saved as template “$it”") } }
                             // Locked notes are never sent anywhere.
                             if (!vm.locked && !vm.needsUnlock) item("Ask AI…", Ico.SPARKLE) { asking = true }
                             item("Linked notes · ${vm.linkedNotes(targets).size}", Ico.LINK, gap = true) { linked = true }
@@ -1953,7 +2014,11 @@ fun EditorScreen(
                         },
                         onLink = { attaching = false; addingLink = true },
                         onTable = { attaching = false; vm.insertTable() },
-                        onLab = { attaching = false; vm.insertLabTemplate() },
+                        onTemplate = { attaching = false; vm.insertTemplate(it) },
+                        saved = savedTemplates,
+                        onSaved = { attaching = false; vm.insertSavedTemplate(it) },
+                        onEditSaved = { attaching = false; onOpenNote(it) },
+                        onDeleteSaved = { vm.deleteTemplate(it); toast("Template moved to Recently Deleted") },
                         onPdf = { attaching = false; picker.launch(arrayOf(com.shuva.jotter.data.PDF_MIME)) },
                         onScanDoc = { attaching = false; startDocScan() },
                         onScan = {
@@ -2049,7 +2114,7 @@ fun EditorScreen(
     if (asking) AiSheet(
         vm.ai, noteText = shareText(vm.doc.toBlocks()),
         // Added at the end of the note, not after wherever the cursor last was.
-        onInsert = if (vm.readOnly) null else ({ vm.insertText(plainAnswer(it), afterLine = vm.doc.lines.lastIndex, ai = true); asking = false }),
+        onInsert = if (vm.readOnly) null else ({ vm.insertText(com.shuva.jotter.data.untagged(plainAnswer(it)), afterLine = vm.doc.lines.lastIndex, ai = true); asking = false }),
         // Only a note of plain text can be replaced: its photos and files aren't sent, so they'd be lost.
         onReplace = if (vm.readOnly || !vm.textOnly) null else ({ vm.replaceBody(plainAnswer(it)); asking = false }),
         onClose = { asking = false },
@@ -2453,32 +2518,49 @@ private tailrec fun android.content.Context.findActivity(): Activity? = when (th
 @Composable
 private fun AttachSheet(
     onClose: () -> Unit, onFile: () -> Unit, onVoice: () -> Unit, onDraw: () -> Unit, onCamera: () -> Unit, onLink: () -> Unit,
-    onScan: () -> Unit, onTable: () -> Unit, onPdf: () -> Unit, onScanDoc: () -> Unit, onLab: () -> Unit,
+    onScan: () -> Unit, onTable: () -> Unit, onPdf: () -> Unit, onScanDoc: () -> Unit, onTemplate: (NoteTemplate) -> Unit,
+    saved: List<NoteEntity>, onSaved: (String) -> Unit, onEditSaved: (NoteEntity) -> Unit, onDeleteSaved: (String) -> Unit,
 ) {
+    /** The saved template whose Edit / Delete menu is open (long-press). */
+    var menuFor by remember { mutableStateOf<String?>(null) }
     // What's already out there (camera, files, scans), then what you make in the note.
     val groups = listOf(
         "Capture" to listOf(
             Triple("Camera", Ico.CAMERA, onCamera), Triple("Photo or file", Ico.FILE, onFile), Triple("PDF", ICON_PDF, onPdf),
             Triple("Voice note", Ico.MIC, onVoice), Triple("Scan text", Ico.SCAN, onScan), Triple("Scan document", ICON_SCAN_DOC, onScanDoc),
         ),
-        "Create" to listOf(Triple("Drawing", Ico.PEN, onDraw), Triple("Table", ICON_TABLE, onTable), Triple("Web link", Ico.GLOBE, onLink), Triple("Lab note", ICON_FLASK, onLab)),
-    )
+        "Create" to listOf(Triple("Drawing", Ico.PEN, onDraw), Triple("Table", ICON_TABLE, onTable), Triple("Web link", Ico.GLOBE, onLink)),
+        "Templates" to NoteTemplate.entries.map { t -> Triple(t.label, templateIcon(t)) { onTemplate(t) } },
+    ) + listOfNotNull(saved.takeIf { it.isNotEmpty() }?.let { list ->
+        "Your templates · hold to edit" to list.map { n -> Triple(n.title.ifBlank { "Untitled" }, ICON_TEMPLATE) { onSaved(n.id) } }
+    })
     SheetPanel("Add to note", onClose) {
+      // Scrolls once saved templates make it taller than the screen allows.
+      Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         groups.forEach { (name, tiles) ->
+            val savedGroup = name.startsWith("Your templates")
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(name.uppercase(), style = JType.section, color = jc.muted)
-                tiles.chunked(3).forEach { row ->
+                tiles.chunked(3).forEachIndexed { r, row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { (label, icon, onClick) ->
-                            Column(
-                                Modifier.weight(1f).height(92.dp).clip(JShape.md).background(jc.surface)
-                                    .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
-                            ) {
-                                Box(Modifier.size(40.dp).clip(CircleShape).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
-                                    JIcon(icon, jc.accent, size = 21.dp, stroke = 1.9f)
+                        row.forEachIndexed { c, (label, icon, onClick) ->
+                            val note = if (savedGroup) saved.getOrNull(r * 3 + c) else null
+                            Box(Modifier.weight(1f)) {
+                                Column(
+                                    Modifier.fillMaxWidth().height(92.dp).clip(JShape.md).background(jc.surface)
+                                        .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = note?.let { n -> { menuFor = n.id } })
+                                        .padding(horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+                                ) {
+                                    Box(Modifier.size(40.dp).clip(CircleShape).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+                                        JIcon(icon, jc.accent, size = 21.dp, stroke = 1.9f)
+                                    }
+                                    Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (note != null) DropdownMenu(menuFor == note.id, { menuFor = null }) {
+                                    DropdownMenuItem({ Text("Edit template") }, { menuFor = null; onEditSaved(note) })
+                                    DropdownMenuItem({ Text("Delete template", color = jc.danger) }, { menuFor = null; onDeleteSaved(note.id) })
+                                }
                             }
                         }
                         repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -2486,6 +2568,7 @@ private fun AttachSheet(
                 }
             }
         }
+      }
     }
 }
 
@@ -3706,6 +3789,20 @@ private inline fun forEachLineBounds(doc: EditorDoc, layout: TextLayoutResult, b
 
 // ---------- Settings ----------
 
+/** Google's four-colour "G" (48 x 48). */
+private val GoogleG: androidx.compose.ui.graphics.vector.ImageVector by lazy {
+    androidx.compose.ui.graphics.vector.ImageVector.Builder("GoogleG", 18.dp, 18.dp, 48f, 48f).apply {
+        listOf(
+            0xFFEA4335 to "M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z",
+            0xFF4285F4 to "M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z",
+            0xFFFBBC05 to "M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z",
+            0xFF34A853 to "M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z",
+        ).forEach { (color, d) ->
+            addPath(androidx.compose.ui.graphics.vector.addPathNodes(d), fill = androidx.compose.ui.graphics.SolidColor(Color(color)))
+        }
+    }.build()
+}
+
 @Composable
 private fun SettingsLabel(text: String) {
     Text(text, Modifier.padding(start = 16.dp, top = 28.dp, bottom = 8.dp), style = JType.section, color = jc.muted)
@@ -3749,19 +3846,26 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             PageTitle("Settings")
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 48.dp)) {
-                // Account and sync
+                // Account and sync, compact: status with a sync button, then Restore and Sign out side by side.
+                val signIn = {
+                    scope.launch {
+                        runCatching { signInWithGoogle(context as Activity) }
+                            .onSuccess { vm.message = null; vm.onSignedIn(it) }
+                            .onFailure {
+                                // Backing out of the account picker is not an error.
+                                vm.message = if (it is androidx.credentials.exceptions.GetCredentialCancellationException) null
+                                else "Sign-in failed: ${it.message ?: it.javaClass.simpleName}"
+                            }
+                    }
+                    Unit
+                }
                 Card {
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Box(Modifier.size(40.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) {
-                            JIcon(Ico.CLOUD, jc.accent, size = 20.dp)
+                    Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Google's "G" on a white tile, as Google's sign-in branding asks.
+                        Box(Modifier.size(30.dp).clip(JShape.xs).background(Color.White), contentAlignment = Alignment.Center) {
+                            androidx.compose.foundation.Image(GoogleG, contentDescription = "Google", modifier = Modifier.size(18.dp))
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(if (status.signedIn) "Sync is on" else "Back up to Google Drive", style = JType.rowTitle, color = jc.ink)
-                            Text(
-                                if (status.signedIn) listOfNotNull(status.email ?: status.name, "Last sync " + (status.lastSyncAt?.let { listTime(context, it) } ?: "never")).joinToString(" · ")
-                                else "Optional. Signed in, your notes back up to hidden app storage in your Google Drive.",
-                                style = JType.small, color = jc.muted,
-                            )
                             if (status.signedIn) {
                                 val waiting = if (pending == 1) "1 change" else "$pending changes"
                                 Text(
@@ -3770,30 +3874,29 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                                         pending > 0 -> "$waiting waiting to sync"
                                         else -> "Everything is synced"
                                     },
-                                    style = JType.small, color = if (!online || pending > 0) jc.ink else jc.muted,
+                                    style = JType.item, color = jc.ink,
                                 )
+                                Text(
+                                    // The time first: a long email is what gets cut.
+                                    listOfNotNull("Last sync " + (status.lastSyncAt?.let { listTime(context, it) } ?: "never"), status.email ?: status.name).joinToString(" · "),
+                                    style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            } else {
+                                Text("Back up to Google Drive", style = JType.item, color = jc.ink)
+                                Text("Optional. Notes go to hidden app storage in your Drive.", style = JType.small, color = jc.muted)
                             }
                         }
+                        if (!status.signedIn) TextAction("Sign in", signIn, bold = true)
+                        else if (vm.busy) Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                            androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), color = jc.accent, strokeWidth = 2.dp)
+                        } else IconAction(Ico.SYNC, "Sync now", { vm.syncNow() }, size = 20.dp)
                     }
-                    CardDivider()
                     if (status.signedIn) {
-                        CardRow(if (vm.busy) "Working…" else "Sync now", icon = Ico.SYNC, labelColor = jc.accent, onClick = { if (!vm.busy) vm.syncNow() })
                         CardDivider()
-                        CardRow("Restore from Google account", icon = Ico.RESTORE, labelColor = jc.accent, onClick = { if (!vm.busy) confirmRestore = true })
-                        CardDivider()
-                        CardRow("Sign out", icon = Ico.SIGN_OUT, labelColor = jc.danger, onClick = { if (!vm.busy) vm.signOut() })
-                    } else {
-                        CardRow("Sign in with Google", icon = Ico.SIGN_IN, labelColor = jc.accent, onClick = {
-                            scope.launch {
-                                runCatching { signInWithGoogle(context as Activity) }
-                                    .onSuccess { vm.message = null; vm.onSignedIn(it) }
-                                    .onFailure {
-                                        // Backing out of the account picker is not an error.
-                                        vm.message = if (it is androidx.credentials.exceptions.GetCredentialCancellationException) null
-                                        else "Sign-in failed: ${it.message ?: it.javaClass.simpleName}"
-                                    }
-                            }
-                        })
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            TextAction("Restore from Drive", { if (!vm.busy) confirmRestore = true })
+                            TextAction("Sign out", { if (!vm.busy) vm.signOut() }, color = jc.danger)
+                        }
                     }
                 }
                 status.lastError?.let { Text("Last error: $it", Modifier.padding(start = 16.dp, top = 8.dp), style = JType.small, color = jc.danger) }
@@ -3811,25 +3914,6 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                         }
                         choices(Ico.MOON, "Theme", listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark"), appearance.theme) {
                             vm.setAppearance(appearance.copy(theme = it))
-                        }
-                        IconTitle(Ico.PALETTE, "Accent colour", Modifier.padding(top = 6.dp))
-                        // Swatches: the chosen one gets a thin ring in its own colour, with a gap, and a small tick.
-                        Row(Modifier.padding(start = 36.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            val dark = isDark(appearance.theme)
-                            Accent.entries.forEach { a ->
-                                val color = accentColors(a).let { if (dark) it.second else it.first }
-                                val name = a.name.lowercase().replaceFirstChar { it.uppercase() }
-                                val on = a == appearance.accent
-                                Box(
-                                    Modifier.size(40.dp).clip(CircleShape)
-                                        .clickable(role = Role.RadioButton) { vm.setAppearance(appearance.copy(accent = a)) }
-                                        .semantics { contentDescription = name; selected = on }
-                                        .padding(3.dp)
-                                        .border(2.dp, if (on) color else Color.Transparent, CircleShape)
-                                        .padding(4.dp).clip(CircleShape).background(color),
-                                    contentAlignment = Alignment.Center,
-                                ) { if (on) JIcon(Ico.CHECK, if (dark) Color.Black else Color.White, size = 14.dp, stroke = 2.6f) }
-                            }
                         }
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -9,6 +9,13 @@ import java.util.Locale
  */
 private val TAG = Regex("""(?<![\p{L}\p{N}_#&])#([\p{L}\p{N}_-]*\p{L}[\p{L}\p{N}_-]*)""")
 
+/** [text] with each tag's '#' dropped, so "#work" reads as "work" and tags nothing. */
+fun untagged(text: String): String {
+    val out = StringBuilder(text)
+    findTags(text).asReversed().forEach { (range, _) -> out.deleteCharAt(range.first) }
+    return out.toString()
+}
+
 /** Case-insensitive identity of a tag: "#Work" and "#work" are the same tag. */
 fun tagKey(name: String) = name.lowercase(Locale.ROOT)
 

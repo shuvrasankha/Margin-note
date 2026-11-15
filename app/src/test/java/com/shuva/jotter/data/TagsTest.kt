@@ -56,4 +56,9 @@ class TagsTest {
         assertEquals(false, isValidTagName("12"))
         assertEquals(false, isValidTagName("two words"))
     }
+
+    @Test fun untaggedDropsOnlyTagHashes() {
+        assertEquals("It is tagged with shiva and work-2.", untagged("It is tagged with #shiva and #work-2."))
+        assertEquals("Issue #12, C# and a#b stay", untagged("Issue #12, C# and a#b stay"))
+    }
 }

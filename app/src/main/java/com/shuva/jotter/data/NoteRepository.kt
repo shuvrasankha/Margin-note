@@ -3,6 +3,7 @@ package com.shuva.jotter.data
 import androidx.room.withTransaction
 import com.shuva.jotter.sync.SyncScheduler
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -108,6 +109,27 @@ class NoteRepository @Inject constructor(
         folders.upsert(folder.copy(sortBy = sortBy, sortAscending = ascending, updatedAt = now()))
         scheduler.requestDebounced()
     }
+
+    /** What new notes in folder [id] start from: a [templateKey], or null for blank. */
+    suspend fun setFolderTemplate(id: String, key: String?) {
+        val folder = folders.get(id) ?: return
+        if (folder.template == key) return
+        folders.upsert(folder.copy(template = key, updatedAt = now()))
+        scheduler.requestDebounced()
+    }
+
+    /** The user's saved templates, A to Z. */
+    fun templates(): Flow<List<NoteEntity>> = liveNotes().map { all -> all.filter(::isTemplate).sortedBy { it.title.lowercase() } }
+
+    /** The body (no title) that template [key] puts in a note, with fresh line ids; null if it's gone. */
+    suspend fun templateBody(key: String): List<Block>? =
+        builtInTemplate(key)?.blocks()
+            ?: getNote(key)?.takeIf { isTemplate(it) && it.trashedAt == null && !it.deleted && !it.isLocked }
+                ?.blocks?.drop(1)?.map { it.copy(id = newId()) }
+
+    /** Saves [blocks] (title first) as a new template; attachments are left out, tables kept. */
+    suspend fun saveTemplate(blocks: List<Block>) =
+        saveNote(TEMPLATE_PREFIX + newId(), DEFAULT_FOLDER_ID, blocks.filter { it.attachment == null })
 
     suspend fun renameFolder(id: String, name: String) {
         val folder = folders.get(id) ?: return

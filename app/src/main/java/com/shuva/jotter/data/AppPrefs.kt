@@ -50,11 +50,10 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         _fingerprint.value = blob
     }
 
-    /** Look of the app: theme, accent, text size and list preview lines. */
+    /** Look of the app: theme, text size and list preview lines. */
     private val _appearance = MutableStateFlow(
         Appearance(
             theme = enumOr(prefs.getString(K_THEME, null), ThemeMode.SYSTEM),
-            accent = enumOr(prefs.getString(K_ACCENT, null), Accent.AMBER),
             textSize = enumOr(prefs.getString(K_TEXT_SIZE, null), TextSize.DEFAULT),
             previewLines = prefs.getInt(K_PREVIEW_LINES, 1).coerceIn(0, 2),
             gridView = prefs.getBoolean(K_GRID_VIEW, false),
@@ -63,7 +62,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     val appearance: StateFlow<Appearance> = _appearance
 
     fun setAppearance(a: Appearance) {
-        prefs.edit().putString(K_THEME, a.theme.name).putString(K_ACCENT, a.accent.name)
+        prefs.edit().putString(K_THEME, a.theme.name)
             .putString(K_TEXT_SIZE, a.textSize.name).putInt(K_PREVIEW_LINES, a.previewLines)
             .putBoolean(K_GRID_VIEW, a.gridView).apply()
         _appearance.value = a
@@ -113,7 +112,6 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
 
     private companion object {
         const val K_THEME = "theme"
-        const val K_ACCENT = "accent"
         const val K_TEXT_SIZE = "textSize"
         const val K_PREVIEW_LINES = "previewLines"
         const val K_GRID_VIEW = "gridView"
@@ -149,7 +147,6 @@ enum class Toggle(val key: String, val default: Boolean) {
 operator fun Map<Toggle, Boolean>.invoke(t: Toggle) = this[t] ?: t.default
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
-enum class Accent { AMBER, BLUE, GREEN, ROSE, VIOLET, GRAPHITE }
 /** Text size multiplies the system font scale. */
 enum class TextSize(val scale: Float, val label: String) {
     SMALL(0.9f, "Small"), DEFAULT(1f, "Default"), LARGE(1.12f, "Large"), LARGER(1.24f, "Larger"), LARGEST(1.3f, "Largest"),
@@ -157,7 +154,6 @@ enum class TextSize(val scale: Float, val label: String) {
 
 data class Appearance(
     val theme: ThemeMode = ThemeMode.SYSTEM,
-    val accent: Accent = Accent.AMBER,
     val textSize: TextSize = TextSize.DEFAULT,
     /** Lines of note text under each title in lists: 0, 1 or 2. */
     val previewLines: Int = 1,
