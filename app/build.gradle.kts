@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
-// Set JOTTER_WEB_CLIENT_ID in ~/.gradle/gradle.properties. See README.md. Never commit a real ID.
-val webClientId: String = providers.gradleProperty("JOTTER_WEB_CLIENT_ID")
+// Set MARGIN_WEB_CLIENT_ID in ~/.gradle/gradle.properties. See README.md. Never commit a real ID.
+val webClientId: String = providers.gradleProperty("MARGIN_WEB_CLIENT_ID")
     .getOrElse("REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com")
 
 // Release signing comes from keystore.properties (git-ignored; see README.md). Without it the release APK is unsigned.
@@ -17,11 +17,11 @@ val keystoreProps: Map<String, String> = rootProject.file("keystore.properties")
     ?.associate { (k, v) -> k.trim() to v.trim() }.orEmpty()
 
 android {
-    namespace = "com.shuva.jotter"
+    namespace = "com.margin.app"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        // The Play Store ID. The code keeps its own namespace (com.shuva.jotter), which users never see.
+        // The Play Store ID. The code keeps its own namespace (com.margin.app), which users never see.
         applicationId = "com.margin.app"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()

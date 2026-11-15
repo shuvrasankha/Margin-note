@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Jotter"
+rootProject.name = "Margin"
 include(":app")
