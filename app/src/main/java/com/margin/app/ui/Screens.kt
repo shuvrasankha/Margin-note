@@ -1708,6 +1708,9 @@ fun EditorScreen(
         val q = find.orEmpty()
         if (q.isBlank()) emptyList() else Regex(Regex.escape(q), RegexOption.IGNORE_CASE).findAll(vm.doc.text).map { it.range }.toList()
     }
+    // Replacing a match shortens the list; the position wraps instead of pointing past the end.
+    val matchAt = if (matches.isEmpty()) 0 else findAt.mod(matches.size)
+    var replacement by remember { mutableStateOf("") }
     androidx.activity.compose.BackHandler(enabled = find != null) { find = null }
     androidx.activity.compose.BackHandler(enabled = vm.mathKeys && vm.focused) { vm.mathKeys = false }
     val scroll = rememberScrollState()
@@ -1895,9 +1898,22 @@ fun EditorScreen(
                 }
             }
             find?.let { q ->
-                FindBar(q, matches.size, findAt, onChange = { find = it; findAt = 0 }, onStep = { d ->
-                    if (matches.isNotEmpty()) findAt = (findAt + d).mod(matches.size)
+                FindBar(q, matches.size, matchAt, onChange = { find = it; findAt = 0 }, onStep = { d ->
+                    if (matches.isNotEmpty()) findAt = (matchAt + d).mod(matches.size)
                 }, onClose = { find = null })
+                if (!vm.readOnly) ReplaceBar(
+                    replacement, matches.size, onChange = { replacement = it },
+                    onReplace = {
+                        matches.getOrNull(matchAt)?.let { vm.replaceRanges(listOf(it), replacement) }
+                        // The next match slides into this position, unless the new text is itself a match.
+                        findAt = if (replacement.contains(q, ignoreCase = true)) matchAt + 1 else matchAt
+                    },
+                    onReplaceAll = {
+                        val n = matches.size
+                        vm.replaceRanges(matches, replacement); findAt = 0
+                        toast(if (n == 1) "Replaced 1 match." else "Replaced $n matches.")
+                    },
+                )
             }
         } },
         bottomBar = {
@@ -2078,7 +2094,7 @@ fun EditorScreen(
                 }
                 val density = LocalDensity.current
                 BlockPhoneKeyboard(vm.mathKeys) { NoteField(
-                    vm, matches, findAt, Modifier.onGloballyPositioned { fieldTop = it.positionInParent().y.roundToInt() },
+                    vm, matches, matchAt, Modifier.onGloballyPositioned { fieldTop = it.positionInParent().y.roundToInt() },
                     onReveal = { y -> scope.launch { scroll.animateScrollTo((fieldTop + y - with(density) { 96.dp.toPx() }).roundToInt().coerceAtLeast(0)) } },
                     onOpenDrawing = { line, d -> drawing = line to d },
                     onViewPhoto = { viewing = it },
@@ -2169,6 +2185,28 @@ private fun FindBar(query: String, count: Int, at: Int, onChange: (String) -> Un
         IconAction("M6 15l6-6 6 6", "Previous match", { onStep(-1) }, enabled = count > 1)
         IconAction("M6 9l6 6 6-6", "Next match", { onStep(1) }, enabled = count > 1)
         TextAction("Done", onClose, bold = true)
+    }
+}
+
+/** Find in note, second row: the new text, then Replace (the current match) and All. */
+@Composable
+private fun ReplaceBar(text: String, count: Int, onChange: (String) -> Unit, onReplace: () -> Unit, onReplaceAll: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            Modifier.weight(1f).height(40.dp).clip(JShape.sm).background(jc.surface).padding(horizontal = 12.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (text.isEmpty()) Text("Replace with", style = JType.row, color = jc.muted, maxLines = 1)
+            BasicTextField(
+                text, onChange, singleLine = true, textStyle = JType.row.copy(color = jc.ink),
+                cursorBrush = SolidColor(jc.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Replace with" },
+            )
+        }
+        TextAction("Replace", onReplace, enabled = count > 0)
+        TextAction("All", onReplaceAll, enabled = count > 0)
     }
 }
 
@@ -3828,6 +3866,9 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
     val exportTo = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         uri?.let { vm.exportAll(it) { msg -> Toast.makeText(exportContext, msg, Toast.LENGTH_LONG).show() } }
     }
+    val importFrom = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        vm.importFiles(uris) { msg -> Toast.makeText(exportContext, msg, Toast.LENGTH_LONG).show() }
+    }
     var shorterKeep by remember { mutableStateOf<Int?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -4002,6 +4043,13 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                     CardRow(
                         "Export all as Markdown", icon = Ico.ARCHIVE, sub = "A zip of every note with its photos and files. Locked notes export only their title.",
                         labelColor = jc.accent, onClick = { exportTo.launch("Margin export ${java.time.LocalDate.now()}.zip") },
+                    )
+                    CardDivider()
+                    CardRow(
+                        if (vm.importing) "Importing…" else "Import notes", icon = Ico.ARROW_DOWN,
+                        sub = "From Google Keep (the Takeout zip), Evernote (.enex), or Markdown, text and HTML files. Each source gets its own folder.",
+                        labelColor = if (vm.importing) jc.muted else jc.accent,
+                        onClick = if (vm.importing) null else ({ importFrom.launch(arrayOf("*/*")) }),
                     )
                 }
 

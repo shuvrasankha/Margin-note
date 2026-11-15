@@ -69,6 +69,44 @@ class NoteRepository @Inject constructor(
         scheduler.requestDebounced()
     }
 
+    /**
+     * Import: stores [items] (attachments already stored) in the folder path each names, reusing a folder of the
+     * same name in the same place and making the rest. Returns how many notes were added.
+     */
+    suspend fun importNotes(items: List<ImportedNote>): Int {
+        if (items.isEmpty()) return 0
+        db.withTransaction {
+            val now = now()
+            val all = folders.all().filter { !it.deleted }.toMutableList()
+            val made = mutableMapOf<List<String>, String>()
+            suspend fun folderFor(path: List<String>): String {
+                if (path.isEmpty()) return DEFAULT_FOLDER_ID
+                made[path]?.let { return it }
+                val parentId = if (path.size == 1) null else folderFor(path.dropLast(1))
+                val name = path.last().trim().take(80).ifEmpty { IMPORT_FOLDER }
+                val parents = effectiveParents(all)
+                val found = all.firstOrNull { !it.isSmart && !it.isDefault && parents[it.id] == parentId && it.name.equals(name, ignoreCase = true) }
+                val id = found?.id ?: run {
+                    val last = all.filter { reorderGroup(it, parents) == "in:$parentId" }.maxOfOrNull { it.sortOrder } ?: -1
+                    FolderEntity(newId(), name, createdAt = now, updatedAt = now, parentId = parentId, sortOrder = last + 1)
+                        .also { folders.upsert(it); all += it }.id
+                }
+                made[path] = id
+                return id
+            }
+            items.forEach { n ->
+                val created = n.createdAt ?: n.editedAt ?: now
+                val note = NoteEntity(
+                    id = newId(), folderId = folderFor(n.folder), blocks = emptyList(), title = "", searchText = "",
+                    createdAt = created, updatedAt = now,
+                ).withBlocks(n.blocks, now).copy(editedAt = n.editedAt ?: created, isPinned = n.pinned)
+                notes.upsert(note)
+            }
+        }
+        scheduler.requestDebounced()
+        return items.size
+    }
+
     suspend fun setSmartFilter(id: String, filter: SmartFilter) {
         val folder = folders.get(id)?.takeIf { it.isSmart && !it.deleted } ?: return
         if (folder.smartFilter == filter) return

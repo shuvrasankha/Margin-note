@@ -1115,6 +1115,22 @@ class EditorViewModel @Inject constructor(
         changed()
     }
 
+    /** Find in note: puts [with] in place of each of [ranges] (offsets in the doc's text), as one undo step. */
+    fun replaceRanges(ranges: List<IntRange>, with: String) {
+        if (readOnly || needsUnlock || ranges.isEmpty()) return
+        val text = with.replace('\n', ' ')
+        var next = doc
+        // Last match first, so the earlier offsets stay valid.
+        ranges.sortedByDescending { it.first }.forEach { r ->
+            if (r.first >= 0 && r.last < next.text.length) next = next.applyEdit(next.text.replaceRange(r, text), r.first + text.length)
+        }
+        if (next == doc) return
+        lastChangeAt = 0 // its own undo step
+        doc = next
+        value = TextFieldValue(next.text, TextRange((ranges.minOf { it.first } + text.length).coerceIn(0, next.text.length)))
+        changed()
+    }
+
     /** Puts an earlier version back as an ordinary edit, so Undo returns to what was there. */
     fun restoreVersion(blocks: List<com.margin.app.data.Block>) {
         if (readOnly || needsUnlock || locked) return
@@ -1463,6 +1479,80 @@ class SettingsViewModel @Inject constructor(
             }
             onDone(message)
         }
+    }
+
+    /** An import is running. */
+    var importing by mutableStateOf(false); private set
+
+    /**
+     * Import: reads the picked files (zips, .enex, .json from Keep, .md, .txt, .html), stores their photos and
+     * files, then the notes, each source in a folder of its own. [onDone] gets a message to show.
+     */
+    fun importFiles(uris: List<android.net.Uri>, onDone: (String) -> Unit) {
+        if (uris.isEmpty() || importing) return
+        importing = true
+        viewModelScope.launch {
+            val message = try {
+                val read = withContext(Dispatchers.IO) { readImports(uris) }
+                val count = repo.importNotes(read.notes)
+                val roots = read.notes.mapNotNull { it.folder.firstOrNull() }.distinct()
+                if (count == 0) {
+                    "No notes found. Margin can import a Google Keep Takeout zip, Evernote .enex files, and Markdown, text or HTML files."
+                } else buildString {
+                    append("Imported $count ${if (count == 1) "note" else "notes"} into ${roots.joinToString(" and ") { "“$it”" }}.")
+                    if (read.failed > 0) append(" ${read.failed} ${if (read.failed == 1) "file" else "files"} couldn't be read.")
+                    if (read.missing > 0) append(" ${read.missing} ${if (read.missing == 1) "attachment was" else "attachments were"} missing or over 20 MB.")
+                }
+            } catch (e: Exception) {
+                "Import failed: ${e.message ?: "unknown error"}"
+            }
+            importing = false
+            onDone(message)
+        }
+    }
+
+    private class ImportRead(val notes: List<com.margin.app.data.ImportedNote>, val failed: Int, val missing: Int)
+
+    private suspend fun readImports(uris: List<android.net.Uri>): ImportRead {
+        val dir = java.io.File(context.cacheDir, "import").apply { deleteRecursively(); mkdirs() }
+        val notes = mutableListOf<com.margin.app.data.ImportedNote>()
+        var failed = 0
+        var missing = 0
+        suspend fun keep(result: com.margin.app.data.ImportResult) {
+            failed += result.failed
+            result.notes.forEach { n ->
+                val blocks = n.blocks.map { b ->
+                    val a = b.attachment ?: return@map b
+                    val bytes = result.file(a.file)
+                    if (bytes == null || bytes.size > com.margin.app.data.MAX_ATTACHMENT_BYTES) {
+                        missing++
+                        b.copy(text = "[${a.name}]", attachment = null)
+                    } else {
+                        val ext = a.name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) }
+                            ?: com.margin.app.data.extensionFor(a.mime)
+                        b.copy(attachment = files.write(bytes, ext, a.name, a.mime))
+                    }
+                }
+                notes += n.copy(blocks = blocks)
+            }
+        }
+        try {
+            uris.forEach { uri ->
+                val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null } ?: "Import"
+                val tmp = java.io.File(dir, com.margin.app.data.newId())
+                val input = context.contentResolver.openInputStream(uri)
+                if (input == null) { failed++; return@forEach }
+                input.use { inp -> tmp.outputStream().use { inp.copyTo(it) } }
+                val zip = tmp.inputStream().use { s -> val b = ByteArray(2); s.read(b) == 2 && b[0] == 'P'.code.toByte() && b[1] == 'K'.code.toByte() }
+                if (zip) java.util.zip.ZipFile(tmp).use { keep(com.margin.app.data.parseImport(com.margin.app.data.ZipSource(it))) }
+                else keep(com.margin.app.data.parseImport(com.margin.app.data.FileSource(name, tmp)))
+                tmp.delete()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+        return ImportRead(notes, failed, missing)
     }
 
     val lockedCount: StateFlow<Int> = repo.lockedCount().stateIn(viewModelScope, SharingStarted.Eagerly, 0)
