@@ -100,7 +100,7 @@ fun HabitsScreen(
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     if (adding) NameDialog("New habit", "", onDismiss = { adding = false }, label = "Habit") { adding = false; onAdd(it) }
     deleting?.let { note ->
-        AlertDialog(
+        MarginDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete \"${note.title}\"?") },
             text = { Text("It moves to Recently Deleted with its ${plural(habitDays(note).size, "day")}.") },
@@ -226,7 +226,7 @@ private fun HabitTimeDialog(current: Long?, onDismiss: () -> Unit, onPick: (java
     val context = androidx.compose.ui.platform.LocalContext.current
     val start = current?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalTime() } ?: java.time.LocalTime.of(20, 0)
     val state = androidx.compose.material3.rememberTimePickerState(start.hour, start.minute, is24Hour = android.text.format.DateFormat.is24HourFormat(context))
-    AlertDialog(
+    MarginDialog(
         onDismissRequest = onDismiss, containerColor = jc.bg,
         title = { Text("Remind me daily") },
         text = {

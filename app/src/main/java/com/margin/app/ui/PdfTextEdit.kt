@@ -260,7 +260,7 @@ internal fun PdfTextEditor(file: File, sizes: List<Pair<Int, Int>>, startPage: I
         }
     }
 
-    if (leaving) AlertDialog(
+    if (leaving) MarginDialog(
         onDismissRequest = { leaving = false },
         title = { Text("Discard your changes?") },
         text = { Text("The text you changed won't be saved to the PDF.") },

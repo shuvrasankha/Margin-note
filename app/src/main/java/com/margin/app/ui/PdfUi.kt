@@ -477,7 +477,7 @@ private fun SplitDialog(count: Int, onDismiss: () -> Unit, onSplit: (List<Pair<S
         ranges.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }.map { r -> r to parsePages(r, count) }
     }
     val valid = groups.isNotEmpty() && groups.all { it.second != null }
-    AlertDialog(
+    MarginDialog(
         onDismissRequest = onDismiss,
         title = { Text("Split PDF") },
         text = {
@@ -534,7 +534,7 @@ private fun MergeDialog(vm: EditorViewModel, others: List<Attachment>, onDismiss
             onMerge { a to vm.fileOf(a) }
         }
     }
-    AlertDialog(
+    MarginDialog(
         onDismissRequest = onDismiss,
         title = { Text("Merge with…") },
         text = {

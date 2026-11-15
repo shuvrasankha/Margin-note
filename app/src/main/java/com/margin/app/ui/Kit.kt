@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -494,4 +495,52 @@ fun GlyphAction(text: String, label: String, onClick: () -> Unit, style: TextSty
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { Text(text, style = style, color = if (enabled) color else jc.muted.copy(alpha = 0.4f)) }
+}
+
+/**
+ * The app's dialog: the question as a bottom sheet in the app's look (grab handle, bold title, the explanation in
+ * grey, the buttons along the bottom), in place of the system's alert box. Takes AlertDialog's arguments, so
+ * either fits a call; [containerColor] and [shape] are accepted and ignored, the sheet always looks the same.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun MarginDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: (@Composable () -> Unit)? = null,
+    title: (@Composable () -> Unit)? = null,
+    text: (@Composable () -> Unit)? = null,
+    @Suppress("UNUSED_PARAMETER") containerColor: Color = Color.Unspecified,
+    @Suppress("UNUSED_PARAMETER") shape: androidx.compose.ui.graphics.Shape? = null,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = jc.bg, shape = JShape.sheet, modifier = modifier,
+        dragHandle = { Box(Modifier.padding(top = 8.dp, bottom = 4.dp).size(36.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(jc.switchOff)) },
+    ) {
+        Column(
+            Modifier.fillMaxWidth().imePadding().padding(start = 24.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            title?.let {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.material3.LocalContentColor provides jc.ink,
+                    androidx.compose.material3.LocalTextStyle provides JType.subheading.copy(fontWeight = FontWeight.Bold),
+                ) { Box(Modifier.padding(end = 8.dp)) { it() } }
+            }
+            text?.let {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.material3.LocalContentColor provides jc.muted,
+                    androidx.compose.material3.LocalTextStyle provides JType.para,
+                ) {
+                    Box(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(end = 8.dp)) { it() }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
+                dismissButton?.invoke()
+                confirmButton()
+            }
+        }
+    }
 }

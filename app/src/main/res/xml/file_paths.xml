@@ -3,4 +3,6 @@
     <files-path name="attachments" path="attachments/" />
     <!-- Exported PDFs and Markdown files handed to the share sheet. -->
     <cache-path name="exports" path="exports/" />
+    <!-- An open locked note's files, decrypted, when one is opened in another app. -->
+    <cache-path name="unsealed" path="unsealed/" />
 </paths>

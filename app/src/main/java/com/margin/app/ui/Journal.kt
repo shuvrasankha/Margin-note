@@ -125,7 +125,7 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
     var drag by remember { mutableFloatStateOf(0f) }
     var deleting by remember { mutableStateOf<LocalDate?>(null) }
     deleting?.let { day ->
-        AlertDialog(
+        MarginDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete this entry?") },
             text = { Text("${journalTitle(day)} moves to Recently Deleted. Opening the day again brings it back.") },

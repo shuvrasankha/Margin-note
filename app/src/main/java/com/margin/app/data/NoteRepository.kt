@@ -205,7 +205,8 @@ class NoteRepository @Inject constructor(
             id = id, folderId = folderId, blocks = emptyList(), title = "", searchText = "",
             createdAt = now, updatedAt = now,
         )
-        val stored = if (cipher != null) blocks.take(1) else blocks
+        // A locked note shows only its title; its encrypted files are named beside it for sync and clean-up.
+        val stored = if (cipher != null) blocks.take(1) + blocks.drop(1).mapNotNull { b -> b.attachment?.takeIf { it.isSealed }?.let { sealedPlaceholder(it.file) } }.distinctBy { it.attachment!!.file } else blocks
         notes.upsert(base.withBlocks(stored, now).copy(cipher = cipher))
         if (cipher != null) versions.deleteFor(id) // no readable copies of a locked note
         else if (existing?.blocks != blocks) keepVersion(id, blocks, now)

@@ -70,7 +70,7 @@ fun SmartFilter.matches(note: NoteEntity, now: Long): Boolean {
     }
     if (hasChecklist && note.blocks.none { it.type == BlockType.CHECK }) return false
     if (pinnedOnly && !note.isPinned) return false
-    if (hasAttachments && note.blocks.none { it.attachment != null }) return false
+    if (hasAttachments && note.blocks.none { it.attachment != null && !it.isSealedPlaceholder }) return false
     if (editedWithinDays != null && now - note.lastEdited > editedWithinDays * 24L * 60 * 60 * 1000) return false
     return true
 }
@@ -104,11 +104,29 @@ val Block.isObject get() = attachment != null || table != null
 
 const val MAX_INDENT = 4
 
-/** A file stored in app storage as [file]; [name] is what the user picked, [mime] its type. */
+/**
+ * A file stored in app storage as [file]; [name] is what the user picked, [mime] its type. In a locked note's
+ * (encrypted) body, [key] is the file's own key: the stored file is encrypted with it (see [NoteCrypto.sealBytes]).
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
-data class Attachment(val file: String, val name: String, val mime: String) {
+data class Attachment(
+    val file: String,
+    val name: String,
+    val mime: String,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val key: String? = null,
+) {
     val isImage get() = mime.startsWith("image/")
+    /** Encrypted on disk; readable only through the locked note it belongs to. */
+    val isSealed get() = key != null
 }
+
+/** A locked note keeps, next to its title, one of these per encrypted file, so sync and clean-up know the file. */
+const val SEALED_MIME = "application/x-margin-sealed"
+
+fun sealedPlaceholder(file: String) = Block(text = ATTACHMENT_CHAR.toString(), attachment = Attachment(file, "", SEALED_MIME))
+
+val Block.isSealedPlaceholder get() = attachment?.mime == SEALED_MIME
 
 /** Stands in for an attachment in the note text, so it takes one character the cursor can step over. */
 const val ATTACHMENT_CHAR = '\uFFFC'
@@ -209,7 +227,7 @@ val NoteEntity.snippet get() = searchText.lineSequence().firstOrNull { it.isNotB
 fun NoteEntity.withBlocks(blocks: List<Block>, now: Long) = copy(
     blocks = blocks,
     title = blocks.firstOrNull()?.text?.trim().orEmpty(),
-    searchText = blocks.drop(1).joinToString("\n") { it.plainText },
+    searchText = blocks.drop(1).filter { !it.isSealedPlaceholder }.joinToString("\n") { it.plainText },
     updatedAt = now,
     editedAt = now,
 )

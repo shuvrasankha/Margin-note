@@ -277,6 +277,9 @@ class NotesViewModel @Inject constructor(
     private val appPrefs: AppPrefs,
     syncPrefs: SyncPrefs,
 ) : ViewModel() {
+    /** Two panes: the note open beside the list, shown tinted in it. Null on a phone. */
+    var openId by mutableStateOf<String?>(null)
+
     /** Notes show "waiting to sync" only when there is a Drive to sync to. */
     val signedIn: StateFlow<Boolean> = syncPrefs.status.map { it.signedIn }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
@@ -604,6 +607,7 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             session.unlocked.collect { unlocked ->
                 if (!unlocked && locked && !needsUnlock) hideBody()
+                if (!unlocked) files.forgetRevealed() // no decrypted copies once the notes lock
             }
         }
     }
@@ -646,6 +650,7 @@ class EditorViewModel @Inject constructor(
             lockParams = sealed?.let(NoteCrypto::paramsOf)
             unlockError = null
             val body = sealed?.let { session.open(it) }
+            body?.let { files.reveal(it) }
             needsUnlock = locked && body == null
             // A new note in a folder with a template starts from it; left untouched, it still isn't saved.
             val start = if (isNew && !noteId.startsWith("journal-") && !noteId.startsWith("habit-"))
@@ -689,6 +694,7 @@ class EditorViewModel @Inject constructor(
                 unlockError = if (wasPasscode) "Wrong passcode" else "Wrong password"
             } else {
                 unlockError = null
+                files.reveal(body)
                 needsUnlock = false
                 show(lastSaved.take(1) + body)
             }
@@ -711,13 +717,10 @@ class EditorViewModel @Inject constructor(
         return ok
     }
 
-    /** Locks this note with the session password (the caller makes sure the session is unlocked). */
-    /** Locked notes encrypt their text; attachment files aren't encrypted, so such notes can't be locked. */
-    val hasAttachments get() = doc.lines.any { it.attachment != null }
 
     /** Copies a picked file in and adds it on its own line after the cursor's line. */
     fun attach(uri: android.net.Uri, onError: (String) -> Unit) {
-        if (readOnly || needsUnlock || locked) return
+        if (readOnly || needsUnlock) return
         viewModelScope.launch {
             val a = try { files.import(uri) } catch (e: Exception) { onError(e.message ?: "Couldn't attach the file"); return@launch }
             insertAttachment(a)
@@ -726,7 +729,7 @@ class EditorViewModel @Inject constructor(
 
     /** Adds a scanned document (the scanner's PDF at [uri]) after the cursor's line, named for when it was scanned. */
     fun addScan(context: android.content.Context, uri: android.net.Uri, onError: (String) -> Unit) {
-        if (readOnly || needsUnlock || locked) return
+        if (readOnly || needsUnlock) return
         viewModelScope.launch {
             try {
                 val bytes = withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }
@@ -818,7 +821,7 @@ class EditorViewModel @Inject constructor(
     fun saveRecording(file: java.io.File, ms: Long, onError: (String) -> Unit) {
         viewModelScope.launch {
             try {
-                if (readOnly || needsUnlock || locked) return@launch
+                if (readOnly || needsUnlock) return@launch
                 // shortcut: copies through memory; fine up to the 30-minute cap (~14 MB).
                 val bytes = withContext(Dispatchers.IO) { file.readBytes() }
                 insertAttachment(files.write(bytes, "m4a", "Voice note (${clock(ms)})", "audio/mp4"))
@@ -832,7 +835,7 @@ class EditorViewModel @Inject constructor(
 
     /** Saves a drawing: a new one goes after the cursor's line; an edited one ([line]) replaces its old file. */
     fun saveDrawing(drawing: Drawing, line: Int?, onError: (String) -> Unit) {
-        if (readOnly || needsUnlock || locked) return
+        if (readOnly || needsUnlock) return
         viewModelScope.launch {
             val a = try {
                 files.write(MarginJson.encodeToString(drawing).toByteArray(), "json", "Drawing", DRAWING_MIME)
@@ -1048,7 +1051,7 @@ class EditorViewModel @Inject constructor(
      */
     fun addLink(url: String, title: String, onDone: (String?) -> Unit) {
         val clean = normalizeUrl(url) ?: return onDone("That doesn't look like a web address.")
-        if (readOnly || needsUnlock || locked) return onDone(null)
+        if (readOnly || needsUnlock) return onDone(null)
         viewModelScope.launch {
             try {
                 val name = title.trim().ifEmpty { withContext(Dispatchers.IO) { fetchPageTitle(clean) } ?: hostOf(clean) }
@@ -1133,7 +1136,7 @@ class EditorViewModel @Inject constructor(
 
     /** Puts an earlier version back as an ordinary edit, so Undo returns to what was there. */
     fun restoreVersion(blocks: List<com.margin.app.data.Block>) {
-        if (readOnly || needsUnlock || locked) return
+        if (readOnly || needsUnlock) return
         lastChangeAt = 0 // its own undo step
         doc = EditorDoc.fromBlocks(blocks)
         value = TextFieldValue(doc.text, TextRange(0))
@@ -1174,7 +1177,7 @@ class EditorViewModel @Inject constructor(
     }
 
     fun lock() {
-        if (readOnly || locked || needsUnlock || hasAttachments) return
+        if (readOnly || locked || needsUnlock) return
         if (isNew && doc.toBlocks().all { it.text.isBlank() }) return
         viewModelScope.launch {
             val params = NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
@@ -1431,16 +1434,37 @@ class EditorViewModel @Inject constructor(
         val current = doc.toBlocks()
         if (current == lastSaved) { saved = true; return null }
         if (isNew && current.all { it.text.isBlank() }) return null // don't create empty notes
-        val cipher = if (locked) {
+        val sealWith = if (locked) {
             val params = lockParams ?: return null
-            val key = session.cachedKey(params) ?: return null
-            NoteCrypto.seal(current.drop(1), key, params).also { sealed = it }
+            (session.cachedKey(params) ?: return null) to params
         } else null
         lastSaved = current
         isNew = false
         val id = noteId
         val folder = folderId
-        return { repo.saveNote(id, folder, current, cipher); saved = true; exists = true; if (createdAt == null) createdAt = System.currentTimeMillis() }
+        return {
+            // A locked note's photos and files are encrypted with it; removing the lock makes them readable again.
+            val needed = current.any { b -> b.attachment?.let { if (sealWith != null) !it.isSealed else it.isSealed } == true }
+            val (blocks, swapped) = when {
+                !needed -> current to emptyMap()
+                sealWith != null -> files.sealAll(current)
+                else -> files.unsealAll(current)
+            }
+            if (swapped.isNotEmpty() && id == noteId) swapAttachments(swapped, current, blocks)
+            val cipher = sealWith?.let { (key, params) -> NoteCrypto.seal(blocks.drop(1), key, params).also { if (id == noteId) sealed = it } }
+            repo.saveNote(id, folder, blocks, cipher)
+            // The readable copies of files that are now encrypted go at once, unless another note still uses them.
+            if (swapped.isNotEmpty() && sealWith != null) files.dropUnused(swapped.keys, repo.attachmentsInUse())
+            saved = true; exists = true; if (createdAt == null) createdAt = System.currentTimeMillis()
+        }
+    }
+
+    /** After a save swapped files (encrypted, or readable again): the open doc and its undo steps use the new ones. */
+    private fun swapAttachments(swapped: Map<String, Attachment>, before: List<Block>, after: List<Block>) {
+        fun EditorDoc.swap() = copy(lines = lines.map { m -> m.attachment?.let { swapped[it.file] }?.let { m.copy(attachment = it) } ?: m })
+        current = current.swap()
+        for (i in history.indices) history[i] = history[i].swap()
+        if (lastSaved == before) lastSaved = after
     }
 }
 

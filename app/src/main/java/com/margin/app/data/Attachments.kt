@@ -20,7 +20,74 @@ import javax.inject.Singleton
 class AttachmentFiles @Inject constructor(@ApplicationContext private val context: Context) {
     val dir: File get() = File(context.filesDir, "attachments").apply { mkdirs() }
 
-    fun file(a: Attachment) = File(dir, a.file)
+    /** Decrypted copies of an open locked note's files. Emptied when the notes lock, and at every start. */
+    private val plainDir: File get() = File(context.cacheDir, "unsealed").apply { mkdirs() }
+
+    init { File(context.cacheDir, "unsealed").deleteRecursively() }
+
+    /** Where to read [a]: its stored file, or for an encrypted one the decrypted copy [reveal] made. */
+    fun file(a: Attachment) = if (a.isSealed) File(plainDir, a.file) else File(dir, a.file)
+
+    /** Decrypts the encrypted files of an opened locked note's [blocks], so they can be shown. */
+    suspend fun reveal(blocks: List<Block>) = withContext(Dispatchers.IO) {
+        blocks.mapNotNull { it.attachment }.filter { it.isSealed }.forEach { a ->
+            val target = File(plainDir, a.file)
+            if (target.exists()) return@forEach
+            val stored = File(dir, a.file).takeIf { it.exists() } ?: return@forEach
+            val plain = NoteCrypto.openBytes(stored.readBytes(), a.key!!) ?: return@forEach
+            File(plainDir, "${a.file}.part").apply { writeBytes(plain) }.renameTo(target)
+        }
+    }
+
+    /** Removes every decrypted copy (the notes locked again). */
+    fun forgetRevealed() { File(context.cacheDir, "unsealed").deleteRecursively() }
+
+    /**
+     * A locked note's files, encrypted: each readable attachment in [blocks] is written as a new encrypted file
+     * with a key of its own. Returns the blocks and, by old file name, each new attachment.
+     */
+    suspend fun sealAll(blocks: List<Block>): Pair<List<Block>, Map<String, Attachment>> = withContext(Dispatchers.IO) {
+        val swapped = mutableMapOf<String, Attachment>()
+        val out = blocks.map { b ->
+            val a = b.attachment?.takeIf { !it.isSealed && it.mime != SEALED_MIME } ?: return@map b
+            val new = swapped[a.file] ?: run {
+                val src = File(dir, a.file).takeIf { it.exists() } ?: return@map b
+                val key = NoteCrypto.newFileKey()
+                val name = "${newId()}.mlk"
+                val plain = src.readBytes()
+                File(dir, "$name.part").apply { writeBytes(NoteCrypto.sealBytes(plain, key)) }.renameTo(File(dir, name))
+                // The note stays open: it keeps showing the file from the decrypted copy.
+                File(plainDir, "$name.part").apply { writeBytes(plain) }.renameTo(File(plainDir, name))
+                Attachment(name, a.name, a.mime, key).also { swapped[a.file] = it }
+            }
+            b.copy(attachment = new)
+        }
+        out to swapped
+    }
+
+    /** The lock was removed: each encrypted file in [blocks] is written back as a new readable file. */
+    suspend fun unsealAll(blocks: List<Block>): Pair<List<Block>, Map<String, Attachment>> = withContext(Dispatchers.IO) {
+        val swapped = mutableMapOf<String, Attachment>()
+        val out = blocks.map { b ->
+            val a = b.attachment?.takeIf { it.isSealed } ?: return@map b
+            val new = swapped[a.file] ?: run {
+                val plain = File(plainDir, a.file).takeIf { it.exists() }?.readBytes()
+                    ?: File(dir, a.file).takeIf { it.exists() }?.readBytes()?.let { NoteCrypto.openBytes(it, a.key!!) }
+                    ?: return@map b
+                val ext = a.name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: extensionFor(a.mime)
+                val name = "${newId()}.$ext"
+                File(dir, "$name.part").apply { writeBytes(plain) }.renameTo(File(dir, name))
+                Attachment(name, a.name, a.mime).also { swapped[a.file] = it }
+            }
+            b.copy(attachment = new)
+        }
+        out to swapped
+    }
+
+    /** Deletes stored files no note uses any more, right away (readable copies of a note that is now locked). */
+    suspend fun dropUnused(names: Collection<String>, inUse: Set<String>) = withContext(Dispatchers.IO) {
+        names.filter { it !in inUse && isSafeAttachmentName(it) }.forEach { File(dir, it).delete() }
+    }
 
     class TooLarge : IOException("Files over ${MAX_ATTACHMENT_BYTES / 1_000_000} MB can't be attached.")
 
