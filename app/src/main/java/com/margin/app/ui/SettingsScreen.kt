@@ -88,7 +88,7 @@ internal fun SettingsLabel(text: String) {
 
 @Composable
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () -> Unit) {
     val status by vm.status.collectAsState()
     val pending by vm.pending.collectAsState()
     val online by vm.online.collectAsState()
@@ -182,6 +182,8 @@ fun SettingsScreen(vm: SettingsViewModel, onBack: () -> Unit) {
                 }
                 status.lastError?.let { Text("Last error: $it", Modifier.padding(start = 16.dp, top = 8.dp), style = JType.small, color = jc.danger) }
                 vm.message?.let { Text(it, Modifier.padding(start = 16.dp, top = 8.dp), style = JType.small, color = jc.muted) }
+
+                BackupsSection(backups)
 
                 SettingsLabel("Appearance")
                 Card {

@@ -39,6 +39,7 @@ import com.margin.app.data.isPasscode
 import com.margin.app.data.backlinks
 import com.margin.app.data.Block
 import com.margin.app.data.isTemplate
+import com.margin.app.data.isLogin
 import com.margin.app.data.BlockType
 import com.margin.app.data.FolderEntity
 import com.margin.app.data.LockSession
@@ -112,7 +113,7 @@ const val PINNED_ID = "pinned"
 
 /** A list that isn't a stored folder. */
 /** Journal entries and habits have their own screens, so All Notes leaves them out (search still finds them). */
-fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTemplate(note) && journalDay(note) == null
+fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
 
 fun isVirtualList(id: String) = id == TRASH_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
 
@@ -129,6 +130,8 @@ sealed interface Screen {
     /** The journal calendar: a note per day. */
     data object Journal : Screen
     data object Habits : Screen
+    /** Saved passwords, behind the notes passcode. */
+    data object Passwords : Screen
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
@@ -293,10 +296,10 @@ class NotesViewModel @Inject constructor(
                 f == null -> flowOf(emptyList())
                 f == TRASH_ID -> repo.trash()
                 q.isNotEmpty() -> combine(repo.search(q), appPrefs.toggles) { found, t -> // all folders, excludes Recently Deleted
-                    (if (t(Toggle.HIDE_LOCKED_IN_SEARCH)) found.filterNot { it.isLocked } else found).filterNot(::isTemplate)
+                    (if (t(Toggle.HIDE_LOCKED_IN_SEARCH)) found.filterNot { it.isLocked } else found).filterNot { isTemplate(it) || isLogin(it) }
                 }
                 f == ALL_ID -> repo.liveNotes().map { all -> all.filter(::inAllNotes) }
-                f == PINNED_ID -> repo.liveNotes().map { all -> all.filter { it.isPinned } }
+                f == PINNED_ID -> repo.liveNotes().map { all -> all.filter { it.isPinned && !isLogin(it) } }
                 f.startsWith(TAG_PREFIX) -> repo.liveNotes().map { all ->
                     val key = f.removePrefix(TAG_PREFIX)
                     all.filter { key in it.tagKeys && !isTemplate(it) }
@@ -468,6 +471,9 @@ sealed interface ScanState {
     data class Found(val text: String, val afterLine: Int?) : ScanState
     data class Failed(val message: String) : ScanState
 }
+
+/** How long a ticked checklist line stays put before auto-sort moves it. */
+private const val CHECK_SORT_DELAY_MS = 550L
 
 @HiltViewModel
 class EditorViewModel @Inject constructor(
@@ -1216,6 +1222,7 @@ class EditorViewModel @Inject constructor(
     }
 
     fun close(keepShown: Boolean = false) {
+        sortPending()
         flush()
         val id = noteId
         val newTitle = doc.texts.first().trim()
@@ -1249,6 +1256,7 @@ class EditorViewModel @Inject constructor(
     fun onValueChange(v: TextFieldValue) {
         if (readOnly) return
         if (v.text == value.text) { value = v; return } // cursor or IME composition only
+        dropPendingSort()
         var next = doc.applyEdit(v.text, v.selection.end)
         if (appPrefs.toggles.value(Toggle.SMART_CHECKLISTS)) next = next.withChecklistShortcut(next.lineAt(v.selection.end))
         next = next.withListShortcut(next.lineAt(v.selection.end), v.selection.end)
@@ -1296,12 +1304,38 @@ class EditorViewModel @Inject constructor(
         changed()
     }
 
+    /**
+     * Ticks a checklist line at once; with auto-sort on, the line moves to its place a moment later, so the tick
+     * and the strike-through are seen before it goes. Ticking more lines in that moment waits for the last one.
+     */
     fun toggleChecked(line: Int) {
         if (readOnly) return
-        doc = doc.toggleChecked(line, appPrefs.autoSortChecked.value)
+        doc = doc.toggleChecked(line, autoSort = false)
+        value = value.copy(text = doc.text, composition = null)
+        changed()
+        if (!appPrefs.autoSortChecked.value) return
+        sortLines += line
+        sortJob?.cancel()
+        sortJob = viewModelScope.launch { kotlinx.coroutines.delay(CHECK_SORT_DELAY_MS); sortPending() }
+    }
+
+    private val sortLines = mutableSetOf<Int>()
+    private var sortJob: kotlinx.coroutines.Job? = null
+
+    /** Sorts the runs of lines ticked a moment ago. Sorting a run only moves lines within it, so the others' indices hold. */
+    private fun sortPending() {
+        sortJob?.cancel(); sortJob = null
+        if (sortLines.isEmpty()) return
+        val before = doc.text
+        sortLines.forEach { doc = doc.sortChecked(it) }
+        sortLines.clear()
+        if (doc.text == before) return
         value = value.copy(text = doc.text, composition = null)
         changed()
     }
+
+    /** Typing moves lines, so a sort still waiting is dropped: lines don't jump under the cursor. */
+    private fun dropPendingSort() { sortJob?.cancel(); sortJob = null; sortLines.clear() }
 
     /** Up to five of [known] tags that complete the one being typed at the cursor. */
     fun tagSuggestions(known: List<TagCount>): List<TagCount> {

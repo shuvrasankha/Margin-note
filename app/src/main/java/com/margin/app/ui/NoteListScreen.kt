@@ -1,5 +1,10 @@
 package com.margin.app.ui
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
@@ -84,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.margin.app.data.Drawing
 import com.margin.app.data.NoteEntity
+import com.margin.app.data.isLogin
 import com.margin.app.data.NoteSort
 import com.margin.app.data.NoteTemplate
 import com.margin.app.data.color
@@ -214,12 +220,12 @@ fun NoteListScreen(
                 }
                 isTrash -> if (notes.isNotEmpty()) BottomBar {
                     Spacer(Modifier.width(44.dp))
-                    Text(plural(notes.size, "Note"), style = JType.small, color = jc.muted)
+                    CountText(notes.size, JType.small, jc.muted) { plural(it, "Note") }
                     TextAction("Delete all", { confirmEmpty = true }, color = jc.danger)
                 }
                 else -> BottomBar {
                     Spacer(Modifier.size(44.dp))
-                    Text(if (query.isBlank()) plural(notes.size, "Note") else plural(notes.size, "Result"), style = JType.small, color = jc.muted)
+                    CountText(notes.size, JType.small, jc.muted) { if (query.isBlank()) plural(it, "Note") else plural(it, "Result") }
                     if (canCreate) IconAction(Ico.COMPOSE, "New note", onNew, size = 24.dp) else Spacer(Modifier.size(44.dp))
                 }
             }
@@ -606,6 +612,7 @@ internal fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: 
         Text(
             when {
                 journalDay(note) != null -> "Journal"
+                isLogin(note) -> "Password"
                 isHabit(note) -> "Habit"
                 note.isLocked -> "Locked"
                 body.isEmpty() -> "No additional text"
@@ -674,10 +681,23 @@ internal fun NoteRow(
     val isSelected = note.id in vm.selected
     val scope = rememberCoroutineScope()
     var offset by remember { mutableFloatStateOf(0f) }
-    suspend fun settle(to: Float) = animate(offset, to) { v, _ -> offset = v }
-    val reveal = with(LocalDensity.current) { 160.dp.toPx() }
     var width by remember { mutableIntStateOf(1) }
+    // Settles with the speed the finger let go at, so a flick carries on into the spring.
+    suspend fun settle(to: Float, velocity: Float = 0f) =
+        animate(offset, to, velocity, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) { v, _ -> offset = v }
+    /** Slides the row off to the left, then deletes it (the list then closes the gap). */
+    suspend fun swipeAway(velocity: Float = 0f) {
+        animate(offset, -width.toFloat(), velocity, tween(180, easing = JMotion.ease)) { v, _ -> offset = v }
+        vm.trash(note.id)
+    }
+    val reveal = with(LocalDensity.current) { 160.dp.toPx() }
     fun close() { scope.launch { settle(0f) } }
+    // Past this far, letting go acts: the icon grows and the phone ticks once as the line is crossed.
+    val view = LocalView.current
+    val pinArmed = offset > width * 0.25f
+    val deleteArmed = offset < -width * 0.6f
+    LaunchedEffect(pinArmed, deleteArmed) { if (pinArmed || deleteArmed) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
+    val armScale by animateFloatAsState(if (pinArmed || deleteArmed) 1.2f else 1f, JMotion.bounce(), label = "armed")
     val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.bg, JMotion.standard(), label = "rowFill")
     val content = @Composable {
         Row(
@@ -718,7 +738,7 @@ internal fun NoteRow(
                     return@Column
                 }
                 // Preview: 0 lines shows only the time; 2 lines adds the next line of text below.
-                val lines = if (journalDay(note) != null) listOf("Journal") else if (isHabit(note)) listOf("Habit") else if (note.isLocked) listOf("Locked")
+                val lines = if (journalDay(note) != null) listOf("Journal") else if (isLogin(note)) listOf("Password") else if (isHabit(note)) listOf("Habit") else if (note.isLocked) listOf("Locked")
                 else note.searchText.lineSequence().filter { it.isNotBlank() }.take(2).toList().ifEmpty { listOf("No additional text") }
                 val signedIn by vm.signedIn.collectAsState()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -751,17 +771,17 @@ internal fun NoteRow(
             },
         ) {
             @Composable
-            fun action(label: String, icon: String, color: Color, modifier: Modifier, onClick: () -> Unit) = Column(
+            fun action(label: String, icon: String, color: Color, modifier: Modifier, scale: Float = 1f, onClick: () -> Unit) = Column(
                 modifier.fillMaxHeight().background(color).clickable(onClick = onClick),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
-                JIcon(icon, Color.White, size = 20.dp)
+                JIcon(icon, Color.White, size = 20.dp, modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale })
                 Text(label, style = JType.small, color = Color.White)
             }
             if (offset > 0f) {
                 Row(Modifier.matchParentSize().background(jc.ink).padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        JIcon(Ico.PIN, jc.bg, size = 20.dp)
+                        JIcon(Ico.PIN, jc.bg, size = 20.dp, modifier = Modifier.graphicsLayer { scaleX = armScale; scaleY = armScale })
                         Text(pinLabel, style = JType.small, color = jc.bg)
                     }
                 }
@@ -771,7 +791,7 @@ internal fun NoteRow(
                     val deleteWidth = with(LocalDensity.current) { maxOf(reveal / 2, -offset - reveal / 2).toDp() }
                     // Fixed fills in both themes, dark enough for the white labels (5.99:1 and 5.70:1).
                     action("Move", Ico.MOVE, Color(0xFF636366), Modifier.width(80.dp)) { close(); onMove(note) }
-                    action("Delete", Ico.TRASH, Color(0xFFC4291C), Modifier.width(deleteWidth)) { vm.trash(note.id); offset = 0f }
+                    action("Delete", Ico.TRASH, Color(0xFFC4291C), Modifier.width(deleteWidth), armScale) { scope.launch { swipeAway() } }
                 }
             }
             Box(
@@ -779,13 +799,15 @@ internal fun NoteRow(
                     orientation = Orientation.Horizontal,
                     enabled = !selecting,
                     state = rememberDraggableState { d -> offset = (offset + d).coerceIn(-width.toFloat(), width * 0.5f) },
-                    onDragStopped = {
+                    onDragStopped = { speed ->
                         val v = offset
+                        // A quick flick counts like a longer drag.
+                        val aim = v + speed * 0.12f
                         when {
-                            v > width * 0.25f -> { vm.togglePin(note.id); settle(0f) }
-                            v < -width * 0.6f -> { vm.trash(note.id); offset = 0f }
-                            v < -reveal / 2 -> settle(-reveal)
-                            else -> settle(0f)
+                            v > width * 0.25f -> { vm.togglePin(note.id); settle(0f, speed) }
+                            v < -width * 0.6f -> swipeAway(speed)
+                            aim < -reveal / 2 -> settle(-reveal, speed)
+                            else -> settle(0f, speed)
                         }
                     },
                 ),

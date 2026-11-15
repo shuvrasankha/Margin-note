@@ -1,5 +1,6 @@
 package com.margin.app.ui
 
+import androidx.compose.animation.togetherWith
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -163,6 +164,31 @@ fun JIcon(d: String, color: Color, modifier: Modifier = Modifier, size: Dp = 22.
     }
 }
 
+/**
+ * A number that rolls to its new value: up when it grows, down when it shrinks. [text] spells it out
+ * ("3 Notes"); the whole label rolls, so a plural changes with its number.
+ */
+@Composable
+fun CountText(n: Int, style: TextStyle, color: Color, modifier: Modifier = Modifier, text: (Int) -> String = { "$it" }) {
+    androidx.compose.animation.AnimatedContent(
+        n, modifier,
+        transitionSpec = {
+            val up = targetState > initialState
+            (androidx.compose.animation.slideInVertically(JMotion.standard()) { h -> if (up) h / 2 else -h / 2 } + androidx.compose.animation.fadeIn(JMotion.standard()))
+                .togetherWith(androidx.compose.animation.slideOutVertically(JMotion.standard()) { h -> if (up) -h / 2 else h / 2 } + androidx.compose.animation.fadeOut(JMotion.quick()))
+                .using(androidx.compose.animation.SizeTransform(clip = false))
+        },
+        label = "count",
+    ) { Text(text(it), style = style, color = color, maxLines = 1) }
+}
+
+/** Fades in and rises a little the first time it's shown: for empty screens, so they don't just snap in. */
+fun Modifier.appear(delayMs: Int = 60) = composed {
+    val k = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { k.animateTo(1f, androidx.compose.animation.core.tween(360, delayMs, JMotion.ease)) }
+    graphicsLayer { alpha = k.value; translationY = (1f - k.value) * 12.dp.toPx() }
+}
+
 /** Shrinks a little while pressed, then springs back. */
 fun Modifier.pressScale(source: MutableInteractionSource, pressed: Float = 0.97f) = composed {
     val down by source.collectIsPressedAsState()
@@ -180,9 +206,10 @@ fun tapped(onClick: () -> Unit): () -> Unit {
 /** A 44dp tap target holding an icon. */
 @Composable
 fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.accent, enabled: Boolean = true, size: Dp = 22.dp, fill: Boolean = false) {
+    val press = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(44.dp).clip(CircleShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = tapped(onClick))
+        Modifier.size(44.dp).pressScale(press, 0.88f).clip(CircleShape)
+            .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { JIcon(d, if (enabled) color else jc.muted.copy(alpha = 0.4f), size = size, fill = fill) }
@@ -322,11 +349,12 @@ fun Pill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifi
     val fill by animateColorAsState(if (selected) jc.ink else jc.ink.copy(alpha = 0f), JMotion.standard(), label = "pillFill")
     val edge by animateColorAsState(if (selected) jc.ink else jc.line, JMotion.standard(), label = "pillEdge")
     val text by animateColorAsState(if (selected) jc.bg else jc.ink, JMotion.standard(), label = "pillText")
+    val press = remember { MutableInteractionSource() }
     Box(
-        modifier.height(32.dp).clip(JShape.pill)
+        modifier.height(32.dp).pressScale(press, 0.94f).clip(JShape.pill)
             .background(fill)
             .border(1.dp, edge, JShape.pill)
-            .clickable(role = Role.RadioButton, onClick = tapped(onClick)).padding(horizontal = 14.dp),
+            .clickable(press, androidx.compose.material3.ripple(), role = Role.RadioButton, onClick = tapped(onClick)).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -339,9 +367,10 @@ fun Pill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifi
 /** A rounded tag-like pill. */
 @Composable
 fun Chip(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, trailing: String? = null, onLongClick: (() -> Unit)? = null) {
+    val press = remember { MutableInteractionSource() }
     Row(
-        modifier.height(36.dp).clip(JShape.pill).border(1.dp, jc.line, JShape.pill)
-            .combinedClickableCompat(tapped(onClick), onLongClick).padding(horizontal = 14.dp),
+        modifier.height(36.dp).pressScale(press, 0.94f).clip(JShape.pill).border(1.dp, jc.line, JShape.pill)
+            .combinedClickableCompat(press, tapped(onClick), onLongClick).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -351,9 +380,9 @@ fun Chip(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, trail
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private fun Modifier.combinedClickableCompat(onClick: () -> Unit, onLongClick: (() -> Unit)?) =
-    if (onLongClick == null) clickable(onClick = onClick)
-    else combinedClickable(onClick = onClick, onLongClick = onLongClick)
+private fun Modifier.combinedClickableCompat(press: MutableInteractionSource, onClick: () -> Unit, onLongClick: (() -> Unit)?) =
+    if (onLongClick == null) clickable(press, androidx.compose.material3.ripple(), onClick = onClick)
+    else combinedClickable(press, androidx.compose.material3.ripple(), onClick = onClick, onLongClick = onLongClick)
 
 /** Round checkbox: filled accent with a tick when checked, an empty ring when not. */
 @Composable
@@ -490,8 +519,10 @@ fun FolderSheet(
 /** Small "Aa"-style text in a 44dp target. */
 @Composable
 fun GlyphAction(text: String, label: String, onClick: () -> Unit, style: TextStyle, color: Color = jc.accent, enabled: Boolean = true) {
+    val press = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(44.dp).clip(CircleShape).clickable(enabled = enabled, role = Role.Button, onClick = tapped(onClick))
+        Modifier.size(44.dp).pressScale(press, 0.88f).clip(CircleShape)
+            .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { Text(text, style = style, color = if (enabled) color else jc.muted.copy(alpha = 0.4f)) }

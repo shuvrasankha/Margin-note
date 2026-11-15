@@ -209,7 +209,7 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
             item { PageTitle("To-dos") }
             if (report.lists.isEmpty()) {
                 item {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.fillMaxWidth().appear().padding(horizontal = 32.dp, vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         JIcon(Ico.CHECKLIST, jc.muted, size = 40.dp)
                         Text("No to-do lists yet", Modifier.padding(top = 16.dp), style = JType.rowTitle, color = jc.ink)
                         Text(
@@ -225,7 +225,7 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
                 val lists = report.lists.filter { it.status == status }
                 if (lists.isEmpty()) return@forEach
                 item(key = "h:" + status.name) {
-                    SectionLabel(
+                    SectionLabel(modifier = Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()), text = 
                         when (status) {
                             TodoStatus.OVERDUE -> "Overdue"
                             TodoStatus.DUE_TODAY -> "Due today"
@@ -236,7 +236,7 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
                         },
                     )
                 }
-                items(lists, key = { it.note.id }) { ListRow(it, context, today, onOpen) }
+                items(lists, key = { it.note.id }) { Box(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) { ListRow(it, context, today, onOpen) } }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }

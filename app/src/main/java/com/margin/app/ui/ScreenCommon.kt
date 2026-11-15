@@ -216,7 +216,7 @@ internal fun EmptyState(
     onSecondary: () -> Unit = {},
 ) {
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 44.dp).padding(bottom = 80.dp),
+        Modifier.fillMaxSize().appear().padding(horizontal = 44.dp).padding(bottom = 80.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

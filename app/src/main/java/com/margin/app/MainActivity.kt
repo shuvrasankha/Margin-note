@@ -54,6 +54,8 @@ class MainActivity : FragmentActivity() {
     private val notes: NotesViewModel by viewModels()
     private val editor: EditorViewModel by viewModels()
     private val settings: SettingsViewModel by viewModels()
+    private val vault: com.margin.app.ui.VaultViewModel by viewModels()
+    private val backups: com.margin.app.ui.BackupsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +84,7 @@ class MainActivity : FragmentActivity() {
                     launching = false
                 }
                 Box(Modifier.fillMaxSize()) {
-                    MarginRoot(nav, folders, notes, editor, settings)
+                    MarginRoot(nav, folders, notes, editor, settings, vault, backups)
                     AnimatedVisibility(launching, enter = EnterTransition.None, exit = fadeOut(tween(250))) { LaunchScreen() }
                 }
             }

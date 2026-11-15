@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.margin.app.data.DEFAULT_FOLDER_ID
+import com.margin.app.data.isLogin
 import com.margin.app.data.color
 import com.margin.app.data.invoke
 import com.margin.app.data.isSmart
@@ -55,6 +56,8 @@ fun MarginRoot(
     notes: NotesViewModel,
     editor: EditorViewModel,
     settings: SettingsViewModel,
+    vault: VaultViewModel,
+    backups: BackupsViewModel,
 ) {
     val rows by folders.rows.collectAsState()
     val tags by folders.tags.collectAsState()
@@ -182,6 +185,7 @@ fun MarginRoot(
                 onReminders = { nav.push(Screen.Reminders) },
                 onJournal = { nav.push(Screen.Journal) },
                 onHabits = { nav.push(Screen.Habits) },
+                onPasswords = { nav.push(Screen.Passwords) },
                 onBack = ::back,
             )
             Screen.EditFolders -> EditFoldersScreen(folders, onBack = ::back)
@@ -195,6 +199,10 @@ fun MarginRoot(
                 val all by folders.liveNotes.collectAsState()
                 JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal, onBack = ::back) }
             }
+            Screen.Passwords -> JournalGate(
+                editor, fingerprint, onCancel = ::back,
+                intro = "Passwords are locked. Choose a passcode to open them; locked notes use the same one.",
+            ) { PasswordsScreen(vault, onBack = ::back) }
             Screen.Habits -> {
                 val all by folders.liveNotes.collectAsState()
                 HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onDelete = folders::deleteHabit, onBack = ::back,
@@ -213,7 +221,11 @@ fun MarginRoot(
                 previewLines = appearance.previewLines,
                 grid = appearance.gridView,
                 onGrid = { settings.setAppearance(appearance.copy(gridView = it)) },
-                onOpen = { openNote(Screen.Editor(it.id, it.folderId)) },
+                onOpen = {
+                    // A saved password opens in Passwords; one in Recently Deleted is recovered first.
+                    if (isLogin(it)) Toast.makeText(context, if (it.trashedAt == null) "Open it in Passwords" else "Recover it to see it in Passwords", Toast.LENGTH_SHORT).show()
+                    else openNote(Screen.Editor(it.id, it.folderId))
+                },
                 onNew = { openNote(Screen.Editor(newId(), screen.folderId.takeIf { !isVirtualList(it) } ?: DEFAULT_FOLDER_ID)) },
                 onNewWith = { q ->
                     val f = screen.folderId.takeIf { !isVirtualList(it) } ?: DEFAULT_FOLDER_ID
@@ -253,7 +265,7 @@ fun MarginRoot(
                     onNewNote = { folder -> editor.close(); nav.pop(); nav.push(Screen.Editor(newId(), folder)) },
                 )
             }
-            Screen.Settings -> SettingsScreen(settings, onBack = ::back)
+            Screen.Settings -> SettingsScreen(settings, backups, onBack = ::back)
         }
     }
 

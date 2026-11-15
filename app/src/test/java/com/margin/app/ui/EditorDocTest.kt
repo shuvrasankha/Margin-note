@@ -64,6 +64,14 @@ class EditorDocTest {
         assertEquals(listOf(false, false, true), d.lines.map { it.checked })
     }
 
+    @Test
+    fun `ticking first and sorting later ends where ticking with auto-sort does`() {
+        val start = doc("T" to BlockType.TITLE, "a" to BlockType.CHECK, "b" to BlockType.CHECK, "c" to BlockType.CHECK)
+        val ticked = start.toggleChecked(1, autoSort = false).toggleChecked(2, autoSort = false)
+        assertEquals(listOf("T", "a", "b", "c"), ticked.texts) // nothing moves until the sort
+        assertEquals(listOf("T", "c", "a", "b"), ticked.sortChecked(1).sortChecked(2).texts)
+    }
+
     @Test fun marksSurviveEditsSavingAndChecklistSorting() {
         fun Block.styled() = text.substring(marks[0].start, marks[0].end)
         var d = doc("Title" to BlockType.TITLE, "one two" to BlockType.CHECK, "three" to BlockType.CHECK)

@@ -115,6 +115,8 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     implementation(libs.kotlinx.serialization.json)
+    // WebDAV backups (PROPFIND and MKCOL, which HttpURLConnection refuses).
+    implementation(libs.okhttp)
 
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)

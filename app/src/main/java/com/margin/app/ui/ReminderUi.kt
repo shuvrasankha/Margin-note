@@ -253,7 +253,7 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
             item { PageTitle("Reminders") }
             if (rows.isEmpty()) {
                 item {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.fillMaxWidth().appear().padding(horizontal = 32.dp, vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         JIcon(Ico.BELL, jc.muted, size = 40.dp)
                         Text("No reminders", Modifier.padding(top = 16.dp), style = JType.rowTitle, color = jc.ink)
                         Text(
@@ -265,10 +265,10 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
                 return@LazyColumn
             }
             rows.groupBy { group(it.second) }.forEach { (label, items) ->
-                item(key = "h:$label") { SectionLabel(label) }
+                item(key = "h:$label") { SectionLabel(label, Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) }
                 items(items, key = { it.first.id }) { (note, at) ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { onOpen(note) }.padding(horizontal = 20.dp, vertical = 12.dp),
+                        Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).fillMaxWidth().clickable { onOpen(note) }.padding(horizontal = 20.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         JIcon(Ico.BELL, jc.accent, size = 20.dp)

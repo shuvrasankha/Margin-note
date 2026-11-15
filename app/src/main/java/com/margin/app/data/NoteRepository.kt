@@ -253,13 +253,17 @@ class NoteRepository @Inject constructor(
     suspend fun changeLockPassword(newPassword: CharArray, open: suspend (String) -> List<Block>?): Int {
         val now = now()
         var skipped = 0
+        val derive: suspend (NoteCrypto.KeyParams) -> javax.crypto.SecretKey = { params ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { NoteCrypto.deriveKey(newPassword, params.salt, params.iterations) }
+        }
+        // Saved passwords keep sharing one salt, so the vault still opens with a single key derivation.
+        val loginParams = NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
+        var loginKey: javax.crypto.SecretKey? = null
         val resealed = lockedNotes().mapNotNull { note ->
             val body = open(note.cipher!!)
             if (body == null) { skipped++; return@mapNotNull null }
-            val params = NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
-            val key = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                NoteCrypto.deriveKey(newPassword, params.salt, params.iterations)
-            }
+            val params = if (isLogin(note)) loginParams else NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
+            val key = if (isLogin(note)) loginKey ?: derive(params).also { loginKey = it } else derive(params)
             note.copy(cipher = NoteCrypto.seal(body, key, params), updatedAt = now)
         }
         db.withTransaction { resealed.forEach { notes.upsert(it) } }

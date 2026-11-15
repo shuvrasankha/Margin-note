@@ -54,7 +54,7 @@ interface FolderDao {
 
 @Dao
 interface NoteDao {
-    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC")
+    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' AND id NOT LIKE 'login-%' ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC")
     fun observeInFolder(folderId: String): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE deleted = 0 AND trashedAt IS NOT NULL ORDER BY trashedAt DESC")
@@ -68,7 +68,7 @@ interface NoteDao {
     )
     fun observeSearch(pattern: String): Flow<List<NoteEntity>>
 
-    @Query("SELECT folderId, COUNT(*) AS count FROM notes WHERE deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' GROUP BY folderId")
+    @Query("SELECT folderId, COUNT(*) AS count FROM notes WHERE deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' AND id NOT LIKE 'login-%' GROUP BY folderId")
     fun observeCounts(): Flow<List<FolderCount>>
 
     @Query("SELECT COUNT(*) FROM notes WHERE deleted = 0 AND trashedAt IS NOT NULL")

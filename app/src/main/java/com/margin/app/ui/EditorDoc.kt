@@ -214,6 +214,12 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
         return fromBlocks(result)
     }
 
+    /** Auto-sort on its own: the checklist run around [line] with its checked lines last. */
+    fun sortChecked(line: Int): EditorDoc {
+        if (line !in lines.indices || lines[line].type != BlockType.CHECK) return this
+        return fromBlocks(toBlocks().sortCheckedRun(line, isCheck = { it.type == BlockType.CHECK }, isChecked = { it.checked }))
+    }
+
     /** Smart checklists: a body line typed as "[ ] text" (or "[] ", "[x] ") becomes a checklist line without the brackets. */
     fun withChecklistShortcut(line: Int): EditorDoc {
         val meta = lines.getOrNull(line) ?: return this

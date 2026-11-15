@@ -77,7 +77,7 @@ import com.margin.app.data.todoReport
 @Composable
 fun FoldersScreen(
     vm: FoldersViewModel, onOpen: (String) -> Unit, onSearch: () -> Unit, onNew: () -> Unit, onEdit: () -> Unit, onSettings: () -> Unit,
-    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onHabits: () -> Unit, onBack: () -> Unit,
+    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onHabits: () -> Unit, onPasswords: () -> Unit, onBack: () -> Unit,
 ) {
     val syncBanner by vm.syncBanner.collectAsState()
     val rows by vm.rows.collectAsState()
@@ -144,6 +144,7 @@ fun FoldersScreen(
                 val notes by vm.liveNotes.collectAsState()
                 FolderListRow(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onClick = onJournal)
                 FolderListRow(ICON_HABITS, "Habits", remember(notes) { notes.count(::isHabit) }, onClick = onHabits)
+                FolderListRow(ICON_PASSWORDS, "Passwords", remember(notes) { notes.count { com.margin.app.data.isLogin(it) } }, onClick = onPasswords)
             }
             item { SectionLabel("Folders") }
             items(regular, key = { it.folder.id }) { row ->
@@ -365,7 +366,7 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
         bottomBar = {
             BottomBar {
                 TextAction("New Folder", { creating = true })
-                Text(plural(rows.count { !it.folder.isSmart }, "folder"), style = JType.small, color = jc.muted)
+                CountText(rows.count { !it.folder.isSmart }, JType.small, jc.muted) { plural(it, "folder") }
                 Spacer(Modifier.width(44.dp))
             }
         },
@@ -481,7 +482,7 @@ internal fun FolderListRow(icon: String, name: String, count: Int, depth: Int = 
             Text(name, style = JType.row, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             sub?.let { Text(it, style = JType.small, color = jc.muted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
-        Text("$count", style = JType.secondary, color = jc.muted)
+        CountText(count, JType.secondary, jc.muted)
         JIcon(Ico.CHEVRON, jc.muted, size = 14.dp, stroke = 2.2f)
     }
     HorizontalDivider(Modifier.padding(start = start, end = 20.dp), color = jc.line)
@@ -507,7 +508,8 @@ internal fun SmartFolderDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // No scroll of its own: the dialog scrolls its text (two nested scrolls crash).
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }, shape = JShape.sm)
                 Text("Shows notes that match all of these.", style = JType.small, color = jc.muted)
                 Text("Tags", Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)

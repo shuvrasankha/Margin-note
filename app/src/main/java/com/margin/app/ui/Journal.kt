@@ -67,7 +67,11 @@ import java.util.Locale
  * time, with no passcode yet, it asks to create one. Entries are locked notes, so they're encrypted too.
  */
 @Composable
-fun JournalGate(editor: EditorViewModel, fingerprint: String?, onCancel: () -> Unit, content: @Composable () -> Unit) {
+fun JournalGate(
+    editor: EditorViewModel, fingerprint: String?, onCancel: () -> Unit,
+    intro: String = "The journal is locked. Choose a passcode to open it; locked notes use the same one.",
+    content: @Composable () -> Unit,
+) {
     val unlocked by editor.sessionUnlocked.collectAsState()
     if (unlocked) return content()
     var mode by remember { mutableStateOf<PasswordMode?>(null) }
@@ -87,7 +91,7 @@ fun JournalGate(editor: EditorViewModel, fingerprint: String?, onCancel: () -> U
         if (old) OldPasswordDialog(onDismiss = onCancel, onSubmit = submit)
         else PasscodeDialog(
             m, onDismiss = onCancel,
-            intro = "The journal is locked. Choose a passcode to open it; locked notes use the same one.",
+            intro = intro,
             onOldPassword = if (m == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit,
         )
     }

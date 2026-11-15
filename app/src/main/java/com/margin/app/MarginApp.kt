@@ -18,6 +18,7 @@ class MarginApp : Application() {
     @Inject lateinit var scheduler: SyncScheduler
     @Inject lateinit var attachmentFiles: AttachmentFiles
     @Inject lateinit var attachmentIndex: com.margin.app.data.AttachmentIndex
+    @Inject lateinit var backupPrefs: com.margin.app.sync.BackupPrefs
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -33,5 +34,6 @@ class MarginApp : Application() {
         // Reads text in photos and PDFs so search finds it.
         appScope.launch { attachmentIndex.run() }
         scheduler.onAppStart() // sync on app start (when signed in) + 6 h periodic job
+        com.margin.app.sync.BackupWorker.schedule(this, backupPrefs.targets.value.isNotEmpty()) // daily backups, if any place is set up
     }
 }
