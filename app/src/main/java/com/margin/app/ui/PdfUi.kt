@@ -94,6 +94,11 @@ import com.margin.app.data.PageEdit
 import com.margin.app.data.Pdf
 import com.margin.app.data.PdfInfo
 import com.margin.app.data.parsePages
+import com.margin.app.data.PageText
+import com.margin.app.data.PdfMatch
+import com.margin.app.data.findInPages
+import com.margin.app.data.matchBoxes
+import androidx.compose.ui.draw.drawWithContent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -194,15 +199,52 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val canEdit = !vm.readOnly
 
+    // Where you were: each PDF opens again at the page you left it on (it follows the line, so edits keep it).
+    val prefs = remember { context.getSharedPreferences("margin_pdf", android.content.Context.MODE_PRIVATE) }
+    var restored by remember(file) { mutableStateOf(false) }
+    LaunchedEffect(sizes) {
+        if (sizes.isEmpty() || restored) return@LaunchedEffect
+        val saved = prefs.getInt("page:$lineId", 0).coerceIn(0, sizes.lastIndex)
+        if (saved > 0) list.scrollToItem(saved)
+        restored = true
+    }
+    LaunchedEffect(page, restored) { if (restored) prefs.edit().putInt("page:$lineId", page).apply() }
+    var jumping by remember { mutableStateOf(false) }
+
+    // Find: the PDF's text is read once, the first time Find opens.
+    var finding by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    var texts by remember(file) { mutableStateOf<List<PageText>?>(null) }
+    LaunchedEffect(file, finding) {
+        if (finding && texts == null) texts = withContext(Dispatchers.IO) { runCatching { Pdf.pageTexts(context, file) }.getOrDefault(emptyList()) }
+    }
+    var matches by remember(file) { mutableStateOf(emptyList<PdfMatch>()) }
+    var current by remember(file) { mutableStateOf(0) }
+    LaunchedEffect(query, texts, finding) {
+        val t = texts
+        matches = if (!finding || t == null) emptyList() else withContext(Dispatchers.Default) { findInPages(t.map { it.text }, query) }
+        current = 0
+    }
+    // Highlights per page: each match's boxes, and whether it's the one being looked at.
+    val marks = remember(matches, current, texts) {
+        val t = texts ?: return@remember emptyMap<Int, List<Pair<Boolean, FloatArray>>>()
+        matches.withIndex().groupBy({ it.value.page }) { (i, m) -> matchBoxes(t[m.page], m).map { (i == current) to it } }
+            .mapValues { (_, v) -> v.flatten() }
+    }
+
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
         Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(Ico.BACK, "Close", onClose)
-                Column(Modifier.weight(1f)) {
+                Column(
+                    Modifier.weight(1f).clip(JShape.xs)
+                        .clickable(enabled = sizes.size > 1, role = Role.Button, onClickLabel = "Go to page") { jumping = true },
+                ) {
                     Text(a.name, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (sizes.isNotEmpty()) Text("Page ${page + 1} of ${sizes.size}", style = JType.small, color = jc.muted)
+                    if (sizes.isNotEmpty()) Text("Page ${page + 1} of ${sizes.size}" + if (sizes.size > 1) "  ›" else "", style = JType.small, color = jc.muted)
                 }
+                if (info?.locked == false && sizes.isNotEmpty()) IconAction(Ico.SEARCH, "Find in PDF", { finding = !finding }, color = if (finding) jc.accent else jc.ink)
                 if (info?.locked == false) Box {
                     IconAction(Ico.MORE, "PDF tools", { menu = true }, fill = true)
                     PdfMenu(
@@ -241,6 +283,32 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
+            if (finding) {
+                Row(
+                    Modifier.fillMaxWidth().background(jc.bg).padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    SearchField(query, { query = it }, "Find in PDF", Modifier.weight(1f), autoFocus = true)
+                    val n = matches.size
+                    Text(
+                        when {
+                            texts == null -> "…"
+                            query.isBlank() -> ""
+                            n == 0 -> "None"
+                            else -> "${current + 1} of $n${if (n >= 2000) "+" else ""}"
+                        },
+                        Modifier.widthIn(min = 44.dp).padding(horizontal = 4.dp), style = JType.small, color = jc.muted, textAlign = TextAlign.Center,
+                    )
+                    IconAction(Ico.ARROW_UP, "Previous match", { current = (current - 1 + n) % n }, enabled = n > 1)
+                    IconAction(Ico.ARROW_DOWN, "Next match", { current = (current + 1) % n }, enabled = n > 1)
+                    IconAction(Ico.CLOSE, "Close find", { finding = false; query = "" }, color = jc.muted)
+                }
+                if (texts?.all { it.text.isBlank() } == true) Text(
+                    "This PDF has no text to search. It may be scanned pages.",
+                    Modifier.fillMaxWidth().background(jc.bg).padding(horizontal = 16.dp, vertical = 6.dp), style = JType.small, color = jc.muted,
+                )
+                Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
+            }
             vm.pdfBusy?.let { Text(it, Modifier.fillMaxWidth().background(jc.accent.copy(alpha = 0.12f)).padding(10.dp), style = JType.small, color = jc.ink, textAlign = TextAlign.Center) }
             when {
                 info == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -252,6 +320,14 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
                 else -> BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     val pageWidth = (maxWidth - 24.dp) * zoom
                     val px = with(LocalDensity.current) { pageWidth.toPx() }.roundToInt()
+                    val headroom = with(LocalDensity.current) { 96.dp.toPx() }
+                    // Brings the match being looked at into view, a little below the top.
+                    LaunchedEffect(matches, current) {
+                        val m = matches.getOrNull(current) ?: return@LaunchedEffect
+                        val top = texts?.getOrNull(m.page)?.let { matchBoxes(it, m).firstOrNull()?.get(1) } ?: 0f
+                        val scale = px / (sizes.getOrNull(m.page)?.first ?: 1).coerceAtLeast(1).toFloat()
+                        list.animateScrollToItem(m.page, (top * scale - headroom).roundToInt().coerceAtLeast(0))
+                    }
                     Box(
                         Modifier.fillMaxSize().horizontalScroll(rememberScrollState())
                             // Two fingers pinch to zoom (1x to 4x); one finger scrolls as usual.
@@ -281,7 +357,21 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
                                 Box(
                                     Modifier.width(pageWidth).aspectRatio(w.toFloat() / h.coerceAtLeast(1)).background(Color.White)
                                         .border(1.dp, jc.line).pointerInput(Unit) { detectTapGestures(onDoubleTap = { zoom = if (zoom > 1.05f) 1f else 2.5f }) }
-                                        .semantics { contentDescription = "Page ${i + 1}" },
+                                        .semantics { contentDescription = "Page ${i + 1}" }
+                                        .drawWithContent {
+                                            drawContent()
+                                            // Found words: all of them in yellow, the one being looked at in orange.
+                                            val k = size.width / w.coerceAtLeast(1)
+                                            marks[i]?.forEach { (on, b) ->
+                                                val pad = 1.5f * k
+                                                drawRect(
+                                                    if (on) Color(0xFFFF9500).copy(alpha = 0.5f) else Color(0xFFFFE14D).copy(alpha = 0.5f),
+                                                    androidx.compose.ui.geometry.Offset(b[0] * k - pad, b[1] * k - pad),
+                                                    androidx.compose.ui.geometry.Size((b[2] - b[0]) * k + 2 * pad, (b[3] - b[1]) * k + 2 * pad),
+                                                    blendMode = androidx.compose.ui.graphics.BlendMode.Multiply,
+                                                )
+                                            }
+                                        },
                                 ) { bmp?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) } }
                             }
                         }
@@ -298,6 +388,10 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
         }
     }
 
+    if (jumping) PageJump(file, sizes, page, onDismiss = { jumping = false }) { target ->
+        jumping = false
+        scope.launch { list.scrollToItem(target) }
+    }
     if (editing) PageEditor(file, sizes, onCancel = { editing = false }, onExtract = { pages ->
         editing = false
         val label = pages.joinToString(", ") { (it + 1).toString() }
@@ -450,6 +544,43 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
                 PageTool(Ico.COPY, "Extract", any) { onExtract(picked.sorted().map { pages[it].index }) }
                 PageTool(Ico.TRASH, "Delete", any && picked.size < pages.size, danger = true) {
                     picked.sortedDescending().forEach { pages.removeAt(it) }; picked.clear()
+                }
+            }
+        }
+    }
+}
+
+/** Go to page: every page as a picture, the one you're on ringed; tap one to go there. */
+@Composable
+private fun PageJump(file: File, sizes: List<Pair<Int, Int>>, at: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState(initialFirstVisibleItemIndex = (at - 3).coerceAtLeast(0))
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        FullWindow()
+        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
+            Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextAction("Cancel", onDismiss)
+                Text("Go to page", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
+                Spacer(Modifier.width(64.dp))
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
+            LazyVerticalGrid(
+                GridCells.Adaptive(96.dp), Modifier.weight(1f).fillMaxWidth(), state = grid, contentPadding = PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                items(sizes.size) { i ->
+                    val on = i == at
+                    val (w, h) = sizes[i]
+                    val thumb by produceState<ImageBitmap?>(null, file, i) { value = Pdf.render(file, i, 240)?.asImageBitmap() }
+                    Column(
+                        Modifier.clip(JShape.xs).clickable(role = Role.Button) { onPick(i) }.semantics { contentDescription = "Page ${i + 1}"; selected = on },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().aspectRatio(w.toFloat() / h.coerceAtLeast(1)).background(Color.White)
+                                .border(if (on) 3.dp else 1.dp, if (on) jc.accent else jc.line),
+                        ) { thumb?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) } }
+                        Text("${i + 1}", style = JType.small, color = if (on) jc.accent else jc.muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+                    }
                 }
             }
         }

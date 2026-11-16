@@ -375,6 +375,41 @@ object Pdf {
         PDFTextStripper().getText(doc).replace("\r\n", "\n").lines().joinToString("\n") { it.trimEnd() }.trim()
     }
 
+    private val pageTextCache = HashMap<String, List<PageText>>()
+
+    /**
+     * Every page's text with where each letter sits, for Find; remembered per file (files never change). A
+     * scanned page gives empty text.
+     */
+    fun pageTexts(context: Context, file: File): List<PageText> {
+        synchronized(pageTextCache) { pageTextCache[file.path]?.let { return it } }
+        val pages = load(context, file).use { doc ->
+            val out = ArrayList<PageText>()
+            val stripper = object : PDFTextStripper() {
+                var page = PageTextBuilder()
+                override fun writeString(text: String, positions: MutableList<TextPosition>) {
+                    for (t in positions) {
+                        val s = t.unicode ?: continue
+                        if (s.isBlank()) { page.gap(); continue }
+                        val size = sizeOf(t)
+                        page.letters(s, t.xDirAdj, t.yDirAdj - size * 0.8f, t.xDirAdj + t.widthDirAdj, t.yDirAdj + size * 0.22f)
+                    }
+                }
+                override fun writeWordSeparator() = page.gap()
+                override fun writeLineSeparator() = page.gap()
+                override fun writePageStart() { page = PageTextBuilder() }
+                override fun writePageEnd() { out += page.build() }
+            }
+            stripper.sortByPosition = true
+            stripper.getText(doc)
+            // A page the stripper skipped (none should be) still gets its place.
+            while (out.size < doc.numberOfPages) out += PageText.EMPTY
+            out
+        }
+        synchronized(pageTextCache) { if (pageTextCache.size > 4) pageTextCache.clear(); pageTextCache[file.path] = pages }
+        return pages
+    }
+
     // ---------- Showing pages ----------
 
     private val renderLock = Mutex()

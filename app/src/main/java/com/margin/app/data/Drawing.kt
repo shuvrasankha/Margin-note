@@ -44,6 +44,9 @@ enum class PenTool { PEN, PENCIL, MARKER }
 /**
  * [points] are x, y pairs. An [erase] stroke clears what's under it instead of drawing. [tool] is left out of
  * the JSON for the pen, so older versions read every stroke (they draw pencil and marker as pen).
+ * [weights] (pen only) is one value per point, [MIN_WEIGHT] to 1, scaling [width] there: lighter where the pen
+ * pressed less or moved faster. [width] stays the widest the line gets. Older versions ignore it and draw the
+ * line at [width] all along.
  */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
@@ -54,7 +57,62 @@ data class PenStroke(
     val erase: Boolean = false,
     // shortcut: a PenTool added later would fail to decode on older versions (enum); add values only with a version check.
     @EncodeDefault(EncodeDefault.Mode.NEVER) val tool: PenTool = PenTool.PEN,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val weights: List<Float>? = null,
 )
+
+/** The thinnest a weighted line gets, as a share of its width: thin enough to show, thick enough to survive a preview. */
+const val MIN_WEIGHT = 0.4f
+
+/** Two decimals: enough for the eye, and keeps the saved drawing small. */
+private fun round2(v: Float) = Math.round(v * 100) / 100f
+
+/** A stylus's line weight for [pressure] (0 to 1): a light touch draws thin, pressing harder draws full width. */
+fun weightFromPressure(pressure: Float): Float = round2((0.25f + 0.85f * pressure).coerceIn(MIN_WEIGHT, 1f))
+
+/**
+ * A finger's line weight from how fast it moves, in dp per millisecond: slow is full width, a quick flick thins
+ * out, as ink does. Eased from the [previous] point's weight so the line swells and thins smoothly.
+ */
+fun weightFromSpeed(speed: Float, previous: Float?): Float {
+    val target = (1.05f - 0.3f * speed).coerceIn(MIN_WEIGHT, 1f)
+    return round2(if (previous == null) target else previous + (target - previous) * 0.3f)
+}
+
+/** The weights when they match [points] one for one, else null (the line is drawn at its full width). */
+fun PenStroke.usableWeights(): List<Float>? = weights?.takeIf { !erase && tool == PenTool.PEN && points.size >= 4 && it.size == points.size / 2 }
+
+/**
+ * The whole-stroke eraser: the strokes (not erase strokes) that a swipe from (x0, y0) to (x1, y1) with an eraser
+ * [radius] wide touches. Measured to each stroke's segments, so a fast swipe still catches a thin line it crossed
+ * between two touch points, and a ruler line (two points) is hit along its length.
+ */
+fun List<PenStroke>.hitBy(x0: Float, y0: Float, x1: Float, y1: Float, radius: Float): Set<Int> = indices.filter { i ->
+    val s = this[i]
+    if (s.erase || s.points.size < 2) return@filter false
+    val reach = radius + s.width / 2
+    val p = s.points
+    if (p.size < 4) return@filter pointToSegment(p[0], p[1], x0, y0, x1, y1) <= reach
+    (0 until p.size / 2 - 1).any { k -> segmentToSegment(p[2 * k], p[2 * k + 1], p[2 * k + 2], p[2 * k + 3], x0, y0, x1, y1) <= reach }
+}.toSet()
+
+private fun pointToSegment(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float {
+    val dx = bx - ax; val dy = by - ay
+    val len2 = dx * dx + dy * dy
+    val t = if (len2 == 0f) 0f else (((px - ax) * dx + (py - ay) * dy) / len2).coerceIn(0f, 1f)
+    return kotlin.math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+private fun cross(ax: Float, ay: Float, bx: Float, by: Float, cx: Float, cy: Float) = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+
+private fun segmentToSegment(ax: Float, ay: Float, bx: Float, by: Float, cx: Float, cy: Float, dx: Float, dy: Float): Float {
+    val d1 = cross(cx, cy, dx, dy, ax, ay); val d2 = cross(cx, cy, dx, dy, bx, by)
+    val d3 = cross(ax, ay, bx, by, cx, cy); val d4 = cross(ax, ay, bx, by, dx, dy)
+    if (((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0)) && d1 != 0f && d2 != 0f && d3 != 0f && d4 != 0f) return 0f
+    return minOf(
+        minOf(pointToSegment(ax, ay, cx, cy, dx, dy), pointToSegment(bx, by, cx, cy, dx, dy)),
+        minOf(pointToSegment(cx, cy, ax, ay, bx, by), pointToSegment(dx, dy, ax, ay, bx, by)),
+    )
+}
 
 /** Grid spacing in drawing units; also the gap between ruled lines. */
 const val GRID_STEP = 60f
@@ -278,3 +336,48 @@ private fun simplify(pts: List<Pair<Float, Float>>, eps: Float): List<Pair<Float
     if (most <= eps) return listOf(pts[0], pts.last())
     return simplify(pts.subList(0, far + 1), eps).dropLast(1) + simplify(pts.subList(far, pts.size), eps)
 }
+
+// Custom ink colours. Colours are stored as 0xAARRGGBB Longs, like the preset inks.
+
+/** Hue (0–360), saturation and value (0–1) of an ARGB colour. */
+fun argbToHsv(argb: Long): FloatArray {
+    val r = ((argb shr 16) and 0xFF) / 255f; val g = ((argb shr 8) and 0xFF) / 255f; val b = (argb and 0xFF) / 255f
+    val max = maxOf(r, g, b); val min = minOf(r, g, b); val d = max - min
+    val h = when {
+        d == 0f -> 0f
+        max == r -> 60 * (((g - b) / d) % 6)
+        max == g -> 60 * ((b - r) / d + 2)
+        else -> 60 * ((r - g) / d + 4)
+    }.let { if (it < 0) it + 360 else it }
+    return floatArrayOf(h, if (max == 0f) 0f else d / max, max)
+}
+
+/** An opaque ARGB colour from hue (0–360), saturation and value (0–1). */
+fun hsvToArgb(h: Float, s: Float, v: Float): Long {
+    val c = v * s; val hp = ((h % 360 + 360) % 360) / 60; val x = c * (1 - Math.abs(hp % 2 - 1)); val m = v - c
+    val (r, g, b) = when (hp.toInt()) {
+        0 -> Triple(c, x, 0f); 1 -> Triple(x, c, 0f); 2 -> Triple(0f, c, x)
+        3 -> Triple(0f, x, c); 4 -> Triple(x, 0f, c); else -> Triple(c, 0f, x)
+    }
+    fun ch(f: Float) = Math.round((f + m) * 255).coerceIn(0, 255).toLong()
+    return 0xFF000000 or (ch(r) shl 16) or (ch(g) shl 8) or ch(b)
+}
+
+/** "#1A2B3C" (or without the #, or the short "#abc") as an opaque colour; null if it isn't one. */
+fun parseHexColor(text: String): Long? {
+    var t = text.trim().removePrefix("#")
+    if (t.length == 3) t = t.map { "$it$it" }.joinToString("")
+    if (t.length != 6 || !t.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return null
+    return 0xFF000000 or t.toLong(16)
+}
+
+fun hexOf(argb: Long): String = "#%06X".format(argb and 0xFFFFFF)
+
+/** A custom ink on a dark page: lifted so it stays readable, as black ink turns white (hue kept). */
+fun inkOnDarkPage(argb: Long): Long {
+    val (h, s, v) = argbToHsv(argb)
+    return if (v >= 0.85f) argb else hsvToArgb(h, s * 0.85f, 0.92f)
+}
+
+/** The custom colours kept for the ink row, newest first: [picked] goes to the front, at most [max]. */
+fun List<Long>.withRecentInk(picked: Long, max: Int = 3): List<Long> = (listOf(picked) + filter { it != picked }).take(max)
