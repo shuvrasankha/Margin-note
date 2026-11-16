@@ -15,15 +15,15 @@
     <!-- A ringing reminder fills the screen when the phone is locked or asleep. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
-    <!-- Backup is handled by Jotter's own Google Drive sync, not Android Auto Backup. -->
+    <!-- Backup is handled by Margin's own Google Drive sync, not Android Auto Backup. -->
     <application
-        android:name=".JotterApp"
+        android:name=".MarginApp"
         android:allowBackup="false"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Jotter">
+        android:theme="@style/Theme.Margin">
         <!-- Google Play services downloads the text recognition model when the app is installed. -->
         <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr" />
         <activity
@@ -35,7 +35,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
-            <!-- "Save to Jotter" from other apps' share sheets: text, links and photos. -->
+            <!-- "Save to Margin" from other apps' share sheets: text, links and photos. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

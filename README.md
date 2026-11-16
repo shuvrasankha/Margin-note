@@ -1,4 +1,4 @@
-# Jotter
+# Margin
 
 An offline-first notes app for Android. You can back it up and sync it through your Google account. Notes
 are stored on the device (Room is the source of truth). Signing in is optional. When you're signed in, notes
@@ -68,7 +68,7 @@ The behavior is based on the clean-room spec in [`research/SPEC.md`](research/SP
   or was edited recently. They hold no notes themselves.
 - Locked notes: **More > Lock note** in the editor. One notes password locks them all; the body is encrypted
   (AES-256-GCM, key from your password) on the device and in Drive, and only the title stays readable.
-  Notes unlock until Jotter goes to the background. Settings has Lock now, Change password and fingerprint
+  Notes unlock until Margin goes to the background. Settings has Lock now, Change password and fingerprint
   unlock. **There's no password recovery.**
 
 **Not built:** sharing/collaboration, importing from other note apps, password hints.
@@ -96,7 +96,7 @@ keyPassword=...
 
 ## How sync works
 - Storage is Google Drive REST v3, `appDataFolder` only. The scope is `https://www.googleapis.com/auth/drive.appdata`.
-  Jotter can't see your other Drive files, and you can't see Jotter's files in the Drive UI.
+  Margin can't see your other Drive files, and you can't see Margin's files in the Drive UI.
 - Each note is its own file, `note-<uuid>.json`. Every folder is in a single `manifest.json`. Each record
   has `id` (UUID), `updatedAt` and `deleted` (a tombstone). Each file also carries `updatedAt` in its Drive
   `appProperties`, so a sync only downloads files that actually changed.
@@ -111,7 +111,7 @@ keyPassword=...
 
 ## Google Cloud setup (one time)
 
-Use your own Google Cloud project. **Never commit real IDs, keys or `google-services.json` files.** Jotter
+Use your own Google Cloud project. **Never commit real IDs, keys or `google-services.json` files.** Margin
 doesn't need `google-services.json` at all.
 
 1. **Create or select a project** at <https://console.cloud.google.com/>.
@@ -136,7 +136,7 @@ doesn't need `google-services.json` at all.
    `123456789012-xxxxxxxx.apps.googleusercontent.com`.
 7. **Give the Web client ID to the build, outside the repo.** Add it to `~/.gradle/gradle.properties`:
    ```
-   JOTTER_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
+   MARGIN_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
    ```
    Without it, the app still builds and works fully offline, but sign-in fails.
 
@@ -144,7 +144,7 @@ Then run the app, open **Settings → Sign in with Google**, and approve Drive a
 
 ## Project layout
 ```
-app/src/main/java/com/shuva/jotter/
+app/src/main/java/com/margin/app/
   data/   Room entities + DAOs, NoteRepository (all local edits), SyncPrefs
   sync/   SyncMerge (pure merge rules), SyncEngine, Drive REST client, auth, WorkManager worker
   ui/     Compose screens + ViewModels
