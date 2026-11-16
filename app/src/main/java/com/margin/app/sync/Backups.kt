@@ -16,6 +16,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.margin.app.data.AttachmentFiles
+import com.margin.app.data.BackupCrypto
+import com.margin.app.data.BackupPasswordNeededException
+import com.margin.app.data.WrongBackupPasswordException
 import com.margin.app.data.MarginDatabase
 import com.margin.app.data.MarginJson
 import com.margin.app.data.NoteRepository
@@ -108,6 +111,22 @@ class BackupPrefs @Inject constructor(@ApplicationContext context: Context) {
 
     fun password(id: String): String? = prefs.getString(K_SECRET + id, null)?.let { runCatching { Secrets.decrypt(it) }.getOrNull() }
 
+    private val _sealed = MutableStateFlow(prefs.contains(K_BACKUP_PASSWORD))
+    /** Whether new backups are sealed with a backup password. */
+    val sealed: StateFlow<Boolean> = _sealed
+
+    fun backupPassword(): String? = prefs.getString(K_BACKUP_PASSWORD, null)?.let { runCatching { Secrets.decrypt(it) }.getOrNull() }
+
+    /**
+     * Sets (or with null, clears) the backup password. Every place is then due again, so the next backup is made
+     * the new way; backups already made stay as they were.
+     */
+    fun setBackupPassword(password: String?) {
+        prefs.edit().apply { if (password == null) remove(K_BACKUP_PASSWORD) else putString(K_BACKUP_PASSWORD, Secrets.encrypt(password)) }.apply()
+        _sealed.value = password != null
+        saveStatus(_status.value.mapValues { it.value.copy(dataStamp = 0) })
+    }
+
     fun record(id: String, status: BackupStatus) = saveStatus(_status.value + (id to status))
 
     private fun save(list: List<BackupTarget>) {
@@ -130,6 +149,7 @@ class BackupPrefs @Inject constructor(@ApplicationContext context: Context) {
         const val K_TARGETS = "targets"
         const val K_STATUS = "status"
         const val K_SECRET = "secret."
+        const val K_BACKUP_PASSWORD = "backup_password"
     }
 }
 
@@ -332,6 +352,8 @@ class BackupManager @Inject constructor(
         if (due.isEmpty()) return BackupRun(0, targets.size, 0)
         _running.value = true
         val zip = File(context.cacheDir, "backup-out.zip")
+        val sealedZip = File(context.cacheDir, "backup-out.sealed")
+        sealedZip.delete() // a leftover from a run that was cut off must not be sent
         try {
             val now = System.currentTimeMillis()
             val name = backupName(now)
@@ -340,13 +362,17 @@ class BackupManager @Inject constructor(
                     val inUse = repo.attachmentsInUse()
                     writeBackup(out, db.folders().all(), db.notes().all(), inUse, { n -> File(files.dir, n).takeIf { it.isFile }?.inputStream() }, now)
                 }
+                prefs.backupPassword()?.let { pw ->
+                    zip.inputStream().buffered().use { input -> sealedZip.outputStream().buffered().use { BackupCrypto.seal(input, it, pw.toCharArray()) } }
+                }
             }
+            val upload = if (sealedZip.exists()) sealedZip else zip
             var made = 0
             var failed = 0
             for (t in due) {
                 try {
                     val d = destination(t)
-                    d.write(name, zip)
+                    d.write(name, upload)
                     backupsToPrune(d.list(), KEEP_BACKUPS).forEach { runCatching { d.delete(it) } }
                     prefs.record(t.id, BackupStatus(lastAt = now, lastName = name, dataStamp = stamp))
                     made++
@@ -360,6 +386,7 @@ class BackupManager @Inject constructor(
             BackupRun(made, targets.size - due.size, failed)
         } finally {
             zip.delete()
+            sealedZip.delete()
             _running.value = false
         }
     }
@@ -367,31 +394,56 @@ class BackupManager @Inject constructor(
     /** Newest first. */
     suspend fun backupsIn(t: BackupTarget): List<String> = destination(t).list().sortedDescending()
 
-    /** Restores the backup [name] from [t]; see [restoreFile]. */
-    suspend fun restore(t: BackupTarget, name: String): Int {
+    /**
+     * Restores the backup [name] from [t]; see [restoreFile]. A sealed one opens with [password], or else the
+     * backup password set here; without either, or with the wrong one, it throws [BackupPasswordNeededException]
+     * or [WrongBackupPasswordException] so the user can be asked.
+     */
+    suspend fun restore(t: BackupTarget, name: String, password: String? = null): Int {
         val tmp = File(context.cacheDir, "backup-in.zip")
         try {
             destination(t).read(name) { input -> tmp.outputStream().use { input.copyTo(it) } }
-            return restoreFile(tmp)
+            return restoreFile(tmp, password)
         } finally { tmp.delete() }
     }
 
     /** Restores a backup file the user picked (from any app's storage). */
-    suspend fun restore(uri: Uri): Int {
+    suspend fun restore(uri: Uri, password: String? = null): Int {
         val tmp = File(context.cacheDir, "backup-in.zip")
         try {
             withContext(Dispatchers.IO) {
                 (context.contentResolver.openInputStream(uri) ?: throw IOException("Can't open that file")).use { input -> tmp.outputStream().use { input.copyTo(it) } }
             }
-            return restoreFile(tmp)
+            return restoreFile(tmp, password)
         } finally { tmp.delete() }
+    }
+
+    /** [file] as a plain backup zip: itself, or opened into a temp file if it's sealed. */
+    private suspend fun opened(file: File, password: String?): File = withContext(Dispatchers.IO) {
+        if (!file.inputStream().use { BackupCrypto.isSealed(it) }) return@withContext file
+        val tried = listOfNotNull(password, prefs.backupPassword()).distinct()
+        if (tried.isEmpty()) throw BackupPasswordNeededException()
+        val out = File(context.cacheDir, "backup-in.opened.zip")
+        for (pw in tried) {
+            try {
+                file.inputStream().buffered().use { input -> out.outputStream().buffered().use { BackupCrypto.open(input, it, pw.toCharArray()) } }
+                return@withContext out
+            } catch (_: WrongBackupPasswordException) { out.delete() }
+        }
+        // A password typed in was wrong; the saved one alone was wrong means this backup has an older password.
+        if (password != null) throw WrongBackupPasswordException() else throw BackupPasswordNeededException()
     }
 
     /**
      * Adds what a backup holds that this device lacks or has older (see [restorePlan]), with its files, then
      * syncs. Returns how many notes came back.
      */
-    private suspend fun restoreFile(zip: File): Int = mutex.withLock {
+    private suspend fun restoreFile(file: File, password: String?): Int = mutex.withLock {
+        val zip = opened(file, password)
+        try { restoreZip(zip) } finally { if (zip != file) zip.delete() }
+    }
+
+    private suspend fun restoreZip(zip: File): Int {
         val contents = withContext(Dispatchers.IO) {
             zip.inputStream().buffered().use { input ->
                 readBackup(input) { name, stream ->
@@ -412,7 +464,7 @@ class BackupManager @Inject constructor(
         repo.ensureDefaultFolder()
         repo.fixOrphans()
         scheduler.requestNow()
-        plan.notes.size
+        return plan.notes.size
     }
 }
 

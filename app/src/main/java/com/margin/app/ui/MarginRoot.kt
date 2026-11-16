@@ -45,6 +45,7 @@ import com.margin.app.data.color
 import com.margin.app.data.invoke
 import com.margin.app.data.isSmart
 import com.margin.app.data.newId
+import com.margin.app.data.isTracker
 import kotlinx.coroutines.launch
 
 // ---------- Root ----------
@@ -185,6 +186,7 @@ fun MarginRoot(
                 onReminders = { nav.push(Screen.Reminders) },
                 onJournal = { nav.push(Screen.Journal) },
                 onHabits = { nav.push(Screen.Habits) },
+                onTrackers = { nav.push(Screen.Trackers) },
                 onPasswords = { nav.push(Screen.Passwords) },
                 onBack = ::back,
             )
@@ -208,6 +210,17 @@ fun MarginRoot(
                 HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onDelete = folders::deleteHabit, onBack = ::back,
                     reminders = folders.reminders.collectAsState().value, onRemind = folders::setHabitReminder)
             }
+            Screen.Trackers -> {
+                val all by folders.liveNotes.collectAsState()
+                TrackersScreen(all, onOpen = { nav.push(Screen.Tracker(it.id)) }, onAdd = folders::addTracker, onSave = folders::saveTracker, onBack = ::back)
+            }
+            is Screen.Tracker -> {
+                val all by folders.liveNotes.collectAsState()
+                TrackerScreen(
+                    all, screen.id, backLabel = when (below) { Screen.Trackers -> "Trackers"; is Screen.Notes -> listName(below.folderId); else -> "Back" },
+                    onRename = folders::renameTracker, onDelete = folders::deleteTracker, onSave = folders::saveTracker, onBack = ::back,
+                )
+            }
             Screen.Todos -> {
                 val all by folders.liveNotes.collectAsState()
                 TodosScreen(all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
@@ -224,6 +237,11 @@ fun MarginRoot(
                 onOpen = {
                     // A saved password opens in Passwords; one in Recently Deleted is recovered first.
                     if (isLogin(it)) Toast.makeText(context, if (it.trashedAt == null) "Open it in Passwords" else "Recover it to see it in Passwords", Toast.LENGTH_SHORT).show()
+                    // A tracker's lines have a format the plain editor could break, so it opens in Trackers.
+                    else if (isTracker(it)) {
+                        if (it.trashedAt == null) nav.push(Screen.Tracker(it.id))
+                        else Toast.makeText(context, "Recover it to see it in Trackers", Toast.LENGTH_SHORT).show()
+                    }
                     else openNote(Screen.Editor(it.id, it.folderId))
                 },
                 onNew = { openNote(Screen.Editor(newId(), screen.folderId.takeIf { !isVirtualList(it) } ?: DEFAULT_FOLDER_ID)) },
@@ -240,6 +258,7 @@ fun MarginRoot(
                     Screen.Reminders -> "Reminders"
                     Screen.Journal -> "Journal"
                     Screen.Habits -> "Habits"
+                    Screen.Trackers -> "Trackers"
                     Screen.Settings -> "Settings"
                     else -> "Folders"
                 },
@@ -254,6 +273,7 @@ fun MarginRoot(
                     Screen.Reminders -> "Reminders"
                     Screen.Journal -> "Journal"
                     Screen.Habits -> "Habits"
+                    Screen.Trackers -> "Trackers"
                     else -> "Folders"
                 }
                 EditorScreen(

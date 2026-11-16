@@ -331,7 +331,7 @@ internal fun NoteField(
     val fourLine = vm.paper == Paper.FOUR_LINE
     fun textHeight(style: TextStyle) = if (fourLine) (style.lineHeight.value + style.fontSize.value * FOUR_LINE_GAP).sp else style.lineHeight
     val foldedLines = remember(doc) { aiFoldedLines(doc) }
-    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine) {
+    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine, vm.justChecked) {
         buildAnnotatedString {
             // Each ParagraphStyle range is already its own paragraph, so a real '\n' would add an empty one
             // after every line. Show a zero-width space in its place (same length, so offsets still map 1:1).
@@ -376,7 +376,8 @@ internal fun NoteField(
                 addStyle(
                     style.toSpanStyle().copy(
                         color = if (checked) muted else style.color,
-                        textDecoration = if (checked) TextDecoration.LineThrough else null,
+                        // The line ticked a moment ago gets its strike drawn on as it animates (see the drawing below).
+                        textDecoration = if (checked && meta.id != vm.justChecked) TextDecoration.LineThrough else null,
                     ),
                     start, end,
                 )
@@ -475,6 +476,15 @@ internal fun NoteField(
     // The paper runs on past the text to fill the rest of the screen (the note's scroll view clips it).
     val pageBelow = with(px) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val lineStarts = remember(doc) { doc.texts.runningFold(0) { at, t -> at + t.length + 1 }.dropLast(1) }
+    // The strike-through sweep for a line just ticked; done, the line's own strike-through shows.
+    val sweep = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(vm.justChecked) {
+        if (vm.justChecked == null) return@LaunchedEffect
+        sweep.snapTo(0f)
+        sweep.animateTo(1f, androidx.compose.animation.core.tween(300, easing = JMotion.ease))
+        vm.justChecked = null
+    }
+    val strikeAt = vm.justChecked?.let { id -> doc.lines.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
     fun docLine(offset: Int) = lineStarts.binarySearch(offset).let { if (it >= 0) it else -it - 2 }.coerceIn(0, doc.lines.lastIndex)
     // No paper under objects (they carry their own background) or under the title and headings.
     fun bareLine(offset: Int): Boolean = docLine(offset).let { i ->
@@ -582,6 +592,25 @@ internal fun NoteField(
                 .drawWithContent {
                     drawContent()
                     val l = layout ?: return@drawWithContent
+                    // A line just ticked: its strike-through draws across it, row by row, before the text's own takes over.
+                    strikeAt?.let { i ->
+                        if (l.layoutInput.text.length != doc.text.length) return@let
+                        val start = lineStarts[i]
+                        val end = start + doc.texts[i].length
+                        if (end <= start) return@let
+                        val fs = styles.getValue(doc.lines[i].type).fontSize.let { if (it.isSp) it else JType.body.fontSize }.toPx()
+                        val rows = (l.getLineForOffset(start)..l.getLineForOffset(end)).map { r ->
+                            val x0 = if (r == l.getLineForOffset(start)) l.getHorizontalPosition(start, true) else l.getLineLeft(r)
+                            Triple(x0, maxOf(x0, l.getLineRight(r)), l.getLineBaseline(r) - fs * 0.3f)
+                        }
+                        var left = rows.sumOf { (a, b, _) -> (b - a).toDouble() }.toFloat() * sweep.value
+                        for ((x0, x1, y) in rows) {
+                            if (left <= 0f) break
+                            val x = minOf(x1, x0 + left)
+                            drawLine(muted, Offset(x0, y), Offset(x, y), strokeWidth = maxOf(1.dp.toPx(), fs / 16f))
+                            left -= x1 - x0
+                        }
+                    }
                     val flagged = misspelled.map { Triple(it.start, it.end, squiggle) } + grammar.map { Triple(it.start, it.end, grammarLine) }
                     if (l.layoutInput.text.length == doc.text.length) flagged.forEach { (start, end, color) ->
                         // A wavy underline under the flagged words (per row, should they wrap).

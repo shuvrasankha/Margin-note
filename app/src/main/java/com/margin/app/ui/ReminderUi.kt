@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -53,8 +54,6 @@ import com.margin.app.data.snippet
 import com.margin.app.data.displayTitle
 import com.margin.app.data.NoteEntity
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
@@ -248,41 +247,60 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
             else -> "Later"
         }
     }
-    Scaffold(topBar = { NavBar("Folders", onBack) }) { padding ->
+    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("Reminders") }
             if (rows.isEmpty()) {
-                item {
-                    Column(Modifier.fillMaxWidth().appear().padding(horizontal = 32.dp, vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        JIcon(Ico.BELL, jc.muted, size = 40.dp)
-                        Text("No reminders", Modifier.padding(top = 16.dp), style = JType.rowTitle, color = jc.ink)
-                        Text(
-                            "Open a note and tap the bell at the top to be reminded about it.",
-                            Modifier.padding(top = 6.dp), style = JType.secondary, color = jc.muted, textAlign = TextAlign.Center,
-                        )
-                    }
-                }
+                item { BigEmpty(Ico.BELL, "No reminders", "Open a note and tap the bell at the top to be reminded about it.") }
                 return@LazyColumn
             }
-            rows.groupBy { group(it.second) }.forEach { (label, items) ->
-                item(key = "h:$label") { SectionLabel(label, Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) }
-                items(items, key = { it.first.id }) { (note, at) ->
-                    Row(
-                        Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).fillMaxWidth().clickable { onOpen(note) }.padding(horizontal = 20.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        JIcon(Ico.BELL, jc.accent, size = 20.dp)
+            item {
+                // The next one up, large, with how many are waiting today and in all.
+                val (next, at) = rows.first()
+                val todayCount = rows.count { group(it.second) == "Today" }
+                Column(
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).background(jc.card)
+                        .clickable { onOpen(next) }.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        IconTile(Ico.BELL, size = 48.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(reminderLabel(context, at, repeats[note.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)
-                            if (!note.isLocked) note.snippet.takeIf { it.isNotBlank() }?.let {
-                                Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Next up", style = JType.caption, color = jc.muted)
+                            Text(next.displayTitle, style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(reminderLabel(context, at, repeats[next.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatTile("$todayCount", "Today", Modifier.weight(1f))
+                        StatTile("${rows.size}", "Coming up", Modifier.weight(1f))
+                        StatTile("${rows.count { (repeats[it.first.id] ?: Repeat.NEVER) != Repeat.NEVER }}", "Repeating", Modifier.weight(1f))
+                    }
+                }
+            }
+            rows.groupBy { group(it.second) }.forEach { (label, items) ->
+                item(key = "g:$label") {
+                    Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
+                        SectionLabel(label)
+                        DividedCard(items, 60.dp) { (note, at) ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { onOpen(note) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
+                                IconTile(Ico.BELL)
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(reminderLabel(context, at, repeats[note.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)
+                                    if (!note.isLocked) note.snippet.takeIf { it.isNotBlank() }?.let {
+                                        Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
                             }
                         }
                     }
-                    HorizontalDivider(Modifier.padding(start = 54.dp, end = 20.dp), color = jc.line)
                 }
             }
+            item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }

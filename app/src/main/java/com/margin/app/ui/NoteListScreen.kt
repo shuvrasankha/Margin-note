@@ -102,6 +102,7 @@ import com.margin.app.data.isPdf
 import com.margin.app.data.isSmart
 import com.margin.app.data.lastEdited
 import com.margin.app.data.snippet
+import com.margin.app.data.isTracker
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -185,6 +186,7 @@ fun NoteListScreen(
     }
 
     Scaffold(
+        containerColor = jc.page,
         snackbarHost = {
             SnackbarHost(snackbar) { data ->
                 Snackbar(
@@ -193,9 +195,9 @@ fun NoteListScreen(
             }
         },
         topBar = {
-            if (selecting) NavBar(null, {}) { TextAction("Done", vm::clearSelection, bold = true) }
+            if (selecting) NavBar(null, {}, color = jc.page) { TextAction("Done", vm::clearSelection, bold = true) }
             else NavBar(
-                backLabel, onBack,
+                backLabel, onBack, color = jc.page,
                 leading = if (backLabel != null) null else ({
                     Row(
                         Modifier.heightIn(min = 44.dp).clip(JShape.xs).clickable(role = Role.Button, onClick = onFolders)
@@ -261,10 +263,10 @@ fun NoteListScreen(
                     style = JType.para, color = jc.muted,
                 )
             } else {
-                SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 20.dp), autoFocus = search)
+                SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 16.dp), autoFocus = search, fill = jc.card)
                 if (hasNotes) {
                     Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 4.dp),
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         // In Pinned every note is pinned already, so that pill would do nothing.
@@ -349,9 +351,12 @@ internal fun NoteList(
     onOpen: (NoteEntity) -> Unit,
     onMove: (NoteEntity) -> Unit,
 ) {
-    // The last note before a section header (or the end) has no line under it.
-    val ends = remember(entries) { entries.filterIndexed { i, e -> e is ListEntry.Row && entries.getOrNull(i + 1) !is ListEntry.Row }.toSet() }
-    LazyColumn(Modifier.fillMaxSize()) {
+    // Notes between section headers sit in one rounded card: the first rounds its top, the last its bottom
+    // and has no line under it.
+    fun isNote(e: ListEntry?) = e is ListEntry.Row || e is ListEntry.AttachmentRow
+    val ends = remember(entries) { entries.filterIndexed { i, e -> isNote(e) && !isNote(entries.getOrNull(i + 1)) }.toSet() }
+    val starts = remember(entries) { entries.filterIndexed { i, e -> isNote(e) && !isNote(entries.getOrNull(i - 1)) }.toSet() }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         items(entries, key = {
             when (it) {
                 is ListEntry.Row -> it.note.id
@@ -359,7 +364,10 @@ internal fun NoteList(
                 is ListEntry.AttachmentRow -> "a:" + it.note.id + ":" + it.attachment.file
             }
         }) { entry ->
-            Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
+            val group = if (entry is ListEntry.Header) Modifier
+            else Modifier.padding(horizontal = 16.dp).padding(top = if (entry in starts) 6.dp else 0.dp)
+                .clip(JShape.group(entry in starts, entry in ends)).background(jc.card)
+            Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).then(group)) {
             when (entry) {
                 is ListEntry.Header -> SectionHeader(entry.text, entry.collapsed, vm::togglePinnedCollapsed)
                 is ListEntry.AttachmentRow -> AttachmentHitRow(entry, query, folderNames[entry.note.folderId], onOpen)
@@ -399,7 +407,7 @@ internal fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fol
         Modifier.fillMaxWidth().clickable { onOpen(entry.note) }.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.surface), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.page), contentAlignment = Alignment.Center) {
             val a = entry.attachment
             JIcon(if (a.isAudio) Ico.MIC else if (a.isImage) Ico.CAMERA else if (a.isPdf) ICON_PDF else Ico.FILE, jc.muted, size = 22.dp)
         }
@@ -419,7 +427,7 @@ internal fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fol
 @Composable
 internal fun SyncBannerRow(banner: com.margin.app.sync.SyncBanner, onRetry: () -> Unit) {
     Row(
-        Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).background(jc.surface)
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).background(jc.card)
             .let { if (banner.retry) it.clickable(role = Role.Button, onClick = onRetry) else it }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -609,13 +617,12 @@ internal fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: 
     val isSelected = note.id in vm.selected
     // The same preview text as the list rows (attachments read as "Drawing", "Voice note (1:52)"...), more of it.
     val body = remember(note) { note.searchText.lineSequence().filter { it.isNotBlank() }.take(8).joinToString("\n") { it.trim() } }
-    val shape = JShape.md
-    val fill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.bg, JMotion.standard(), label = "cardFill")
-    val edge by animateColorAsState(if (isSelected) jc.accent else jc.line, JMotion.standard(), label = "cardEdge")
+    val fill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.card, JMotion.standard(), label = "cardFill")
+    val edge by animateColorAsState(if (isSelected) jc.accent else Color.Transparent, JMotion.standard(), label = "cardEdge")
     val press = remember { MutableInteractionSource() }
     Column(
-        Modifier.fillMaxWidth().pressScale(press).clip(shape).background(fill)
-            .border(if (isSelected) 2.dp else 1.dp, edge, shape)
+        Modifier.fillMaxWidth().pressScale(press).clip(JShape.lg).background(fill)
+            .border(2.dp, edge, JShape.lg)
             .combinedClickable(
                 interactionSource = press, indication = androidx.compose.material3.ripple(),
                 onClick = { if (selecting) vm.toggleSelected(note.id) else onOpen(note) },
@@ -635,6 +642,7 @@ internal fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: 
                 journalDay(note) != null -> "Journal"
                 isLogin(note) -> "Password"
                 isHabit(note) -> "Habit"
+                isTracker(note) -> "Tracker"
                 note.isLocked -> "Locked"
                 body.isEmpty() -> "No additional text"
                 else -> body
@@ -719,7 +727,7 @@ internal fun NoteRow(
     val deleteArmed = offset < -width * 0.6f
     LaunchedEffect(pinArmed, deleteArmed) { if (pinArmed || deleteArmed) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
     val armScale by animateFloatAsState(if (pinArmed || deleteArmed) 1.2f else 1f, JMotion.bounce(), label = "armed")
-    val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.bg, JMotion.standard(), label = "rowFill")
+    val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.card, JMotion.standard(), label = "rowFill")
     val content = @Composable {
         Row(
             Modifier.fillMaxWidth()
@@ -759,7 +767,7 @@ internal fun NoteRow(
                     return@Column
                 }
                 // Preview: 0 lines shows only the time; 2 lines adds the next line of text below.
-                val lines = if (journalDay(note) != null) listOf("Journal") else if (isLogin(note)) listOf("Password") else if (isHabit(note)) listOf("Habit") else if (note.isLocked) listOf("Locked")
+                val lines = if (journalDay(note) != null) listOf("Journal") else if (isLogin(note)) listOf("Password") else if (isHabit(note)) listOf("Habit") else if (isTracker(note)) listOf("Tracker") else if (note.isLocked) listOf("Locked")
                 else note.searchText.lineSequence().filter { it.isNotBlank() }.take(2).toList().ifEmpty { listOf("No additional text") }
                 val signedIn by vm.signedIn.collectAsState()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

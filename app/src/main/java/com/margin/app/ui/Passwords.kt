@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -233,7 +232,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
                 list.isEmpty() -> item { VaultEmpty(onAdd = { openId = "" }) }
                 else -> {
                     item {
-                        SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp))
+                        SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp), fill = jc.card)
                         HealthCard(list.size, reused.size, weak.size, filter, { filter = if (filter == it) VaultFilter.ALL else it })
                     }
                     if (shown.isEmpty()) item {
@@ -246,11 +245,8 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
                     shown.groupBy { e -> e.title.firstOrNull()?.uppercaseChar()?.takeIf { it.isLetter() } ?: '#' }.toSortedMap().forEach { (letter, group) ->
                         item(key = "h-$letter") { SectionLabel(letter.toString(), Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(top = 8.dp)) }
                         item(key = "g-$letter") {
-                            Card(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(horizontal = 16.dp).animateContentSize(JMotion.standard())) {
-                                group.forEachIndexed { i, e ->
-                                    if (i > 0) HorizontalDivider(Modifier.padding(start = 66.dp), color = jc.line)
-                                    LoginRow(e, e.id in reused, e.id in weak, onOpen = { openId = e.id }, onCopy = { copySecret(context, "Password", e.login.password) })
-                                }
+                            DividedCard(group, 66.dp, Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(horizontal = 16.dp).animateContentSize(JMotion.standard())) { e ->
+                                LoginRow(e, e.id in reused, e.id in weak, onOpen = { openId = e.id }, onCopy = { copySecret(context, "Password", e.login.password) })
                             }
                         }
                     }

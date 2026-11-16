@@ -276,11 +276,11 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 
 /** The rounded grey search field. */
 @Composable
-fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false) {
+fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false, fill: Color = jc.surface) {
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).background(jc.surface).padding(horizontal = 12.dp),
+        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).background(fill).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -421,11 +421,55 @@ fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> U
     Column(modifier.fillMaxWidth().clip(JShape.md).background(jc.card), content = content)
 }
 
+/** [items] as rows of a [Card], with a hairline between rows starting [inset] in (past the rows' icon). */
+@Composable
+fun <T> DividedCard(items: List<T>, inset: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier.padding(horizontal = 16.dp), row: @Composable (T) -> Unit) {
+    Card(modifier) {
+        items.forEachIndexed { i, item ->
+            if (i > 0) HorizontalDivider(Modifier.padding(start = inset), color = jc.line)
+            row(item)
+        }
+    }
+}
+
 /** A row's icon on a soft tinted square, as in Settings. */
 @Composable
-fun IconTile(icon: String, color: Color = jc.accent) {
-    Box(Modifier.size(30.dp).clip(JShape.xs).background(color.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
-        JIcon(icon, color, size = 18.dp, stroke = 2f)
+fun IconTile(icon: String, color: Color = jc.accent, size: androidx.compose.ui.unit.Dp = 30.dp) {
+    Box(
+        Modifier.size(size).clip(if (size > 36.dp) JShape.sm else JShape.xs).background(color.copy(alpha = 0.13f)),
+        contentAlignment = Alignment.Center,
+    ) { JIcon(icon, color, size = size * 0.6f, stroke = 2f) }
+}
+
+/**
+ * A ring that fills to [fraction] (0..1), grown in once when shown, with [content] in the middle.
+ * The ring is drawn in [color] over a faint track.
+ */
+@Composable
+fun ProgressRing(
+    fraction: Float, modifier: Modifier = Modifier, color: Color = jc.accent, stroke: androidx.compose.ui.unit.Dp = 8.dp,
+    content: @Composable () -> Unit = {},
+) {
+    val grown by animateFloatAsState(fraction.coerceIn(0f, 1f), androidx.compose.animation.core.tween(700, 80, JMotion.ease), label = "ring")
+    val track = color.copy(alpha = 0.16f)
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.matchParentSize()) {
+            val w = stroke.toPx()
+            val d = size.minDimension - w
+            val tl = Offset((size.width - d) / 2, (size.height - d) / 2)
+            drawArc(track, 0f, 360f, false, tl, Size(d, d), style = Stroke(w))
+            if (grown > 0f) drawArc(color, -90f, 360f * grown, false, tl, Size(d, d), style = Stroke(w, cap = StrokeCap.Round))
+        }
+        content()
+    }
+}
+
+/** A small number with its label, for the stat rows on summary cards. */
+@Composable
+fun StatTile(value: String, label: String, modifier: Modifier = Modifier, color: Color = jc.ink, fill: Color = jc.page) {
+    Column(modifier.clip(JShape.sm).background(fill).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(value, style = JType.subheading, color = color, maxLines = 1)
+        Text(label, style = JType.caption, color = jc.muted, maxLines = 1)
     }
 }
 

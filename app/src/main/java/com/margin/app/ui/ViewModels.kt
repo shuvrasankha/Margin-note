@@ -72,6 +72,7 @@ import com.margin.app.data.tagCounts
 import com.margin.app.data.tagKey
 import com.margin.app.data.tagKeys
 import com.margin.app.data.tagPrefixAt
+import com.margin.app.data.isTracker
 import com.margin.app.sync.DriveAuthorizer
 import com.margin.app.sync.GoogleAccount
 import com.margin.app.sync.NeedsUserConsentException
@@ -113,7 +114,7 @@ const val PINNED_ID = "pinned"
 
 /** A list that isn't a stored folder. */
 /** Journal entries and habits have their own screens, so All Notes leaves them out (search still finds them). */
-fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
+fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTracker(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
 
 fun isVirtualList(id: String) = id == TRASH_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
 
@@ -130,6 +131,10 @@ sealed interface Screen {
     /** The journal calendar: a note per day. */
     data object Journal : Screen
     data object Habits : Screen
+    /** Lists like "Movies watched", counted per year. */
+    data object Trackers : Screen
+    /** One tracker, a year at a time. */
+    data class Tracker(val id: String) : Screen
     /** Saved passwords, behind the notes passcode. */
     data object Passwords : Screen
 }
@@ -216,8 +221,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    fun addHabit(name: String) = viewModelScope.launch {
-        if (name.isNotBlank()) repo.saveNote("habit-" + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
+    fun addHabit(name: String) = addTitled("habit-", name)
+    /** A new note in the default folder holding only the title [name], its id starting with [prefix]. */
+    private fun addTitled(prefix: String, name: String) = viewModelScope.launch {
+        if (name.isNotBlank()) repo.saveNote(prefix + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
     }
     /** Ticks [day] off for the habit [note], or unticks it: the body is rewritten as one line per day, newest first. */
     fun toggleHabit(note: NoteEntity, day: java.time.LocalDate) = viewModelScope.launch {
@@ -228,6 +235,13 @@ class FoldersViewModel @Inject constructor(
         if (name.isNotBlank()) repo.saveNote(note.id, note.folderId, listOf(note.blocks.first().copy(text = name.trim())) + note.blocks.drop(1))
     }
     fun deleteHabit(note: NoteEntity) = viewModelScope.launch { alarms.clear(note.id); repo.moveToTrash(note.id) }
+    fun addTracker(name: String) = addTitled(com.margin.app.data.TRACKER_PREFIX, name)
+    fun renameTracker(note: NoteEntity, name: String) = renameHabit(note, name)
+    fun deleteTracker(note: NoteEntity) = viewModelScope.launch { repo.moveToTrash(note.id) }
+    /** Rewrites the tracker [note] as [entries], one line each, newest first. */
+    fun saveTracker(note: NoteEntity, entries: List<com.margin.app.data.TrackerEntry>) = viewModelScope.launch {
+        repo.saveNote(note.id, note.folderId, com.margin.app.data.trackerBlocks(note, entries))
+    }
     /** Rings the habit [note] every day at [at], or no more for null. */
     fun setHabitReminder(note: NoteEntity, at: java.time.LocalTime?) {
         if (at == null) alarms.clear(note.id)
@@ -1375,6 +1389,7 @@ class EditorViewModel @Inject constructor(
     fun toggleChecked(line: Int) {
         if (trashed || needsUnlock) return // ticking stays allowed while editing is locked
         doc = doc.toggleChecked(line, autoSort = false)
+        justChecked = doc.lines.getOrNull(line)?.takeIf { it.checked }?.id
         value = value.copy(text = doc.text, composition = null)
         changed()
         if (!appPrefs.autoSortChecked.value) return
@@ -1382,6 +1397,9 @@ class EditorViewModel @Inject constructor(
         sortJob?.cancel()
         sortJob = viewModelScope.launch { kotlinx.coroutines.delay(CHECK_SORT_DELAY_MS); sortPending() }
     }
+
+    /** The id of the line ticked a moment ago, while its strike-through draws on; null once it has. */
+    var justChecked by mutableStateOf<String?>(null)
 
     private val sortLines = mutableSetOf<Int>()
     private var sortJob: kotlinx.coroutines.Job? = null

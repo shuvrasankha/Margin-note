@@ -23,7 +23,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
@@ -43,9 +42,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.margin.app.data.NoteEntity
@@ -204,19 +203,15 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
     LaunchedEffect(Unit) { while (true) { delay(60_000); today = todayEpochDay() } }
     val zone = ZoneId.systemDefault()
     val report = remember(notes, today) { todoReport(notes, today, zone) }
-    Scaffold(topBar = { NavBar("Folders", onBack) }) { padding ->
+    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("To-dos") }
             if (report.lists.isEmpty()) {
                 item {
-                    Column(Modifier.fillMaxWidth().appear().padding(horizontal = 32.dp, vertical = 64.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        JIcon(Ico.CHECKLIST, jc.muted, size = 40.dp)
-                        Text("No to-do lists yet", Modifier.padding(top = 16.dp), style = JType.rowTitle, color = jc.ink)
-                        Text(
-                            "Add checklist items to a note and it shows up here. Set a target date from the note's … menu to see whether you're on track.",
-                            Modifier.padding(top = 6.dp), style = JType.secondary, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
+                    BigEmpty(
+                        Ico.CHECKLIST, "No to-do lists yet",
+                        "Add checklist items to a note and it shows up here. Set a target date from the note's … menu to see whether you're on track.",
+                    )
                 }
                 return@LazyColumn
             }
@@ -224,83 +219,89 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
             TodoStatus.entries.forEach { status ->
                 val lists = report.lists.filter { it.status == status }
                 if (lists.isEmpty()) return@forEach
-                item(key = "h:" + status.name) {
-                    SectionLabel(modifier = Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()), text = 
-                        when (status) {
-                            TodoStatus.OVERDUE -> "Overdue"
-                            TodoStatus.DUE_TODAY -> "Due today"
-                            TodoStatus.BEHIND -> "Behind"
-                            TodoStatus.ON_TRACK -> "On track"
-                            TodoStatus.NO_TARGET -> "No target date"
-                            TodoStatus.DONE -> "Done"
-                        },
-                    )
+                item(key = "s:" + status.name) {
+                    Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
+                        SectionLabel(
+                            when (status) {
+                                TodoStatus.OVERDUE -> "Overdue"
+                                TodoStatus.DUE_TODAY -> "Due today"
+                                TodoStatus.BEHIND -> "Behind"
+                                TodoStatus.ON_TRACK -> "On track"
+                                TodoStatus.NO_TARGET -> "No target date"
+                                TodoStatus.DONE -> "Done"
+                            },
+                        )
+                        DividedCard(lists, 70.dp) { l ->
+                            ListRow(l, context, today, onOpen)
+                        }
+                    }
                 }
-                items(lists, key = { it.note.id }) { Box(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) { ListRow(it, context, today, onOpen) } }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
 
-/** The totals: share of tasks done, a bar, and counts of lists needing attention. */
+/** The totals: a ring for the share of tasks done, and tiles for the lists that need a look. */
 @Composable
 private fun Summary(report: com.margin.app.data.TodoReport, today: Long) {
     Column(
-        Modifier.padding(horizontal = 20.dp).padding(bottom = 4.dp).fillMaxWidth().clip(JShape.md).background(jc.surface)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).background(jc.card).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("${(report.fraction * 100).toInt()}%", style = JType.pageTitle.copy(fontSize = 34.sp, lineHeight = 38.sp), color = jc.ink)
-            Text("done", Modifier.padding(bottom = 5.dp), style = JType.secondary, color = jc.muted)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            ProgressRing(report.fraction, Modifier.size(92.dp)) {
+                Text("${(report.fraction * 100).toInt()}%", style = JType.subheading, color = jc.ink)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${report.done} of ${report.total} tasks done", style = JType.subheading, color = jc.ink)
+                val lists = report.lists.size
+                Text("Across ${plural(lists, "list")}", style = JType.secondary, color = jc.muted)
+            }
         }
-        ProgressBar(report.fraction, height = 8.dp)
-        val lists = report.lists.size
-        Text(
-            "${report.done} of ${report.total} tasks across $lists ${if (lists == 1) "list" else "lists"}",
-            style = JType.small, color = jc.muted,
-        )
         val stats = listOf(
-            Triple(report.count(TodoStatus.OVERDUE), "overdue", jc.danger),
-            Triple(report.count(TodoStatus.DUE_TODAY), "due today", jc.accent),
-            Triple(report.dueThisWeek(today), "due this week", jc.ink),
-            Triple(report.count(TodoStatus.BEHIND), "behind", jc.accent),
-            Triple(report.count(TodoStatus.DONE), "done", jc.muted),
+            Triple(report.count(TodoStatus.OVERDUE), "Overdue", jc.danger),
+            Triple(report.count(TodoStatus.DUE_TODAY), "Due today", jc.accent),
+            Triple(report.dueThisWeek(today), "This week", jc.ink),
+            Triple(report.count(TodoStatus.BEHIND), "Behind", jc.accent),
+            Triple(report.count(TodoStatus.DONE), "Done", jc.ink),
         ).filter { it.first > 0 }
-        if (stats.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                stats.forEach { (n, label, color) ->
-                    Column {
-                        Text("$n", style = JType.rowTitle, color = color)
-                        Text(label, style = JType.caption, color = jc.muted)
-                    }
-                }
+        stats.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { (n, label, color) -> StatTile("$n", label, Modifier.weight(1f), color = color) }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
 
-/** One list: its title, a bar, "3 of 5 · Target Fri, 20 Nov" and where it stands. */
+/** One list: a small ring, its title, "3 of 5 · Target Fri, 20 Nov" and where it stands. */
 @Composable
 private fun ListRow(list: TodoList, context: Context, today: Long, onOpen: (NoteEntity) -> Unit) {
     val target = list.note.targetDate
-    Column(
-        Modifier.fillMaxWidth().clickable { onOpen(list.note) }.padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    val color = if (list.status == TodoStatus.OVERDUE) jc.danger else jc.accent
+    Row(
+        Modifier.fillMaxWidth().clickable { onOpen(list.note) }.padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(list.note.displayTitle, Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(statusLabel(list.status, target, today), style = JType.small, color = statusColor(list.status), maxLines = 1)
+        ProgressRing(list.count.fraction, Modifier.size(40.dp), color = color, stroke = 4.dp) {
+            if (list.count.complete) JIcon(Ico.CHECK, color, size = 16.dp, stroke = 2.6f)
+            else Text("${list.count.done}", style = JType.caption, color = jc.ink, fontWeight = FontWeight.SemiBold)
         }
-        if (list.count.total > 0) ProgressBar(list.count.fraction, color = if (list.status == TodoStatus.OVERDUE) jc.danger else jc.accent, height = 4.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(list.note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOfNotNull(
+                    if (list.count.total > 0) "${list.count.done} of ${list.count.total}" else "No tasks yet",
+                    target?.let { targetLabel(context, it) },
+                ).joinToString(" · "),
+                style = JType.small, color = jc.muted, maxLines = 1,
+            )
+        }
+        val sc = statusColor(list.status)
         Text(
-            listOfNotNull(
-                if (list.count.total > 0) "${list.count.done} of ${list.count.total}" else "No tasks yet",
-                target?.let { "Target " + targetLabel(context, it) },
-            ).joinToString(" · "),
-            style = JType.small, color = jc.muted, maxLines = 1,
+            statusLabel(list.status, target, today), Modifier.clip(JShape.pill).background(sc.copy(alpha = 0.12f)).padding(horizontal = 10.dp, vertical = 4.dp),
+            style = JType.caption, color = sc, fontWeight = FontWeight.SemiBold, maxLines = 1,
         )
     }
-    HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = jc.line)
 }
