@@ -278,12 +278,18 @@ fun EditorScreen(
     Scaffold(
         topBar = { Column(Modifier.background(jc.bg)) {
             NavBar(backLabel, onBack) {
-                if (vm.readOnly) {
+                if (vm.trashed) {
                     TextAction("Recover", { vm.recover(onBack) })
                     TextAction("Delete", { vm.deleteForever(onBack) }, color = jc.danger)
                 } else if (vm.loaded) {
-                    if (vm.canUndo && !vm.needsUnlock) IconAction(Ico.UNDO, "Undo", vm::undo)
-                    if (vm.focused) TextAction("Done", { focusManager.clearFocus() }, bold = true)
+                    if (vm.canUndo && !vm.needsUnlock && !vm.viewOnly) IconAction(Ico.UNDO, "Undo", vm::undo)
+                    // Lock editing: a closed lock while the note is view-only, an open one while it can be changed.
+                    if ((vm.exists || vm.doc.text.isNotBlank()) && !vm.needsUnlock) IconAction(
+                        if (vm.viewOnly) Ico.LOCK else Ico.LOCK_OPEN,
+                        if (vm.viewOnly) "Editing locked. Unlock editing" else "Lock editing",
+                        { focusManager.clearFocus(); vm.toggleViewOnly() },
+                    )
+                    if (vm.focused && !vm.viewOnly) TextAction("Done", { focusManager.clearFocus() }, bold = true)
                     // Reminder: amber while one is set.
                     if (vm.canRemind) IconAction(
                         Ico.BELL, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" } ?: "Remind me",
@@ -546,8 +552,14 @@ fun EditorScreen(
                     )
                 }
                 vm.conflictWith?.let { original -> ConflictChooser(original.displayTitle, vm, onBack) }
-                if (vm.readOnly) {
+                if (vm.trashed) {
                     Text("Recover this note to edit it.", Modifier.padding(bottom = 10.dp), style = JType.small, color = jc.muted)
+                } else if (vm.viewOnly && !vm.needsUnlock) {
+                    Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        JIcon(Ico.LOCK, jc.muted, size = 14.dp)
+                        // A to-do list can still be ticked off; only its wording is locked.
+                        Text(if (todo.total > 0) "Editing is locked. You can still tick items off." else "Editing is locked.", style = JType.small, color = jc.muted)
+                    }
                 }
                 val density = LocalDensity.current
                 BlockPhoneKeyboard(vm.mathKeys) { NoteField(
@@ -567,7 +579,7 @@ fun EditorScreen(
                 ) }
                 // The note's tags; tapping one opens that tag's list.
                 val noteTags = remember(vm.doc.text) { findTags(vm.doc.text).map { it.second }.distinctBy(::tagKey) }
-                if (noteTags.isNotEmpty() && !vm.focused && !vm.readOnly) { // tag lists leave out deleted notes
+                if (noteTags.isNotEmpty() && !vm.focused && !vm.trashed) { // tag lists leave out deleted notes
                     FlowRow(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         noteTags.forEach { name ->
                             Box(
@@ -1206,6 +1218,7 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
     val photos = vm.doc.lines.withIndex().filter { it.value.attachment?.isImage == true }
     if (photos.isEmpty()) { LaunchedEffect(Unit) { onClose() }; return }
     val pager = rememberPagerState(photos.indexOfFirst { it.value.id == startId }.coerceAtLeast(0)) { photos.size }
+    var editing by remember { mutableStateOf<String?>(null) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(pager, Modifier.fillMaxSize(), key = { photos.getOrNull(it)?.value?.id ?: it }) { page ->
@@ -1236,11 +1249,21 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
                     .padding(horizontal = 24.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconAction(Ico.EDIT, "Edit photo", { editing = current.value.id }, color = Color.White)
                 IconAction(Ico.ROTATE, "Rotate", { vm.rotateImage(current.index, onError) }, color = Color.White)
                 // OCR: closes the viewer and shows the text found, to add below the photo.
                 val context = LocalContext.current
                 IconAction(Ico.SCAN, "Get text from photo", { onClose(); vm.scanPhoto(current.index, context.applicationContext) }, color = Color.White)
                 IconAction(Ico.TRASH, "Remove", { vm.removeAttachment(current.index) }, color = Color.White)
+            }
+        }
+        // Crop, straighten, colours, size: saved as one edit, so Undo brings the photo back as it was.
+        editing?.let { id ->
+            val line = vm.doc.lines.indexOfFirst { it.id == id }
+            val a = vm.doc.lines.getOrNull(line)?.attachment?.takeIf { it.isImage }
+            if (a == null) { LaunchedEffect(id) { editing = null }; return@let }
+            PhotoEditor(vm.files.file(a), a.name, onCancel = { editing = null }) { edit, done ->
+                vm.editImage(vm.doc.lines.indexOfFirst { it.id == id }, edit, onDone = { editing = null }, onError = { onError(it); done() })
             }
         }
     }

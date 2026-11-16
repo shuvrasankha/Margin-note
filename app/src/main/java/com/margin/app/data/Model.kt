@@ -205,6 +205,11 @@ data class NoteEntity(
      * font added later reads as the default here. Older versions ignore it when syncing.
      */
     val font: String? = null,
+    /**
+     * Read mode (schema v10): the note opens view-only, so it can't be changed by accident, until read mode is
+     * turned off again. Older versions ignore it when syncing.
+     */
+    @ColumnInfo(defaultValue = "0") val viewOnly: Boolean = false,
 )
 
 val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN

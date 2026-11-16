@@ -150,6 +150,24 @@ fun NoteListScreen(
     val keepDays by vm.keepDeletedDays.collectAsState()
     var confirmEmpty by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Locking the selected notes: asks for the notes passcode first unless notes are already unlocked.
+    var lockPasscode by remember { mutableStateOf<PasswordMode?>(null) }
+    val lockScope = rememberCoroutineScope()
+    val lockContext = LocalContext.current
+    val lockSelected = {
+        vm.lockSelected { n ->
+            val msg = when (n) { 0 -> "Those notes are already locked"; 1 -> "Note locked"; else -> "$n notes locked" }
+            android.widget.Toast.makeText(lockContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    lockPasscode?.let { mode ->
+        var old by remember { mutableStateOf(false) }
+        val submit: suspend (CharArray) -> String? = { pw ->
+            if (vm.enterPassword(pw)) { lockPasscode = null; lockSelected(); null } else if (old) "Wrong password" else "Wrong passcode"
+        }
+        if (old) OldPasswordDialog(onDismiss = { lockPasscode = null }, onSubmit = submit)
+        else PasscodeDialog(mode, onDismiss = { lockPasscode = null }, onOldPassword = if (mode == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit)
+    }
     var picking by remember { mutableStateOf(false) }
     var pickingTemplate by remember { mutableStateOf(false) }
     val savedTemplates by vm.templates.collectAsState()
@@ -216,7 +234,10 @@ fun NoteListScreen(
                     }
                     Text("${vm.selected.size} selected", style = JType.small, color = jc.muted)
                     // Same width as the left pair so the count stays centred.
-                    Row(Modifier.width(88.dp), horizontalArrangement = Arrangement.End) { IconAction(Ico.TRASH, "Delete", vm::trashSelected, color = jc.danger) }
+                    Row(Modifier.width(88.dp), horizontalArrangement = Arrangement.End) {
+                        IconAction(Ico.LOCK, "Lock with passcode", { lockScope.launch { vm.passcodeNeeded()?.let { lockPasscode = it } ?: lockSelected() } })
+                        IconAction(Ico.TRASH, "Delete", vm::trashSelected, color = jc.danger)
+                    }
                 }
                 isTrash -> if (notes.isNotEmpty()) BottomBar {
                     Spacer(Modifier.width(44.dp))

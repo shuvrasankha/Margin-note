@@ -161,6 +161,9 @@ internal val FOLDED_SIZE = 0.5.sp // a folded line still exists in the field, ju
 /** Extra room under each line of text on four-line paper, as a share of its font size. */
 internal const val FOUR_LINE_GAP = 0.6f
 
+/** Extra height (sp) of a to-do line, split above and below it, so the items don't sit tight together. */
+internal const val CHECK_GAP = 12f
+
 @Composable
 internal fun lineStyle(type: BlockType, font: FontFamily = Inter): TextStyle = when (type) {
     BlockType.TITLE -> JType.noteTitle.copy(fontFamily = font)
@@ -347,7 +350,10 @@ internal fun NoteField(
                     ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp }
                     // shortcut: the gap goes under every row of a wrapped title, not just its last; fine while titles are short.
                     ?: if (i == 0) (textHeight(style).value + TITLE_GAP).sp
-                    else if (aiRunStart(doc, i) && line.isEmpty()) AI_HEADER.sp else textHeight(style)
+                    else if (aiRunStart(doc, i) && line.isEmpty()) AI_HEADER.sp
+                    // shortcut: the room goes on every row of a wrapped item, not only between items (Compose has no paragraph spacing).
+                    else if (meta.type == BlockType.CHECK && !fourLine) (textHeight(style).value + CHECK_GAP).sp
+                    else textHeight(style)
                 // A one-row paragraph is trimmed to its font height by default; an attachment's line must keep its full height.
                 // A link with a preview keeps its text at the top, leaving the space below for the card.
                 val heightStyle = when {
@@ -356,6 +362,7 @@ internal fun NoteField(
                     fourLine -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
                     i == 0 -> LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.None) // the gap below the title
                     meta.ai && line.isEmpty() -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+                    meta.type == BlockType.CHECK -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None) // room above and below
                     else -> null
                 }
                 if (foldedLines[i]) {
@@ -825,7 +832,7 @@ internal fun NoteField(
                         else -> CheckCircle(
                             meta.checked,
                             size = with(density) { minOf(firstRow * 0.8f, GUTTER.toPx() * 0.75f).toDp() }.coerceAtMost(22.dp),
-                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.readOnly, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) })
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.trashed, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) })
                                 .semantics { contentDescription = if (meta.checked) "Checked" else "Not checked" },
                         )
                     }

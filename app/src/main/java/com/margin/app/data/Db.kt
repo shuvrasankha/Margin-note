@@ -158,7 +158,7 @@ interface NoteVersionDao {
     suspend fun allBlocks(): List<String>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 9, exportSchema = true)
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 10, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class MarginDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
@@ -178,6 +178,13 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
 val MIGRATION_8_9 = object : Migration(8, 9) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE folders ADD COLUMN template TEXT")
+    }
+}
+
+/** v10: read mode, a note that opens view-only. Existing notes stay editable. */
+val MIGRATION_9_10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN viewOnly INTEGER NOT NULL DEFAULT 0")
     }
 }
 

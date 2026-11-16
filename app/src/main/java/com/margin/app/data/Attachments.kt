@@ -155,6 +155,18 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         write(bytes, if (png) "png" else "jpg", a.name, if (png) "image/png" else "image/jpeg")
     }
 
+    /** A copy of photo [a] with [edit] applied, as a new file. Keeps the name; PNG stays PNG, anything else becomes JPEG. */
+    suspend fun edited(a: Attachment, edit: PhotoEdit): Attachment = withContext(Dispatchers.Default) {
+        // shortcut: read at up to 4096 px (2560 if memory runs short), like rotated().
+        val bitmap = try { decodeImage(file(a), 4096) } catch (_: OutOfMemoryError) { decodeImage(file(a), 2560) }
+            ?: throw IOException("Couldn't read the photo")
+        val out = try { renderPhotoEdit(bitmap, edit) } catch (_: OutOfMemoryError) { throw IOException("The photo is too big to edit") } finally { bitmap.recycle() }
+        val png = a.mime == "image/png"
+        val bytes = java.io.ByteArrayOutputStream().also { out.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 92, it) }.toByteArray()
+        out.recycle()
+        write(bytes, if (png) "png" else "jpg", a.name, if (png) "image/png" else "image/jpeg")
+    }
+
     /** A file in the exports cache folder, replacing any older one of that name. */
     fun exportFile(name: String): File = File(File(context.cacheDir, "exports").apply { mkdirs() }, name)
 

@@ -365,6 +365,9 @@ class NoteRepository @Inject constructor(
     suspend fun setTargetDate(id: String, day: Long?) = update(id) { it.copy(targetDate = day, updatedAt = now()) }
     suspend fun setPaper(id: String, paper: Paper) =
         update(id) { it.copy(paper = paper.name.takeIf { paper != Paper.PLAIN }, updatedAt = now()) }
+    /** Turns read mode on or off: a note in read mode opens view-only. Not an edit of the text, so [NoteEntity.editedAt] stays. */
+    suspend fun setViewOnly(id: String, on: Boolean) = update(id) { it.copy(viewOnly = on, updatedAt = now()) }
+
     suspend fun setFont(id: String, font: NoteFont) =
         update(id) { it.copy(font = font.name.takeIf { font != NoteFont.DEFAULT }, updatedAt = now()) }
 
