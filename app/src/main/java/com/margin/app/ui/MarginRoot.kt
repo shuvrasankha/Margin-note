@@ -87,7 +87,20 @@ fun MarginRoot(
             null
         }
     }
-    nav.incoming?.let { share ->
+    // "Open with Margin" on a PDF: straight to reading it, in the note that holds it (no folder to pick).
+    nav.incoming?.takeIf { it.open }?.let { share ->
+        LaunchedEffect(share) {
+            nav.incoming = null
+            val uri = share.image ?: return@LaunchedEffect
+            folders.openPdf(uri, onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }) { place ->
+                editor.openPdf = place
+                if ((nav.current as? Screen.Editor)?.noteId == place.noteId) return@openPdf
+                if (nav.current is Screen.Editor) editor.close()
+                nav.push(Screen.Editor(place.noteId, place.folderId))
+            }
+        }
+    }
+    nav.incoming?.takeIf { !it.open }?.let { share ->
         FolderSheet(
             title = "Save to Margin",
             subject = share.subject?.takeIf { it.isNotBlank() } ?: share.text?.lineSequence()?.firstOrNull { it.isNotBlank() } ?: if (share.pdf) "PDF" else "Photo",

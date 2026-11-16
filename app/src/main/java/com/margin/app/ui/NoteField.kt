@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -290,6 +291,9 @@ internal fun NoteField(
     // A PDF open full screen, by its line's id (its file changes when a tool edits it).
     var viewingPdf by remember { mutableStateOf<String?>(null) }
     viewingPdf?.let { id -> PdfViewer(vm, id, onClose = { viewingPdf = null }) }
+    // A PDF opened with Margin goes straight to the viewer once its note is showing (after unlocking, if locked).
+    val pdfToOpen by remember { derivedStateOf { vm.pdfToOpen() } }
+    LaunchedEffect(pdfToOpen) { pdfToOpen?.let { viewingPdf = it; vm.openPdf = null } }
     // The table editor, for a table just added or tapped.
     vm.editingTable?.let { id ->
         val line = vm.doc.lines.indexOfFirst { it.id == id }

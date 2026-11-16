@@ -59,7 +59,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) { sharedIn(intent)?.let { nav.incoming = it }; fromWidget(intent) } // not again after rotation
+        if (savedInstanceState == null) { sharedIn(intent, contentResolver::getType)?.let { nav.incoming = it }; fromWidget(intent) } // not again after rotation
         enableEdgeToEdge()
         // The full logo shows on a cold start from the launcher; a share or a widget tap goes straight in.
         val fromLauncher = savedInstanceState == null && intent?.action == android.content.Intent.ACTION_MAIN &&
@@ -93,7 +93,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        sharedIn(intent)?.let { nav.incoming = it }
+        sharedIn(intent, contentResolver::getType)?.let { nav.incoming = it }
         fromWidget(intent)
     }
 

@@ -140,13 +140,17 @@ sealed interface Screen {
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
-data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false)
+data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false, val open: Boolean = false)
 
-/** Reads a share intent; null for anything else (or a share with nothing usable in it). */
-fun sharedIn(intent: android.content.Intent?): SharedIn? {
-    // "Open with Margin" on a PDF: a new note holding it.
-    if (intent?.action == android.content.Intent.ACTION_VIEW && intent.type == "application/pdf") {
-        return intent.data?.let { SharedIn(null, null, it, pdf = true) }
+/**
+ * Reads a share intent; null for anything else (or a share with nothing usable in it). [typeOf] finds a URI's
+ * type when the sending app left it out.
+ */
+fun sharedIn(intent: android.content.Intent?, typeOf: (android.net.Uri) -> String? = { null }): SharedIn? {
+    // "Open with Margin" on a PDF: opened to read at once (see OpenedPdfs), not filed like a share.
+    if (intent?.action == android.content.Intent.ACTION_VIEW) {
+        val uri = intent.data ?: return null
+        return if ((intent.type ?: typeOf(uri)) == "application/pdf") SharedIn(null, null, uri, pdf = true, open = true) else null
     }
     if (intent?.action != android.content.Intent.ACTION_SEND) return null
     // A shared photo or PDF is copied into the note.
@@ -181,6 +185,7 @@ class FoldersViewModel @Inject constructor(
     connectivity: Connectivity,
     private val scheduler: SyncScheduler,
     private val alarms: com.margin.app.data.Reminders,
+    private val openedPdfs: com.margin.app.data.OpenedPdfs,
 ) : ViewModel() {
     /** Note id → when its reminder rings, for the Reminders list. */
     val reminders: StateFlow<Map<String, Long>> = alarms.all
@@ -206,6 +211,14 @@ class FoldersViewModel @Inject constructor(
             val id = newId()
             repo.saveNote(id, folderId, sharedNoteBlocks(subject, text, attachment))
             onSaved(id)
+        }
+    }
+
+    /** "Open with Margin" on a PDF: [onReady] gets the note holding it (made in Notes the first time). */
+    fun openPdf(uri: android.net.Uri, onError: (String) -> Unit, onReady: (com.margin.app.data.PdfPlace) -> Unit) {
+        viewModelScope.launch {
+            val place = try { openedPdfs.open(uri) } catch (e: Exception) { onError(e.message ?: "Couldn't open the PDF"); return@launch }
+            onReady(place)
         }
     }
 
@@ -1180,6 +1193,16 @@ class EditorViewModel @Inject constructor(
 
     /** Set by an app shortcut: what the newly opened note starts with ([START_SCAN], [START_VOICE]); the editor clears it. */
     var startAction by mutableStateOf<String?>(null)
+
+    /** A PDF opened with Margin: its note and line, shown full screen once that note is open; the editor clears it. */
+    var openPdf by mutableStateOf<com.margin.app.data.PdfPlace?>(null)
+
+    /** The line of [openPdf] when its note is the one open and that line is showing, so the viewer can open it. */
+    fun pdfToOpen(): String? {
+        val p = openPdf ?: return null
+        if (p.noteId != noteId || !loaded || needsUnlock) return null
+        return p.lineId.takeIf { id -> doc.lines.any { it.id == id && it.attachment?.isPdf == true } }
+    }
 
     /** This note's earlier versions, newest first (see NoteRepository.keepVersion). */
     fun versions() = repo.versionsOf(noteId)
