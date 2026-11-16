@@ -59,7 +59,11 @@ class RecentWidget : AppWidgetProvider() {
             if (ids.isEmpty()) return
             val latest = notes.sortedByDescending { it.lastEdited }.take(ROWS.size)
             val v = RemoteViews(context.packageName, R.layout.widget_recent)
-            v.setOnClickPendingIntent(R.id.new_note, open(context, 0, Intent(ACTION_NEW)))
+            // + writes a note in a popup over the home screen; the app stays closed.
+            v.setOnClickPendingIntent(R.id.new_note, PendingIntent.getActivity(
+                context, 0, Intent(context, QuickNoteActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ))
             v.setViewVisibility(R.id.empty, if (latest.isEmpty()) View.VISIBLE else View.GONE)
             ROWS.forEachIndexed { i, (row, title, body) ->
                 val n = latest.getOrNull(i)

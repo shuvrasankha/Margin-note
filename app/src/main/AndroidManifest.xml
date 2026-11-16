@@ -84,6 +84,15 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_recent_info" />
         </receiver>
+        <!-- Its own task, so saving returns to the home screen instead of showing the app. -->
+        <activity
+            android:name=".ui.QuickNoteActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Margin.Popup"
+            android:windowSoftInputMode="adjustResize|stateVisible" />
         <activity
             android:name=".ui.ReminderAlarmActivity"
             android:exported="false"

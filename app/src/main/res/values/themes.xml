@@ -3,4 +3,10 @@
     <style name="Theme.Margin" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@drawable/launch_screen</item>
     </style>
+    <!-- The widget's new-note popup: drawn over the home screen, which stays visible behind it. -->
+    <style name="Theme.Margin.Popup" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
 </resources>
