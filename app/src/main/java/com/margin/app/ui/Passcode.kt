@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +103,10 @@ fun PasscodeDialog(
     onDismiss: () -> Unit,
     intro: String? = null,
     onOldPassword: (() -> Unit)? = null,
+    /** ENTER: what the screen says instead of "Enter your passcode" and its line, and the label of its Cancel. */
+    enterTitle: String = "Enter your passcode",
+    enterSub: String = "The 6 digits for your locked notes.",
+    cancel: String = "Cancel",
     onSubmit: suspend (CharArray) -> String?,
 ) {
     var first by remember { mutableStateOf<String?>(null) } // CREATE: the code to confirm
@@ -108,14 +114,14 @@ fun PasscodeDialog(
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val title = when {
-        mode == PasswordMode.ENTER -> "Enter your passcode"
+        mode == PasswordMode.ENTER -> enterTitle
         first == null -> "Create a notes passcode"
         else -> "Confirm your passcode"
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(jc.bg).systemBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.align(Alignment.CenterStart)) { TextAction("Cancel", onDismiss) }
+                Box(Modifier.align(Alignment.CenterStart)) { TextAction(cancel, onDismiss) }
                 if (mode == PasswordMode.CREATE) Text(if (first == null) "Step 1 of 2" else "Step 2 of 2", style = JType.small, color = jc.muted)
             }
             Box(Modifier.padding(top = 28.dp).size(56.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) {
@@ -123,7 +129,7 @@ fun PasscodeDialog(
             }
             Text(title, Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = jc.ink, textAlign = TextAlign.Center)
             val sub = when {
-                mode == PasswordMode.ENTER -> "The 6 digits for your locked notes."
+                mode == PasswordMode.ENTER -> enterSub
                 first != null -> "Enter the same 6 digits again."
                 else -> intro ?: "Use it to open locked notes on all your devices. It's separate from your phone passcode."
             }
@@ -147,6 +153,54 @@ fun PasscodeDialog(
                     "If you forget this passcode, locked notes can't be recovered — not even by us.",
                     Modifier.padding(top = 28.dp).widthIn(max = 300.dp), style = JType.small.copy(lineHeight = 18.sp), color = jc.muted, textAlign = TextAlign.Center,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * The app lock's screen, over everything (it's a window of its own, so it also covers an open PDF or photo).
+ * Tries the fingerprint first when it's set up; the passcode pad otherwise or after. [onLeave] sends the app away.
+ */
+@Composable
+fun AppLockScreen(appLock: com.margin.app.data.AppLock, fingerprint: String?, onLeave: () -> Unit) {
+    val activity = androidx.compose.ui.platform.LocalContext.current as? androidx.fragment.app.FragmentActivity
+    var pad by remember { mutableStateOf(fingerprint == null || activity == null) }
+    // The lock comes up as the app leaves the screen. The fingerprint prompt can only start once Margin is in
+    // front again (Android ignores it from the background), so it waits for that, and tries again on each return.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val state by lifecycle.currentStateFlow.collectAsState()
+    val resumed = state.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)
+    var asking by remember { mutableStateOf(false) }
+    val askFingerprint: suspend () -> Unit = {
+        asking = true
+        val (iv, data) = fingerprint!!.split('.').map { java.util.Base64.getUrlDecoder().decode(it) }
+        val r = Biometric.decrypt(activity!!, data, iv)
+        asking = false
+        if (r is Biometric.Result.Ok) {
+            val code = String(r.bytes, Charsets.UTF_8).toCharArray().also { r.bytes.fill(0) }
+            val ok = appLock.unlock(code)
+            code.fill('\u0000')
+            if (!ok) pad = true
+        } else pad = true // cancelled, "Use password", or it failed: the passcode
+    }
+    LaunchedEffect(resumed) { if (resumed && !pad && !asking) askFingerprint() }
+    if (pad) {
+        PasscodeDialog(
+            PasswordMode.ENTER, onDismiss = onLeave, enterTitle = "Margin is locked", enterSub = "Enter your passcode to open your notes.", cancel = "Close",
+        ) { code -> if (appLock.unlock(code)) null.also { code.fill('\u0000') } else "Wrong passcode".also { code.fill('\u0000') } }
+    } else {
+        // While the fingerprint prompt is (about to be) up: a cover, so nothing shows behind it, with the passcode
+        // a tap away in case the prompt doesn't come.
+        Dialog(onDismissRequest = onLeave, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Column(Modifier.fillMaxSize().background(jc.bg).systemBarsPadding().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.weight(1f))
+                Box(Modifier.size(56.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) {
+                    JIcon(Ico.LOCK, jc.ink, size = 26.dp, stroke = 1.8f)
+                }
+                Text("Margin is locked", Modifier.padding(top = 20.dp), style = JType.heading.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = jc.ink)
+                Spacer(Modifier.weight(1f))
+                TextAction("Use passcode", { pad = true })
             }
         }
     }

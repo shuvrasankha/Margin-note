@@ -166,6 +166,8 @@ class NavViewModel : ViewModel() {
     val stack = mutableStateListOf<Screen>(Screen.Notes(ALL_ID))
     /** A share waiting for its folder; kept here so it survives rotation. */
     var incoming by mutableStateOf<SharedIn?>(null)
+    /** A share that came while the app lock was up; it becomes [incoming] once unlocked. */
+    var held by mutableStateOf<SharedIn?>(null)
     val current get() = stack.last()
     fun push(screen: Screen) { stack.add(screen) }
     fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
@@ -308,17 +310,18 @@ class NotesViewModel @Inject constructor(
     syncPrefs: SyncPrefs,
     private val session: LockSession,
     private val files: AttachmentFiles,
+    private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
     /** What locking the selected notes must ask first: nothing (notes are unlocked), the passcode, or a new one. */
     suspend fun passcodeNeeded(): PasswordMode? = when {
         session.unlocked.value -> null
-        repo.lockedNotes().isNotEmpty() -> PasswordMode.ENTER
+        appLock.passcodeSample() != null -> PasswordMode.ENTER
         else -> PasswordMode.CREATE
     }
 
     /** As in the editor: checks [password] against a locked note, or makes it the notes passcode when there is none. */
     suspend fun enterPassword(password: CharArray): Boolean {
-        val sample = repo.lockedNotes().firstOrNull()?.cipher
+        val sample = appLock.passcodeSample() // the app lock's passcode, when no note is locked yet
         val ok = if (sample == null) { session.startWith(password); true } else session.unlock(password, sample) != null
         password.fill('\u0000')
         return ok
@@ -551,6 +554,7 @@ class EditorViewModel @Inject constructor(
     val files: AttachmentFiles,
     private val reminders: com.margin.app.data.Reminders,
     val ai: com.margin.app.data.AiKeys,
+    private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
     companion object {
         const val START_SCAN = "scan"
@@ -728,6 +732,9 @@ class EditorViewModel @Inject constructor(
             locked = sealed != null
             lockParams = sealed?.let(NoteCrypto::paramsOf)
             unlockError = null
+            // Every locked note asks for the passcode when it opens, even if the journal or another note was just
+            // unlocked. Journal entries are let in by the journal's own passcode.
+            if (sealed != null && !noteId.startsWith("journal-")) session.lock()
             val body = sealed?.let { session.open(it) }
             body?.let { files.reveal(it) }
             needsUnlock = locked && body == null
@@ -761,7 +768,7 @@ class EditorViewModel @Inject constructor(
         show(lastSaved.take(1))
     }
 
-    /** Tries the notes password on this note; success unlocks every locked note until the app goes to the background. */
+    /** Tries the notes password on this note; success keeps it open until you leave it or the app goes to the background. */
     fun unlock(password: CharArray) {
         val cipher = sealed ?: return
         viewModelScope.launch {
@@ -782,7 +789,7 @@ class EditorViewModel @Inject constructor(
     }
 
     /** Whether a notes password already exists (some note is locked with it). */
-    suspend fun hasPassword() = session.unlocked.value || repo.lockedNotes().isNotEmpty()
+    suspend fun hasPassword() = session.unlocked.value || appLock.passcodeSample() != null
 
     val sessionUnlocked get() = session.unlocked
 
@@ -791,7 +798,7 @@ class EditorViewModel @Inject constructor(
      * password. Returns false if it's wrong.
      */
     suspend fun enterPassword(password: CharArray): Boolean {
-        val sample = repo.lockedNotes().firstOrNull()?.cipher
+        val sample = appLock.passcodeSample() // the app lock's passcode, when no note is locked yet
         val ok = if (sample == null) { session.startWith(password); true } else session.unlock(password, sample) != null
         password.fill('\u0000')
         return ok
@@ -1333,6 +1340,9 @@ class EditorViewModel @Inject constructor(
             if (keepShown) titleAtOpen = newTitle // the close that follows has nothing left to rename
         }
         if (keepShown) return
+        // Leaving a locked note locks the notes again, so the next one asks for the passcode. Journal entries
+        // stay open while you're in the journal (it asks once, at its door). flush() above has already sealed it.
+        if (locked && !id.startsWith("journal-")) session.lock()
         noteId = ""
         loaded = false // the next note must not briefly show this one
     }
@@ -1631,6 +1641,7 @@ class SettingsViewModel @Inject constructor(
     private val files: AttachmentFiles,
     val ai: com.margin.app.data.AiKeys,
     connectivity: Connectivity,
+    private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
     val status = prefs.status
     val pending: StateFlow<Int> = repo.pendingCount().stateIn(viewModelScope, SharingStarted.Eagerly, 0)
@@ -1733,9 +1744,31 @@ class SettingsViewModel @Inject constructor(
 
     fun lockNow() = session.lock()
 
+    /** App lock: non-null while it's on. */
+    val appLockState = appLock.state
+    /** Whether turning the app lock on must check an existing passcode (else it creates one). */
+    suspend fun hasPasscode() = appLock.passcodeSample() != null
+
+    /** Turns the app lock on with [code]: checked against the existing passcode, if any. Clears [code]. */
+    suspend fun turnOnAppLock(code: CharArray): Boolean {
+        val sample = appLock.passcodeSample()
+        val ok = sample == null || session.unlock(code, sample) != null
+        if (ok) appLock.turnOn(code)
+        code.fill('\u0000')
+        return ok
+    }
+
+    /** Turns the app lock off once [code] is right. Clears [code]. */
+    suspend fun turnOffAppLock(code: CharArray): Boolean {
+        val ok = appLock.unlock(code)
+        if (ok) appLock.turnOff()
+        code.fill('\u0000')
+        return ok
+    }
+
     /** Checks the current notes password; on success the session is unlocked. */
     suspend fun checkPassword(password: CharArray): Boolean {
-        val sample = repo.lockedNotes().firstOrNull()?.cipher ?: return false
+        val sample = appLock.passcodeSample() ?: return false
         val ok = session.unlock(password, sample) != null
         password.fill('\u0000')
         return ok
@@ -1747,6 +1780,7 @@ class SettingsViewModel @Inject constructor(
         try {
             val skipped = repo.changeLockPassword(newPassword) { session.open(it) }
             session.startWith(newPassword)
+            appLock.passcodeChanged(newPassword)
             appPrefs.setFingerprint(null)
             message = if (skipped == 0) "Passcode changed" else "Passcode changed. $skipped note(s) use a different password and weren't changed."
         } finally {

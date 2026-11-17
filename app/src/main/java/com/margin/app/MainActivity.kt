@@ -48,6 +48,10 @@ private const val LAUNCH_MS = 550L
 class MainActivity : FragmentActivity() {
     @Inject lateinit var lockSession: LockSession
     @Inject lateinit var appPrefs: AppPrefs
+    @Inject lateinit var appLock: com.margin.app.data.AppLock
+
+    /** Margin opened another app for a result (camera, file picker, scanner): coming back doesn't lock it. */
+    private var awaitingResult = false
 
     private val nav: NavViewModel by viewModels()
     private val folders: FoldersViewModel by viewModels()
@@ -59,7 +63,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) { sharedIn(intent, contentResolver::getType)?.let { nav.incoming = it }; fromWidget(intent) } // not again after rotation
+        if (savedInstanceState == null) { sharedIn(intent, contentResolver::getType)?.let(::receive); fromWidget(intent) } // not again after rotation
         enableEdgeToEdge()
         // The full logo shows on a cold start from the launcher; a share or a widget tap goes straight in.
         val fromLauncher = savedInstanceState == null && intent?.action == android.content.Intent.ACTION_MAIN &&
@@ -87,13 +91,42 @@ class MainActivity : FragmentActivity() {
                     MarginRoot(nav, folders, notes, editor, settings, vault, backups)
                     AnimatedVisibility(launching, enter = EnterTransition.None, exit = fadeOut(tween(250))) { LaunchScreen() }
                 }
+                // App lock: its screen covers everything until the passcode (or fingerprint) is given.
+                val open by appLock.open.collectAsState()
+                val fingerprint by appPrefs.fingerprint.collectAsState()
+                if (!open) com.margin.app.ui.AppLockScreen(appLock, fingerprint, onLeave = { moveTaskToBack(true) })
+                // Something shared or opened while locked waits for the unlock.
+                LaunchedEffect(open) { if (open) nav.held?.let { nav.held = null; nav.incoming = it } }
             }
         }
     }
 
+    /** A share or "Open with Margin": handled now, or once the app lock is open. */
+    private fun receive(share: com.margin.app.ui.SharedIn) { if (appLock.open.value) nav.incoming = share else nav.held = share }
+
+    @Deprecated("Deprecated in Java")
+    override fun startActivityForResult(intent: android.content.Intent, requestCode: Int, options: Bundle?) {
+        awaitingResult = true
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun startIntentSenderForResult(
+        intent: android.content.IntentSender, requestCode: Int, fillInIntent: android.content.Intent?,
+        flagsMask: Int, flagsValues: Int, extraFlags: Int, options: Bundle?,
+    ) {
+        awaitingResult = true
+        super.startIntentSenderForResult(intent, requestCode, fillInIntent, flagsMask, flagsValues, extraFlags, options)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        awaitingResult = false
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        sharedIn(intent, contentResolver::getType)?.let { nav.incoming = it }
+        sharedIn(intent, contentResolver::getType)?.let(::receive)
         fromWidget(intent)
     }
 
@@ -122,5 +155,6 @@ class MainActivity : FragmentActivity() {
         super.onStop()
         editor.flush() // save the open note when the app goes to the background (seals a locked one first)
         if (!isChangingConfigurations) lockSession.lock() // locked notes need the password again
+        if (!isChangingConfigurations && !awaitingResult) appLock.relock() // the app lock asks again on return
     }
 }
