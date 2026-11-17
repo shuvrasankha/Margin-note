@@ -117,7 +117,7 @@ fun journalTitle(day: LocalDate): String = day.format(DateTimeFormatter.ofLocali
  * Below: a button for today's entry and the month's entries, newest first, as an agenda.
  */
 @Composable
-fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit) {
+fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit, backLabel: String = "Folders") {
     val today = LocalDate.now()
     val thisMonth = YearMonth.from(today)
     var month by rememberSaveable { mutableStateOf(thisMonth.toString()) }
@@ -139,7 +139,7 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
         )
     }
     Scaffold(containerColor = jc.page, topBar = {
-        NavBar("Folders", onBack, color = jc.page) {
+        NavBar(backLabel, onBack, color = jc.page) {
             if (shown != thisMonth) TextAction("Today", { month = thisMonth.toString() })
             IconAction(Ico.BACK, "Previous month", { month = shown.minusMonths(1).toString() })
             IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() }, enabled = canGoOn)

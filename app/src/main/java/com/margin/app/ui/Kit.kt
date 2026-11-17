@@ -101,6 +101,8 @@ object Ico {
     const val COPY = "M8 8h12v12H8zM4 16V4h12"
     val INFO = circle(12f, 12f, 9f) + "M12 11v6M12 7.5v.5"
     const val SETTINGS = "M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"
+    /** Settings: a cog (Feather's, MIT). [SETTINGS] stays the sliders, for adjusting things. */
+    val GEAR = circle(12f, 12f, 3f) + "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
     const val SYNC = "M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"
     const val SINK = "M4 6h10M4 11h10M4 16h6M18 5v13M15 15l3 3 3-3"
     const val GRAMMAR = "M3 17l4-11 4 11M4.5 13h5M13.5 14l2.5 2.5L21 11"
@@ -212,10 +214,11 @@ fun tapped(onClick: () -> Unit): () -> Unit {
 
 /** A 44dp tap target holding an icon. */
 @Composable
-fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.accent, enabled: Boolean = true, size: Dp = 22.dp, fill: Boolean = false) {
+fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.accent, enabled: Boolean = true, size: Dp = 22.dp, fill: Boolean = false, soft: Boolean = false) {
     val press = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(44.dp).pressScale(press, 0.88f).clip(CircleShape)
+        // [soft]: on a filled circle, as on the home screen's top bar; the tap target stays 44dp.
+        Modifier.size(44.dp).pressScale(press, 0.88f).then(if (soft) Modifier.padding(2.dp).clip(CircleShape).background(jc.card) else Modifier).clip(CircleShape)
             .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,

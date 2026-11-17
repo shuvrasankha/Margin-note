@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -64,6 +65,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -127,6 +129,8 @@ fun NoteListScreen(
     backLabel: String?,
     onFolders: () -> Unit,
     onBack: () -> Unit,
+    /** The home screen's date and "today" cards; null elsewhere. */
+    glance: TodayGlance? = null,
 ) {
     LaunchedEffect(folderId) { vm.show(folderId) }
     val filter by vm.filter.collectAsState()
@@ -199,25 +203,28 @@ fun NoteListScreen(
             else NavBar(
                 backLabel, onBack, color = jc.page,
                 leading = if (backLabel != null) null else ({
+                    // A soft pill, matching the round buttons on the right.
                     Row(
-                        Modifier.heightIn(min = 44.dp).clip(JShape.xs).clickable(role = Role.Button, onClick = onFolders)
-                            .padding(horizontal = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        Modifier.padding(start = 6.dp).height(40.dp).clip(JShape.pill).background(jc.card)
+                            .clickable(role = Role.Button, onClick = onFolders).padding(start = 12.dp, end = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        JIcon(Ico.FOLDER, jc.accent, stroke = 2f)
-                        Text("Folders", style = JType.row, color = jc.accent)
+                        JIcon(Ico.FOLDER, jc.accent, size = 20.dp, stroke = 2f)
+                        Text("Folders", style = JType.row, color = jc.ink, fontWeight = FontWeight.Medium)
                     }
                 }),
             ) {
                 if (!isTrash && query.isBlank()) {
                     val f = folder
                     if (f != null) SortMenu(
-                        f.sortBy, f.sortAscending, grid = grid, onGrid = onGrid, onChange = vm::setSort,
+                        f.sortBy, f.sortAscending, grid = grid, onGrid = onGrid, onChange = vm::setSort, soft = backLabel == null,
                         templateLabel = if (f.isSmart) null else templateLabel(f.template, savedTemplates), onTemplate = { pickingTemplate = true },
                     )
-                    else ViewMenu(grid, onGrid)
+                    else ViewMenu(grid, onGrid, soft = backLabel == null)
                 }
-                IconAction(Ico.SETTINGS, "Settings", onSettings)
+                IconAction(Ico.GEAR, "Settings", onSettings, soft = backLabel == null)
+                // Same margin as the Folders pill on the left.
+                if (backLabel == null) Spacer(Modifier.width(4.dp))
             }
         },
         bottomBar = {
@@ -255,7 +262,12 @@ fun NoteListScreen(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            PageTitle(folderName)
+            // Home shows today's date in place of "All Notes".
+            if (glance != null) DateHeading(remember { java.time.LocalDate.now() }) else PageTitle(folderName)
+            // Out of the way while searching or picking notes.
+            AnimatedVisibility(glance != null && query.isBlank() && !selecting) {
+                glance?.let { TodayCards(it, Modifier.padding(bottom = 14.dp)) }
+            }
             if (isTrash) {
                 Text(
                     "Notes stay here for $keepDays days, then they're removed for good.",
@@ -486,10 +498,11 @@ internal fun SortMenu(
     onChange: (NoteSort, Boolean) -> Unit,
     /** When set, a "New notes start from" item showing this template's name, which calls [onTemplate]. */
     templateLabel: String? = null, onTemplate: () -> Unit = {},
+    soft: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        if (label == null) IconAction(Ico.MORE, if (grid != null) "View and sort" else "Sort", { open = true }, fill = true) else TextAction(label, { open = true })
+        if (label == null) IconAction(Ico.MORE, if (grid != null) "View and sort" else "Sort", { open = true }, fill = true, soft = soft) else TextAction(label, { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             @Composable
             fun item(text: String, icon: String, checked: Boolean, onClick: () -> Unit) = DropdownMenuItem(
@@ -552,10 +565,10 @@ internal fun TemplatePicker(current: String?, saved: List<NoteEntity>, onDismiss
 
 /** Lists without their own sort (smart lists): just List or Grid. */
 @Composable
-internal fun ViewMenu(grid: Boolean, onGrid: (Boolean) -> Unit) {
+internal fun ViewMenu(grid: Boolean, onGrid: (Boolean) -> Unit, soft: Boolean = false) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction(Ico.MORE, "View", { open = true }, fill = true)
+        IconAction(Ico.MORE, "View", { open = true }, fill = true, soft = soft)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             ViewChoices(grid) { onGrid(it); open = false }
         }

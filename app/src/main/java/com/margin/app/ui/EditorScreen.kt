@@ -733,7 +733,7 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
             val (iv, data) = fingerprint!!.split('.').map { java.util.Base64.getUrlDecoder().decode(it) }
             when (val r = Biometric.decrypt(activity!!, data, iv)) {
                 is Biometric.Result.Ok -> vm.unlock(String(r.bytes, Charsets.UTF_8).toCharArray().also { r.bytes.fill(0) })
-                Biometric.Result.Cancelled -> {}
+                Biometric.Result.Cancelled -> pad = true // "Use password" on the prompt: show the keypad, as the journal does
                 Biometric.Result.Invalidated -> vm.unlockError = "Fingerprints changed. Use your passcode, then turn fingerprint unlock on again in Settings."
                 is Biometric.Result.Failed -> vm.unlockError = r.message
             }

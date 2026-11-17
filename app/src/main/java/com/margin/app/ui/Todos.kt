@@ -118,30 +118,35 @@ fun TodoHeader(count: TodoCount, startDay: Long, target: Long?, editable: Boolea
     val context = LocalContext.current
     val today = todayEpochDay()
     val status = com.margin.app.data.todoStatus(count, startDay, target, today)
-    Column(Modifier.fillMaxWidth().padding(bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (count.total == 0) "No tasks yet" else "${count.done} of ${count.total} done",
-                Modifier.weight(1f), style = JType.small.copy(fontWeight = FontWeight.SemiBold), color = jc.ink,
-            )
-            val label = target?.let { "Target " + targetLabel(context, it) } ?: if (editable) "Add target date" else null
-            if (label != null) {
-                Row(
-                    Modifier.clip(JShape.xs).clickable(enabled = editable, role = Role.Button, onClick = onPickTarget)
-                        .background(if (target != null) jc.selected else androidx.compose.ui.graphics.Color.Transparent)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                        .semantics { contentDescription = if (target != null) "$label. Tap to change it." else label },
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    val c = if (status == TodoStatus.OVERDUE) jc.danger else jc.accent
-                    JIcon(ICON_TARGET, c, size = 14.dp, stroke = 2f)
-                    Text(label, style = JType.small, color = c)
+    val tint = if (status == TodoStatus.OVERDUE) jc.danger else jc.accent
+    // A card like the Reminders page's: an icon tile, the count large, where it stands, then the bar and target.
+    Column(
+        Modifier.padding(bottom = 14.dp).fillMaxWidth().clip(JShape.lg).background(jc.card).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            IconTile(Ico.CHECKLIST, tint, size = 48.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("To-do list", style = JType.caption, color = jc.muted)
+                Text(if (count.total == 0) "No tasks yet" else "${count.done} of ${count.total} done", style = JType.subheading, color = jc.ink)
+                if (count.total > 0 && (target != null || count.complete)) {
+                    Text(statusLabel(status, target, today), style = JType.secondary, color = statusColor(status), maxLines = 1)
                 }
             }
         }
-        if (count.total > 0) {
-            ProgressBar(count.fraction, color = if (status == TodoStatus.OVERDUE) jc.danger else jc.accent)
-            if (target != null || count.complete) Text(statusLabel(status, target, today), style = JType.small, color = statusColor(status))
+        if (count.total > 0) ProgressBar(count.fraction, color = tint)
+        val label = target?.let { "Target " + targetLabel(context, it) } ?: if (editable) "Add target date" else null
+        if (label != null) {
+            Row(
+                Modifier.fillMaxWidth().clip(JShape.sm).background(jc.page).clickable(enabled = editable, role = Role.Button, onClick = onPickTarget)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .semantics { contentDescription = if (target != null && editable) "$label. Tap to change it." else label },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                JIcon(ICON_TARGET, tint, size = 16.dp, stroke = 2f)
+                Text(label, Modifier.weight(1f), style = JType.secondary, color = if (target != null) jc.ink else tint)
+                if (editable && target != null) Text("Change", style = JType.small, color = jc.accent)
+            }
         }
     }
 }
@@ -196,14 +201,14 @@ fun TargetDateDialog(current: Long?, onPick: (Long) -> Unit, onRemove: () -> Uni
  * it stands. Tap a list to open it.
  */
 @Composable
-fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit) {
+fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit, backLabel: String = "Folders") {
     val context = LocalContext.current
     // Moves on at midnight if the screen is left open.
     var today by remember { mutableLongStateOf(todayEpochDay()) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); today = todayEpochDay() } }
     val zone = ZoneId.systemDefault()
     val report = remember(notes, today) { todoReport(notes, today, zone) }
-    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
+    Scaffold(containerColor = jc.page, topBar = { NavBar(backLabel, onBack, color = jc.page) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("To-dos") }
             if (report.lists.isEmpty()) {

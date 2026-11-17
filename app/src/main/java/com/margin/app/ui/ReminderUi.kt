@@ -232,7 +232,7 @@ private fun ChoiceRow(icon: String, label: String, detail: String?, danger: Bool
  * This week and Later. A reminder that has rung is gone (it was the notification), so only upcoming ones show.
  */
 @Composable
-fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repeats: Map<String, Repeat>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit) {
+fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repeats: Map<String, Repeat>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit, backLabel: String = "Folders") {
     val context = LocalContext.current
     val rows = remember(notes, reminders) {
         notes.mapNotNull { n -> reminders[n.id]?.let { n to it } }.sortedBy { it.second }
@@ -247,7 +247,7 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
             else -> "Later"
         }
     }
-    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
+    Scaffold(containerColor = jc.page, topBar = { NavBar(backLabel, onBack, color = jc.page) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("Reminders") }
             if (rows.isEmpty()) {

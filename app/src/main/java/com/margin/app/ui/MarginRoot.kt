@@ -186,6 +186,8 @@ fun MarginRoot(
     fun Content(shown: NavEntry) {
     /** The screen under this one. */
     val below = nav.stack.getOrNull(shown.depth - 2)
+    /** A Library screen's back label: the list it was opened from (the home screen's cards), else Folders. */
+    fun backTo(below: Screen?) = if (below is Screen.Notes) listName(below.folderId) else "Folders"
         when (val screen = shown.screen) {
             Screen.Folders -> FoldersScreen(
                 folders,
@@ -208,11 +210,11 @@ fun MarginRoot(
                 val all by folders.liveNotes.collectAsState()
                 val reminders by folders.reminders.collectAsState()
                 val repeats by folders.reminderRepeats.collectAsState()
-                RemindersScreen(all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
+                RemindersScreen(all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below))
             }
             Screen.Journal -> {
                 val all by folders.liveNotes.collectAsState()
-                JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal, onBack = ::back) }
+                JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal, onBack = ::back, backLabel = backTo(below)) }
             }
             Screen.Passwords -> JournalGate(
                 editor, fingerprint, onCancel = ::back,
@@ -236,7 +238,7 @@ fun MarginRoot(
             }
             Screen.Todos -> {
                 val all by folders.liveNotes.collectAsState()
-                TodosScreen(all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
+                TodosScreen(all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below))
             }
             is Screen.Notes -> NoteListScreen(
                 vm = notes,
@@ -277,6 +279,16 @@ fun MarginRoot(
                 },
                 onFolders = { nav.push(Screen.Folders) },
                 onBack = ::back,
+                glance = if (screen.folderId == ALL_ID && shown.depth == 1) {
+                    val all by folders.liveNotes.collectAsState()
+                    val reminders by folders.reminders.collectAsState()
+                    remember(all, reminders) {
+                        todayGlance(
+                            all, reminders, java.time.LocalDate.now(), java.time.ZoneId.systemDefault(),
+                            onTodos = { nav.push(Screen.Todos) }, onReminders = { nav.push(Screen.Reminders) }, onJournal = { nav.push(Screen.Journal) },
+                        )
+                    }
+                } else null,
             )
             is Screen.Editor -> {
                 val backLabel = when (below) {

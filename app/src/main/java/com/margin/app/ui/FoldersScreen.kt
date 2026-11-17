@@ -100,7 +100,7 @@ fun FoldersScreen(
 
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar("All Notes", onBack, color = jc.page) { TextAction("Edit", onEdit); IconAction(Ico.SETTINGS, "Settings", onSettings) } },
+        topBar = { NavBar("All Notes", onBack, color = jc.page) { TextAction("Edit", onEdit); IconAction(Ico.GEAR, "Settings", onSettings) } },
         bottomBar = {
             BottomBar {
                 IconAction(Ico.NEW_FOLDER, "New folder", { creatingIn = "" }, size = 24.dp)
