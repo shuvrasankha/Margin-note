@@ -251,7 +251,7 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("Reminders") }
             if (rows.isEmpty()) {
-                item { BigEmpty(Ico.BELL, "No reminders", "Open a note and tap the bell at the top to be reminded about it.") }
+                item { BigEmpty(Ico.ALARM, "No reminders", "Open a note and tap the alarm clock at the top to be reminded about it.") }
                 return@LazyColumn
             }
             item {
@@ -264,7 +264,7 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        IconTile(Ico.BELL, size = 48.dp)
+                        IconTile(Ico.ALARM, size = 48.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("Next up", style = JType.caption, color = jc.muted)
                             Text(next.displayTitle, style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -287,7 +287,7 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
                                 Modifier.fillMaxWidth().clickable { onOpen(note) }.padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                             ) {
-                                IconTile(Ico.BELL)
+                                IconTile(Ico.ALARM)
                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(reminderLabel(context, at, repeats[note.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)

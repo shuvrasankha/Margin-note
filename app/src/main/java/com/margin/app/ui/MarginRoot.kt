@@ -214,7 +214,21 @@ fun MarginRoot(
             }
             Screen.Journal -> {
                 val all by folders.liveNotes.collectAsState()
-                JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal, onBack = ::back, backLabel = backTo(below)) }
+                val journalReminder by folders.journalReminderAt.collectAsState()
+                JournalGate(editor, fingerprint, onCancel = ::back) {
+                    // From the journal nudge: straight on to today's entry, once unlocked.
+                    LaunchedEffect(Unit) {
+                        if (editor.openTodayJournal) {
+                            editor.openTodayJournal = false
+                            folders.openJournal(java.time.LocalDate.now()) { id, folder -> nav.push(Screen.Editor(id, folder)) }
+                        }
+                    }
+                    JournalScreen(
+                        all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal,
+                        onBack = ::back, backLabel = backTo(below),
+                        reminderAt = journalReminder, onSetReminder = folders::setJournalReminder, onClearReminder = folders::clearJournalReminder,
+                    )
+                }
             }
             Screen.Passwords -> JournalGate(
                 editor, fingerprint, onCancel = ::back,

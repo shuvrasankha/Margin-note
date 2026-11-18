@@ -193,6 +193,19 @@ class FoldersViewModel @Inject constructor(
     val reminders: StateFlow<Map<String, Long>> = alarms.all
     val reminderRepeats: StateFlow<Map<String, com.margin.app.data.Repeat>> = alarms.repeats
 
+    /** Next time the daily journal reminder rings, or null when it's off. */
+    val journalReminderAt: StateFlow<Long?> = alarms.all.map { it[JOURNAL_REMINDER] }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Rings every day at [time], starting today if that's still to come. */
+    fun setJournalReminder(time: java.time.LocalTime) {
+        val now = java.time.ZonedDateTime.now()
+        var at = now.with(time).withSecond(0).withNano(0)
+        if (!at.isAfter(now)) at = at.plusDays(1)
+        alarms.set(JOURNAL_REMINDER, at.toInstant().toEpochMilli(), com.margin.app.data.Repeat.DAILY)
+    }
+
+    fun clearJournalReminder() = alarms.clear(JOURNAL_REMINDER)
+
     /** Offline with changes waiting, or the last sync failed. Null when there's nothing to say. */
     val syncBanner: StateFlow<SyncBanner?> = combine(syncPrefs.status, connectivity.online, repo.pendingCount()) { s, online, pending ->
         syncBanner(s.signedIn, online, pending, s.lastError)
@@ -1200,6 +1213,8 @@ class EditorViewModel @Inject constructor(
 
     /** Set by an app shortcut: what the newly opened note starts with ([START_SCAN], [START_VOICE]); the editor clears it. */
     var startAction by mutableStateOf<String?>(null)
+    /** Set by the journal nudge: once the journal is unlocked, open today's entry. */
+    var openTodayJournal = false
 
     /** A PDF opened with Margin: its note and line, shown full screen once that note is open; the editor clears it. */
     var openPdf by mutableStateOf<com.margin.app.data.PdfPlace?>(null)

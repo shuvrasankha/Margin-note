@@ -53,6 +53,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -124,7 +125,10 @@ object Ico {
     const val ARROW_UP = "M12 19V5M6 11l6-6 6 6"
     const val HANDWRITING = "M3 17l4-11 4 11M4.5 13h5M13 16c1.5 0 2-5 3.5-5s1 5 2.5 5 1.5-2 2-2M3 21h18"
     const val SCAN = "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 10h8M8 14h5"
+    /** Notifications. Reminders use [ALARM]. */
     const val BELL = "M6 16V10a6 6 0 0 1 12 0v6l1.5 2h-15zM10 21h4"
+    /** An alarm clock, for reminders. */
+    val ALARM = circle(12f, 13f, 7f) + "M12 9.5v3.5l2.2 1.5M4 6.5l3-2.5M20 6.5l-3-2.5M7.5 18.5L6 20.5M16.5 18.5L18 20.5"
     const val PLAY = "M8 5v14l11-7z"
     const val PAUSE = "M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"
     const val CHECKLIST = "M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M12 6h8M12 12h8M12 18h8"
@@ -223,6 +227,19 @@ fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { JIcon(d, if (enabled) color else jc.muted.copy(alpha = 0.4f), size = size, fill = fill) }
+}
+
+/** A 56dp round button in the accent colour, floating over a list (the home screen's New note). */
+@Composable
+fun FloatingAction(d: String, label: String, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        Modifier.size(56.dp).pressScale(press, 0.9f)
+            .shadow(6.dp, CircleShape).clip(CircleShape).background(jc.accent)
+            .clickable(press, androidx.compose.material3.ripple(), role = Role.Button, onClick = tapped(onClick))
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) { JIcon(d, jc.bg, size = 26.dp, stroke = 2.2f) }
 }
 
 /** Plain text button in the accent colour (or [color]). */

@@ -134,12 +134,13 @@ class MainActivity : FragmentActivity() {
     private fun fromWidget(intent: android.content.Intent?) {
         val screen = when (intent?.action) {
             RecentWidget.ACTION_OPEN -> intent.getStringExtra(RecentWidget.EXTRA_NOTE)?.let {
-                if (it.startsWith("habit-")) Screen.Habits else Screen.Editor(it, intent.getStringExtra(RecentWidget.EXTRA_FOLDER) ?: DEFAULT_FOLDER_ID)
+                if (it.startsWith("habit-")) Screen.Habits else if (it == com.margin.app.ui.JOURNAL_REMINDER) Screen.Journal else Screen.Editor(it, intent.getStringExtra(RecentWidget.EXTRA_FOLDER) ?: DEFAULT_FOLDER_ID)
             }
             RecentWidget.ACTION_NEW, RecentWidget.ACTION_SCAN, RecentWidget.ACTION_VOICE -> Screen.Editor(newId(), DEFAULT_FOLDER_ID)
             else -> null
         } ?: return
         // The new note starts the scanner or the recorder once it's open.
+        editor.openTodayJournal = screen == Screen.Journal
         editor.startAction = when (intent?.action) {
             RecentWidget.ACTION_SCAN -> EditorViewModel.START_SCAN
             RecentWidget.ACTION_VOICE -> EditorViewModel.START_VOICE

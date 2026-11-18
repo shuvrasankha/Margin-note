@@ -194,7 +194,7 @@ private fun HabitCard(
                         style = JType.secondary, color = if (streak == 0) jc.muted else jc.accent,
                     )
                 }
-                if (reminder != null) JIcon(Ico.BELL, jc.muted, size = 18.dp, modifier = Modifier.semantics { contentDescription = "Reminder on" })
+                if (reminder != null) JIcon(Ico.ALARM, jc.muted, size = 18.dp, modifier = Modifier.semantics { contentDescription = "Reminder on" })
                 val turn by androidx.compose.animation.core.animateFloatAsState(if (expanded) 90f else 0f, JMotion.standard(), label = "open")
                 JIcon(Ico.CHEVRON, jc.muted, size = 14.dp, stroke = 2.4f, modifier = Modifier.graphicsLayer { rotationZ = turn })
             }
@@ -233,7 +233,7 @@ private fun HabitCard(
                 Modifier.fillMaxWidth().padding(top = 6.dp).clickable(role = Role.Button, onClick = onRemind).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                IconTile(Ico.BELL, if (time != null) jc.accent else jc.muted)
+                IconTile(Ico.ALARM, if (time != null) jc.accent else jc.muted)
                 Text(if (time != null) "Reminds you daily at $time" else "Remind me daily", Modifier.weight(1f), style = JType.item, color = jc.ink)
                 Text(if (time != null) "Change" else "Set", style = JType.secondary, color = jc.accent)
             }

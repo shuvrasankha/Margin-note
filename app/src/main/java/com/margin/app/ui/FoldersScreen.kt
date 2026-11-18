@@ -137,7 +137,7 @@ fun FoldersScreen(
                     LibraryItem(Ico.FILE, "All Notes", allCount) { onOpen(ALL_ID) },
                     LibraryItem(Ico.PIN, "Pinned", pinnedCount) { onOpen(PINNED_ID) },
                     LibraryItem(Ico.CHECKLIST, "To-dos", openTodos, onTodos),
-                    LibraryItem(Ico.BELL, "Reminders", reminderCount, onReminders),
+                    LibraryItem(Ico.ALARM, "Reminders", reminderCount, onReminders),
                     LibraryItem(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onJournal),
                     LibraryItem(ICON_HABITS, "Habits", remember(notes) { notes.count(::isHabit) }, onHabits),
                     LibraryItem(ICON_TRACKERS, "Trackers", remember(notes) { notes.count { isTracker(it) } }, onTrackers),

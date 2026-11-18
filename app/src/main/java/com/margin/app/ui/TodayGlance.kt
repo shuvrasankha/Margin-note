@@ -78,7 +78,7 @@ fun TodayCards(g: TodayGlance, modifier: Modifier = Modifier) {
             next != null -> dayShort(next, LocalDate.now()) to "Next up"
             else -> "None" to "Reminders"
         }
-        GlanceCard(Ico.BELL, value, label, g.onReminders, Modifier.weight(1f), accent = g.remindersToday > 0)
+        GlanceCard(Ico.ALARM, value, label, g.onReminders, Modifier.weight(1f), accent = g.remindersToday > 0)
         GlanceCard(ICON_JOURNAL, if (g.journaled) "Done" else "Write", "Journal", g.onJournal, Modifier.weight(1f), accent = !g.journaled)
     }
 }

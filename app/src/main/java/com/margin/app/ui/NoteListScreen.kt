@@ -87,6 +87,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.margin.app.data.Drawing
@@ -189,6 +190,9 @@ fun NoteListScreen(
         vm.selected.filter { it !in ids }.forEach(vm::toggleSelected)
     }
 
+    // The floating New note button, wherever notes can be made; the lists leave room under it.
+    val showNew = canCreate && !selecting
+    val listEnd = if (showNew) 96.dp else 24.dp
     Scaffold(
         containerColor = jc.page,
         snackbarHost = {
@@ -197,6 +201,9 @@ fun NoteListScreen(
                     data, shape = JShape.md, containerColor = jc.ink, contentColor = jc.bg, actionColor = jc.bg,
                 )
             }
+        },
+        floatingActionButton = {
+            if (showNew) FloatingAction(Ico.COMPOSE, "New note", onNew)
         },
         topBar = {
             if (selecting) NavBar(null, {}, color = jc.page) { TextAction("Done", vm::clearSelection, bold = true) }
@@ -256,7 +263,8 @@ fun NoteListScreen(
                 else -> BottomBar {
                     Spacer(Modifier.size(44.dp))
                     CountText(notes.size, JType.small, jc.muted) { if (query.isBlank()) plural(it, "Note") else plural(it, "Result") }
-                    if (canCreate) IconAction(Ico.COMPOSE, "New note", onNew, size = 24.dp) else Spacer(Modifier.size(44.dp))
+                    // New note is the floating button; this keeps the count centred.
+                    Spacer(Modifier.size(44.dp))
                 }
             }
         },
@@ -304,10 +312,10 @@ fun NoteListScreen(
                 )
                 notes.isEmpty() -> EmptyState("No notes yet", "Notes show up here when they match.")
                 // Search results and Recently Deleted keep rows: their extra details (match, days left) need the width.
-                grid && !isTrash && query.isBlank() -> NoteGrid(entries, folder?.sortBy ?: NoteSort.EDITED, vm, onOpen)
+                grid && !isTrash && query.isBlank() -> NoteGrid(entries, folder?.sortBy ?: NoteSort.EDITED, vm, onOpen, listEnd)
                 else -> NoteList(
                     entries, folder?.sortBy ?: NoteSort.EDITED, isTrash, previewLines, keepDays, query.trim(),
-                    folders.associate { it.folder.id to it.folder.name }, vm, onOpen, onMove = { moving = setOf(it.id) },
+                    folders.associate { it.folder.id to it.folder.name }, vm, onOpen, onMove = { moving = setOf(it.id) }, bottom = listEnd,
                 )
             }
         }
@@ -362,13 +370,14 @@ internal fun NoteList(
     vm: NotesViewModel,
     onOpen: (NoteEntity) -> Unit,
     onMove: (NoteEntity) -> Unit,
+    bottom: Dp = 24.dp,
 ) {
     // Notes between section headers sit in one rounded card: the first rounds its top, the last its bottom
     // and has no line under it.
     fun isNote(e: ListEntry?) = e is ListEntry.Row || e is ListEntry.AttachmentRow
     val ends = remember(entries) { entries.filterIndexed { i, e -> isNote(e) && !isNote(entries.getOrNull(i + 1)) }.toSet() }
     val starts = remember(entries) { entries.filterIndexed { i, e -> isNote(e) && !isNote(entries.getOrNull(i - 1)) }.toSet() }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom)) {
         items(entries, key = {
             when (it) {
                 is ListEntry.Row -> it.note.id
@@ -598,10 +607,10 @@ internal fun ViewChoices(grid: Boolean, onPick: (Boolean) -> Unit) {
 
 /** Notes as two columns of cards, each as tall as its text; section headers (Pinned, Today...) span both. */
 @Composable
-internal fun NoteGrid(entries: List<ListEntry>, sortBy: NoteSort, vm: NotesViewModel, onOpen: (NoteEntity) -> Unit) {
+internal fun NoteGrid(entries: List<ListEntry>, sortBy: NoteSort, vm: NotesViewModel, onOpen: (NoteEntity) -> Unit, bottom: Dp = 24.dp) {
     LazyVerticalStaggeredGrid(
         StaggeredGridCells.Fixed(2), Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottom),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalItemSpacing = 10.dp,
     ) {
         entries.forEach { entry ->

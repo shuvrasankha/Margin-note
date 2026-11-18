@@ -104,6 +104,9 @@ const val ICON_JOURNAL = "M5 4h14v16H5zM5 9h14M9 2v4M15 2v4M8 13h2M12 13h2M8 16h
 /** Each day's journal entry is the note with this id, so any phone opens (and syncs) the same note for a day. */
 fun journalId(day: LocalDate) = "journal-$day"
 
+/** The daily "write in your journal" reminder's key in [com.margin.app.data.Reminders]; it isn't a note. */
+const val JOURNAL_REMINDER = "journal-reminder"
+
 /** The day a journal entry is for, or null for any other note. */
 fun journalDay(note: NoteEntity): LocalDate? =
     note.id.takeIf { it.startsWith("journal-") }?.let { runCatching { LocalDate.parse(it.removePrefix("journal-")) }.getOrNull() }
@@ -117,7 +120,10 @@ fun journalTitle(day: LocalDate): String = day.format(DateTimeFormatter.ofLocali
  * Below: a button for today's entry and the month's entries, newest first, as an agenda.
  */
 @Composable
-fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit, backLabel: String = "Folders") {
+fun JournalScreen(
+    notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit, backLabel: String = "Folders",
+    reminderAt: Long? = null, onSetReminder: (java.time.LocalTime) -> Unit = {}, onClearReminder: () -> Unit = {},
+) {
     val today = LocalDate.now()
     val thisMonth = YearMonth.from(today)
     var month by rememberSaveable { mutableStateOf(thisMonth.toString()) }
@@ -129,6 +135,23 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
     val canGoOn = shown < thisMonth
     var drag by remember { mutableFloatStateOf(0f) }
     var deleting by remember { mutableStateOf<LocalDate?>(null) }
+    var reminding by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val notifyPermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) android.widget.Toast.makeText(context, "Reminder set, but notifications are off for Margin, so it won't show.", android.widget.Toast.LENGTH_LONG).show()
+    }
+    if (reminding) JournalReminderDialog(
+        reminderAt,
+        onPick = { time ->
+            reminding = false
+            onSetReminder(time)
+            if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        },
+        onRemove = { reminding = false; onClearReminder() },
+        onDismiss = { reminding = false },
+    )
     deleting?.let { day ->
         MarginDialog(
             onDismissRequest = { deleting = null },
@@ -141,6 +164,10 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
     Scaffold(containerColor = jc.page, topBar = {
         NavBar(backLabel, onBack, color = jc.page) {
             if (shown != thisMonth) TextAction("Today", { month = thisMonth.toString() })
+            IconAction(
+                Ico.ALARM, reminderAt?.let { "Daily reminder at ${timeLabel(context, it)}. Change it" } ?: "Remind me to write",
+                { reminding = true }, fill = reminderAt != null,
+            )
             IconAction(Ico.BACK, "Previous month", { month = shown.minusMonths(1).toString() })
             IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() }, enabled = canGoOn)
         }
@@ -264,4 +291,34 @@ internal fun DayCell(day: LocalDate, isToday: Boolean, isLater: Boolean, outside
         )
         Box(Modifier.padding(top = 2.dp).size(4.dp).clip(CircleShape).background(when { !hasEntry -> Color.Transparent; isToday -> jc.bg; else -> jc.accent }))
     }
+}
+
+
+private fun timeLabel(context: android.content.Context, at: Long): String =
+    android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(at))
+
+/** Picks the time of the daily journal reminder, or turns it off. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun JournalReminderDialog(current: Long?, onPick: (java.time.LocalTime) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val start = current?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalTime() } ?: java.time.LocalTime.of(21, 0)
+    val state = androidx.compose.material3.rememberTimePickerState(start.hour, start.minute, is24Hour = android.text.format.DateFormat.is24HourFormat(context))
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Daily journal reminder") },
+        text = {
+            Column {
+                Text("A nudge each day at this time, only if you haven't written that day's entry yet.", style = JType.small, color = jc.muted)
+                Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.TimePicker(state, colors = marginTimeColors())
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text(if (current == null) "Remind me" else "Save") } },
+        dismissButton = {
+            if (current != null) TextButton(onClick = onRemove) { Text("Turn off", color = jc.danger) }
+            else TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

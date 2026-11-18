@@ -292,7 +292,7 @@ fun EditorScreen(
                     if (vm.focused && !vm.viewOnly) TextAction("Done", { focusManager.clearFocus() }, bold = true)
                     // Reminder: amber while one is set.
                     if (vm.canRemind) IconAction(
-                        Ico.BELL, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" } ?: "Remind me",
+                        Ico.ALARM, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" } ?: "Remind me",
                         { reminding = true }, fill = reminderAt != null,
                     )
                     if (!vm.needsUnlock) IconAction(Ico.SHARE, "Share", { sharing = !sharing; formatting = false; attaching = false })
@@ -345,7 +345,7 @@ fun EditorScreen(
                             var first = true
                             if (!vm.needsUnlock) { item("Find in note", Ico.SEARCH, gap = true) { find = ""; findAt = 0; focusManager.clearFocus() }; first = false }
                             item("Move to folder…", Ico.MOVE, gap = first) { moving = true }
-                            if (vm.canRemind) item(if (reminderAt != null) "Change reminder…" else "Remind me…", Ico.BELL) { reminding = true }
+                            if (vm.canRemind) item(if (reminderAt != null) "Change reminder…" else "Remind me…", Ico.ALARM) { reminding = true }
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
                             if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
@@ -539,7 +539,7 @@ fun EditorScreen(
                             .semantics { contentDescription = "Reminder: ${reminderLabel(context, at, reminderRepeat)}. Tap to change it." },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        JIcon(Ico.BELL, jc.accent, size = 14.dp, stroke = 2f)
+                        JIcon(Ico.ALARM, jc.accent, size = 14.dp, stroke = 2f)
                         Text(reminderLabel(context, at, reminderRepeat), style = JType.small, color = jc.accent)
                     }
                 }
