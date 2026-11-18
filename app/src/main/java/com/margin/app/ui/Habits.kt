@@ -1,6 +1,9 @@
 package com.margin.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -108,67 +111,137 @@ fun HabitsScreen(
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
-    Scaffold(topBar = { NavBar("Folders", onBack) }) { padding ->
+    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             PageTitle("Habits")
-            if (habits.isEmpty()) Text(
-                "Add a habit and tick it off each day.", Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted,
+            if (habits.isEmpty()) BigEmpty(
+                ICON_HABITS, "Little things, every day", "Add a habit, tick it off each day and watch the streak grow.",
+                button = "New habit", onButton = { adding = true },
             )
-            else Text(
-                "${habits.count { today in habitDays(it) }} of ${habits.size} done today",
-                Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted,
-            )
-            habits.forEach { note ->
-                val days = remember(note) { habitDays(note) }
-                val streak = habitStreak(days, today)
-                Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Button) { open = if (open == note.id) null else note.id }
-                        .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    CheckCircle(
-                        today in days, size = 28.dp,
-                        modifier = Modifier.clip(CircleShape).clickable(role = Role.Checkbox) { onToggle(note, today) }
-                            .semantics { contentDescription = "${note.title}, today" },
+            else {
+                HabitsSummary(habits, today, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                habits.forEach { note ->
+                    val days = remember(note) { habitDays(note) }
+                    HabitCard(
+                        note, days, today, expanded = open == note.id, reminder = reminders[note.id],
+                        onExpand = { open = if (open == note.id) null else note.id }, onToggle = { onToggle(note, it) },
+                        onRename = { renaming = note }, onDelete = { deleting = note }, onRemind = { reminding = note },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                     )
-                    Column(Modifier.weight(1f)) {
-                        Text(note.title, style = JType.rowTitle, color = jc.ink)
-                        Text(
-                            if (streak == 0) "No streak yet" else "${plural(streak, "day")} in a row",
-                            style = JType.secondary, color = if (streak == 0) jc.muted else jc.accent,
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        for (k in 6 downTo 0) {
-                            val d = today.minusDays(k.toLong())
-                            Box(Modifier.size(9.dp).clip(CircleShape).background(if (d in days) jc.accent else jc.line))
-                        }
-                    }
-                    IconAction(Ico.TRASH, "Delete ${note.title}", { deleting = note }, color = jc.muted, size = 20.dp)
                 }
-                if (open == note.id) {
-                    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "Best ${plural(habitBest(days), "day")} · ${days.count { it > today.minusDays(30) && it <= today }} of the last 30 · ${days.size} in all",
-                            Modifier.weight(1f), style = JType.secondary, color = jc.muted,
-                        )
-                        TextButton(onClick = { renaming = note }) { Text("Rename") }
-                    }
-                    val time = reminders[note.id]?.let { timeLabel(it) }
-                    Row(
-                        Modifier.fillMaxWidth().clickable(role = Role.Button) { reminding = note }.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        JIcon(Ico.BELL, if (time != null) jc.accent else jc.muted, size = 18.dp)
-                        Text(if (time != null) "Reminds you daily at $time" else "Remind me daily", Modifier.weight(1f), style = JType.secondary, color = if (time != null) jc.ink else jc.muted)
-                        Text(if (time != null) "Change" else "Set", style = JType.secondary, color = jc.accent)
-                    }
-                    HabitMonth(days, today) { onToggle(note, it) }
-                }
-                HorizontalDivider(Modifier.padding(start = 62.dp), color = jc.line)
+                PrimaryButton("New habit", { adding = true }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp))
             }
-            PrimaryButton("New habit", { adding = true }, Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp))
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** Today at a glance: a ring for how many are done, and the best streak going. */
+@Composable
+private fun HabitsSummary(habits: List<NoteEntity>, today: LocalDate, modifier: Modifier = Modifier) {
+    val all = remember(habits) { habits.map { habitDays(it) } }
+    val done = all.count { today in it }
+    val best = all.maxOfOrNull { habitStreak(it, today) } ?: 0
+    // Ticks in the last 7 days out of every habit-day in them.
+    val week = all.sumOf { d -> (0..6).count { today.minusDays(it.toLong()) in d } }
+    Column(modifier.fillMaxWidth().clip(JShape.lg).background(jc.card).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            ProgressRing(done.toFloat() / habits.size, Modifier.size(84.dp)) {
+                Text("$done/${habits.size}", style = JType.subheading, color = jc.ink)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    when { done == habits.size -> "All done today"; done == 0 -> "Nothing ticked yet"; else -> "${habits.size - done} to go today" },
+                    style = JType.subheading, color = jc.ink,
+                )
+                Text("$done of ${plural(habits.size, "habit")} done", style = JType.secondary, color = jc.muted)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile(plural(best, "day"), "Best streak now", Modifier.weight(1f), color = if (best > 0) jc.accent else jc.ink)
+            StatTile("${week * 100 / (habits.size * 7)}%", "Done this week", Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * One habit: today's tick, the streak, and the last seven days. Tapping the card opens its
+ * numbers, the reminder, a month to tick past days, and Rename and Delete.
+ */
+@Composable
+private fun HabitCard(
+    note: NoteEntity, days: Set<LocalDate>, today: LocalDate, expanded: Boolean, reminder: Long?,
+    onExpand: () -> Unit, onToggle: (LocalDate) -> Unit, onRename: () -> Unit, onDelete: () -> Unit, onRemind: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val streak = habitStreak(days, today)
+    val locale = Locale.getDefault()
+    Column(modifier.fillMaxWidth().clip(JShape.lg).background(jc.card).animateContentSize(JMotion.standard())) {
+        Column(
+            Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = if (expanded) "Close" else "Open", onClick = onExpand).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                CheckCircle(
+                    today in days, size = 34.dp,
+                    modifier = Modifier.clip(CircleShape).clickable(role = Role.Checkbox) { onToggle(today) }
+                        .semantics { contentDescription = "${note.title}, today" },
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(note.title, style = JType.rowTitle, color = jc.ink, maxLines = 2)
+                    Text(
+                        if (streak == 0) "No streak yet" else "${plural(streak, "day")} in a row",
+                        style = JType.secondary, color = if (streak == 0) jc.muted else jc.accent,
+                    )
+                }
+                if (reminder != null) JIcon(Ico.ALARM, jc.muted, size = 18.dp, modifier = Modifier.semantics { contentDescription = "Reminder on" })
+                val turn by androidx.compose.animation.core.animateFloatAsState(if (expanded) 90f else 0f, JMotion.standard(), label = "open")
+                JIcon(Ico.CHEVRON, jc.muted, size = 14.dp, stroke = 2.4f, modifier = Modifier.graphicsLayer { rotationZ = turn })
+            }
+            Row(Modifier.fillMaxWidth()) {
+                for (k in 6 downTo 0) {
+                    val d = today.minusDays(k.toLong())
+                    val on = d in days
+                    Column(
+                        // Shown only: past days are ticked in the month below, so a tap meant to open the card can't untick one.
+                        Modifier.weight(1f).padding(vertical = 4.dp)
+                            .semantics { contentDescription = d.dayOfWeek.getDisplayName(TextStyle.FULL, locale) + if (on) ", done" else ", not done" },
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            d.dayOfWeek.getDisplayName(TextStyle.NARROW_STANDALONE, locale), style = JType.caption,
+                            color = if (k == 0) jc.ink else jc.muted,
+                        )
+                        Box(
+                            Modifier.size(26.dp).clip(CircleShape).background(if (on) jc.accent else jc.page)
+                                .then(if (k == 0 && !on) Modifier.border(1.5.dp, jc.accent, CircleShape) else Modifier),
+                            contentAlignment = Alignment.Center,
+                        ) { if (on) JIcon(Ico.CHECK, jc.bg, size = 14.dp, stroke = 3f) }
+                    }
+                }
+            }
+        }
+        if (expanded) {
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = jc.line)
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile(plural(habitBest(days), "day"), "Best ever", Modifier.weight(1f))
+                StatTile("${days.count { it > today.minusDays(30) && it <= today }}/30", "Last 30 days", Modifier.weight(1f))
+                StatTile("${days.size}", "In all", Modifier.weight(1f))
+            }
+            val time = reminder?.let { timeLabel(it) }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp).clickable(role = Role.Button, onClick = onRemind).padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                IconTile(Ico.ALARM, if (time != null) jc.accent else jc.muted)
+                Text(if (time != null) "Reminds you daily at $time" else "Remind me daily", Modifier.weight(1f), style = JType.item, color = jc.ink)
+                Text(if (time != null) "Change" else "Set", style = JType.secondary, color = jc.accent)
+            }
+            HabitMonth(days, today, onToggle)
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onRename) { Text("Rename", color = jc.accent) }
+                TextButton(onClick = onDelete) { Text("Delete", color = jc.danger) }
+            }
         }
     }
 }
@@ -202,7 +275,7 @@ private fun HabitMonth(days: Set<LocalDate>, today: LocalDate, onToggle: (LocalD
         val first = shown.atDay(1).minusDays(blanks.toLong())
         for (w in 0 until (blanks + shown.lengthOfMonth() + 6) / 7) {
             val week = (0 until 7).map { first.plusDays(w * 7L + it) }
-            Row(Modifier.padding(vertical = 2.dp).clip(JShape.sm).then(if (today in week) Modifier.background(jc.surface) else Modifier)) {
+            Row(Modifier.padding(vertical = 2.dp).clip(JShape.sm).then(if (today in week) Modifier.background(jc.page) else Modifier)) {
                 week.forEach { day ->
                     Box(Modifier.weight(1f).height(46.dp), contentAlignment = Alignment.Center) {
                         DayCell(day, day == today, day > today, YearMonth.from(day) != shown, day in days) { onToggle(day) }

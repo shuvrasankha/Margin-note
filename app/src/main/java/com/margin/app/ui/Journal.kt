@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,6 +52,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import com.margin.app.data.NoteEntity
+import com.margin.app.data.isLocked
+import com.margin.app.data.snippet
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -103,6 +104,9 @@ const val ICON_JOURNAL = "M5 4h14v16H5zM5 9h14M9 2v4M15 2v4M8 13h2M12 13h2M8 16h
 /** Each day's journal entry is the note with this id, so any phone opens (and syncs) the same note for a day. */
 fun journalId(day: LocalDate) = "journal-$day"
 
+/** The daily "write in your journal" reminder's key in [com.margin.app.data.Reminders]; it isn't a note. */
+const val JOURNAL_REMINDER = "journal-reminder"
+
 /** The day a journal entry is for, or null for any other note. */
 fun journalDay(note: NoteEntity): LocalDate? =
     note.id.takeIf { it.startsWith("journal-") }?.let { runCatching { LocalDate.parse(it.removePrefix("journal-")) }.getOrNull() }
@@ -116,7 +120,10 @@ fun journalTitle(day: LocalDate): String = day.format(DateTimeFormatter.ofLocali
  * Below: a button for today's entry and the month's entries, newest first, as an agenda.
  */
 @Composable
-fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit) {
+fun JournalScreen(
+    notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit, backLabel: String = "Folders",
+    reminderAt: Long? = null, onSetReminder: (java.time.LocalTime) -> Unit = {}, onClearReminder: () -> Unit = {},
+) {
     val today = LocalDate.now()
     val thisMonth = YearMonth.from(today)
     var month by rememberSaveable { mutableStateOf(thisMonth.toString()) }
@@ -128,6 +135,23 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
     val canGoOn = shown < thisMonth
     var drag by remember { mutableFloatStateOf(0f) }
     var deleting by remember { mutableStateOf<LocalDate?>(null) }
+    var reminding by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val notifyPermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) android.widget.Toast.makeText(context, "Reminder set, but notifications are off for Margin, so it won't show.", android.widget.Toast.LENGTH_LONG).show()
+    }
+    if (reminding) JournalReminderDialog(
+        reminderAt,
+        onPick = { time ->
+            reminding = false
+            onSetReminder(time)
+            if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        },
+        onRemove = { reminding = false; onClearReminder() },
+        onDismiss = { reminding = false },
+    )
     deleting?.let { day ->
         MarginDialog(
             onDismissRequest = { deleting = null },
@@ -137,9 +161,13 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
-    Scaffold(topBar = {
-        NavBar("Folders", onBack) {
+    Scaffold(containerColor = jc.page, topBar = {
+        NavBar(backLabel, onBack, color = jc.page) {
             if (shown != thisMonth) TextAction("Today", { month = thisMonth.toString() })
+            IconAction(
+                Ico.ALARM, reminderAt?.let { "Daily reminder at ${timeLabel(context, it)}. Change it" } ?: "Remind me to write",
+                { reminding = true }, fill = reminderAt != null,
+            )
             IconAction(Ico.BACK, "Previous month", { month = shown.minusMonths(1).toString() })
             IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() }, enabled = canGoOn)
         }
@@ -154,8 +182,14 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
                 Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp).semantics { heading() },
                 style = JType.pageTitle, color = jc.ink,
             )
+            Row(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val streak = habitStreak(written, today)
+                StatTile(plural(streak, "day"), "Writing streak", Modifier.weight(1f), fill = jc.card, color = if (streak > 0) jc.accent else jc.ink)
+                StatTile("${written.count { YearMonth.from(it) == shown }}", "This month", Modifier.weight(1f), fill = jc.card)
+                StatTile("${written.size}", "In all", Modifier.weight(1f), fill = jc.card)
+            }
             Column(
-                Modifier.padding(horizontal = 8.dp)
+                Modifier.padding(horizontal = 16.dp).clip(JShape.lg).background(jc.card).padding(horizontal = 6.dp, vertical = 10.dp)
                     // Swipe left for the next month, right for the one before.
                     .pointerInput(canGoOn) {
                         detectHorizontalDragGestures(
@@ -183,7 +217,7 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
                     val week = (0 until 7).map { first.plusDays(w * 7L + it) }
                     Row(
                         Modifier.padding(vertical = 2.dp).clip(JShape.sm)
-                            .then(if (today in week) Modifier.background(jc.surface) else Modifier),
+                            .then(if (today in week) Modifier.background(jc.page) else Modifier),
                     ) {
                         week.forEach { day ->
                             Box(Modifier.weight(1f).height(50.dp), contentAlignment = Alignment.Center) {
@@ -195,31 +229,44 @@ fun JournalScreen(notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDel
             }
             PrimaryButton(
                 if (today in written) "Open today's entry" else "Write today's entry", { onOpenDay(today) },
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
             )
-            HorizontalDivider(color = jc.line)
             val entries = written.filter { YearMonth.from(it) == shown }.sortedDescending()
-            Text(
-                if (entries.isEmpty()) "NO ENTRIES" else plural(entries.size, "entry", "entries").uppercase(locale),
-                Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp), style = JType.section, color = jc.accent,
-            )
+            SectionLabel(if (entries.isEmpty()) "No entries" else plural(entries.size, "entry", "entries"), Modifier.padding(top = 0.dp))
             if (entries.isEmpty()) Text(
                 "Tap a day to write about it.", Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted,
             )
-            entries.forEach { day ->
-                Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenDay(day) }.padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (day == today) jc.accent else jc.accent.copy(alpha = 0.45f)))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            if (day == today) "Today" else day.dayOfWeek.getDisplayName(TextStyle.FULL_STANDALONE, locale),
-                            style = JType.secondary, color = jc.muted,
-                        )
-                        Text(day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)), style = JType.row, color = jc.ink)
+            else {
+                val byDay = notes.associateBy { journalDay(it) }
+                DividedCard(entries, 76.dp) { day ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpenDay(day) }.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            Modifier.size(48.dp).clip(JShape.sm).background(if (day == today) jc.accent else jc.page),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text("${day.dayOfMonth}", style = JType.subheading, color = if (day == today) jc.bg else jc.ink)
+                            Text(
+                                day.dayOfWeek.getDisplayName(TextStyle.SHORT_STANDALONE, locale).uppercase(locale),
+                                style = JType.caption.copy(fontSize = 10.sp, lineHeight = 12.sp), color = if (day == today) jc.bg else jc.muted,
+                            )
+                        }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                if (day == today) "Today" else day.dayOfWeek.getDisplayName(TextStyle.FULL_STANDALONE, locale),
+                                style = JType.rowTitle, color = jc.ink,
+                            )
+                            val note = byDay[day]
+                            val preview = note?.takeIf { !it.isLocked }?.snippet?.takeIf { it.isNotBlank() }
+                            Text(
+                                preview ?: day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.LONG)),
+                                style = JType.small, color = jc.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
+                        IconAction(Ico.TRASH, "Delete entry for " + journalTitle(day), { deleting = day }, color = jc.muted, size = 20.dp)
                     }
-                    IconAction(Ico.TRASH, "Delete entry for " + journalTitle(day), { deleting = day }, color = jc.muted, size = 20.dp)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -244,4 +291,34 @@ internal fun DayCell(day: LocalDate, isToday: Boolean, isLater: Boolean, outside
         )
         Box(Modifier.padding(top = 2.dp).size(4.dp).clip(CircleShape).background(when { !hasEntry -> Color.Transparent; isToday -> jc.bg; else -> jc.accent }))
     }
+}
+
+
+private fun timeLabel(context: android.content.Context, at: Long): String =
+    android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(at))
+
+/** Picks the time of the daily journal reminder, or turns it off. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun JournalReminderDialog(current: Long?, onPick: (java.time.LocalTime) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val start = current?.let { java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault()).toLocalTime() } ?: java.time.LocalTime.of(21, 0)
+    val state = androidx.compose.material3.rememberTimePickerState(start.hour, start.minute, is24Hour = android.text.format.DateFormat.is24HourFormat(context))
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Daily journal reminder") },
+        text = {
+            Column {
+                Text("A nudge each day at this time, only if you haven't written that day's entry yet.", style = JType.small, color = jc.muted)
+                Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.TimePicker(state, colors = marginTimeColors())
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text(if (current == null) "Remind me" else "Save") } },
+        dismissButton = {
+            if (current != null) TextButton(onClick = onRemove) { Text("Turn off", color = jc.danger) }
+            else TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

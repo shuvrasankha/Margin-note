@@ -97,6 +97,9 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
     val fingerprint by vm.fingerprint.collectAsState()
     var askCurrent by remember { mutableStateOf<(() -> Unit)?>(null) }
     var newPassword by remember { mutableStateOf(false) }
+    val appLockOn = vm.appLockState.collectAsState().value != null
+    /** Turning the app lock on (true) or off: the passcode step it asks for. */
+    var appLockAsk by remember { mutableStateOf<Pair<PasswordMode, Boolean>?>(null) }
     val autoSort by vm.autoSortChecked.collectAsState()
     val appearance by vm.appearance.collectAsState()
     val defaultSort by vm.defaultSort.collectAsState()
@@ -295,14 +298,66 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                     )
                 }
 
+                // Fingerprint unlock, wherever a passcode exists: under locked notes, or under the app lock.
+                @Composable fun fingerprintRow() {
+                    val activity = context as? FragmentActivity
+                    if (activity != null && Biometric.available(activity)) {
+                        CardDivider()
+                        CardRow("Unlock with fingerprint", icon = Ico.FINGERPRINT) {
+                            JSwitch(fingerprint != null, { on ->
+                                if (!on) {
+                                    vm.setFingerprint(null)
+                                    Biometric.forget()
+                                } else {
+                                    val enable = {
+                                        scope.launch {
+                                            val pw = vm.passwordForFingerprint() ?: return@launch
+                                            val bytes = String(pw).toByteArray(Charsets.UTF_8)
+                                            pw.fill('\u0000')
+                                            when (val r = Biometric.encrypt(activity, bytes)) {
+                                                is Biometric.Result.Ok -> {
+                                                    val b64 = java.util.Base64.getUrlEncoder().withoutPadding()
+                                                    vm.setFingerprint(b64.encodeToString(r.iv) + "." + b64.encodeToString(r.bytes))
+                                                }
+                                                is Biometric.Result.Failed -> vm.message = r.message
+                                                else -> {}
+                                            }
+                                            bytes.fill(0)
+                                        }
+                                        Unit
+                                    }
+                                    if (unlocked) enable() else askCurrent = enable
+                                }
+                            })
+                        }
+                    }
+                }
+                SettingsLabel("App lock")
+                Card {
+                    CardRow(
+                        "Lock Margin", icon = Ico.LOCK,
+                        sub = "Asks for your notes passcode every time Margin opens or you come back to it." +
+                            if (fingerprint != null) " Your fingerprint works too." else "",
+                    ) {
+                        JSwitch(appLockOn, { on ->
+                            scope.launch { appLockAsk = (if (on && !vm.hasPasscode()) PasswordMode.CREATE else PasswordMode.ENTER) to on }
+                        })
+                    }
+                    if (appLockOn && lockedCount == 0) fingerprintRow()
+                }
+
                 SettingsLabel("Locked notes")
                 Card {
                     if (lockedCount == 0) {
-                        CardRow("No locked notes", icon = Ico.LOCK, sub = "Lock a note from the ⋯ menu in the editor. You'll create a 6-digit passcode the first time.")
+                        CardRow(
+                            "No locked notes", icon = Ico.LOCK,
+                            sub = "Lock a note from the ⋯ menu in the editor. " +
+                                if (appLockOn) "It uses your app lock passcode." else "You'll create a 6-digit passcode the first time.",
+                        )
                     } else {
                         CardRow(
                             plural(lockedCount, "locked note"), icon = Ico.LOCK,
-                            sub = if (unlocked) "Unlocked until Margin goes to the background." else "Your passcode opens them and the journal.",
+                            sub = if (unlocked) "Unlocked until you leave the note or Margin." else "Your passcode opens them and the journal.",
                         )
                         if (unlocked) {
                             CardDivider()
@@ -313,37 +368,7 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                             if (vm.busy) return@CardRow
                             if (unlocked) newPassword = true else askCurrent = { newPassword = true }
                         })
-                        val activity = context as? FragmentActivity
-                        if (activity != null && Biometric.available(activity)) {
-                            CardDivider()
-                            CardRow("Unlock with fingerprint", icon = Ico.FINGERPRINT) {
-                                JSwitch(fingerprint != null, { on ->
-                                    if (!on) {
-                                        vm.setFingerprint(null)
-                                        Biometric.forget()
-                                    } else {
-                                        val enable = {
-                                            scope.launch {
-                                                val pw = vm.passwordForFingerprint() ?: return@launch
-                                                val bytes = String(pw).toByteArray(Charsets.UTF_8)
-                                                pw.fill('\u0000')
-                                                when (val r = Biometric.encrypt(activity, bytes)) {
-                                                    is Biometric.Result.Ok -> {
-                                                        val b64 = java.util.Base64.getUrlEncoder().withoutPadding()
-                                                        vm.setFingerprint(b64.encodeToString(r.iv) + "." + b64.encodeToString(r.bytes))
-                                                    }
-                                                    is Biometric.Result.Failed -> vm.message = r.message
-                                                    else -> {}
-                                                }
-                                                bytes.fill(0)
-                                            }
-                                            Unit
-                                        }
-                                        if (unlocked) enable() else askCurrent = enable
-                                    }
-                                })
-                            }
-                        }
+                        fingerprintRow()
                     }
                 }
                 // Who and which version, quietly at the end.
@@ -363,6 +388,15 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
         }
         if (old) OldPasswordDialog(onDismiss = { askCurrent = null }, onSubmit = submit)
         else PasscodeDialog(PasswordMode.ENTER, onDismiss = { askCurrent = null }, onOldPassword = { old = true }, onSubmit = submit)
+    }
+    appLockAsk?.let { (mode, on) ->
+        PasscodeDialog(
+            mode, onDismiss = { appLockAsk = null },
+            intro = "Choose a passcode to open Margin. Locked notes, the journal and Passwords will use the same one.",
+            enterSub = if (on) "Your notes passcode will open Margin." else "To turn off the app lock.",
+        ) { code ->
+            if (if (on) vm.turnOnAppLock(code) else vm.turnOffAppLock(code)) { appLockAsk = null; null } else "Wrong passcode"
+        }
     }
     if (newPassword) {
         PasscodeDialog(PasswordMode.CREATE, onDismiss = { newPassword = false }) { password ->

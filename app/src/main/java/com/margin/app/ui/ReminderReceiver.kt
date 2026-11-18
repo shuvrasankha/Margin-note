@@ -39,6 +39,8 @@ class ReminderReceiver : BroadcastReceiver() {
             // Also when "Alarms & reminders" is turned on: alarms set before then were inexact, so set them again.
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
             android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> reminders.rescheduleAll()
+            // The nudge rings once a day, so skipping is just putting it away until tomorrow's.
+            ACTION_SKIP_JOURNAL -> NotificationManagerCompat.from(context).cancel(JOURNAL_REMINDER, NOTIFICATION_ID)
             ACTION_SNOOZE -> if (noteId != null) {
                 reminders.snooze(noteId, System.currentTimeMillis() + SNOOZE_MS)
                 NotificationManagerCompat.from(context).cancel(noteId, NOTIFICATION_ID)
@@ -62,6 +64,14 @@ class ReminderReceiver : BroadcastReceiver() {
                 val done = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
+                        // The daily journal nudge isn't a note: it shows only while today's entry is empty.
+                        if (noteId == JOURNAL_REMINDER) {
+                            val entry = repo.getNote(journalId(java.time.LocalDate.now()))?.takeIf { it.trashedAt == null && !it.deleted }
+                            // Entries are locked notes: a sealed body counts as written.
+                            val written = entry != null && (entry.isLocked || entry.searchText.isNotBlank())
+                            if (!written) journalNudge(context)
+                            return@launch
+                        }
                         // A note deleted since the reminder was set rings no more.
                         val note = repo.getNote(noteId)?.takeIf { it.trashedAt == null && !it.deleted }
                             ?: return@launch reminders.clear(noteId)
@@ -95,6 +105,36 @@ class ReminderReceiver : BroadcastReceiver() {
         private const val SNOOZE_MS = 10 * 60_000L
 
         private const val HABIT_CHANNEL = "habits"
+
+        /** The daily journal nudge: a plain notification that opens the Journal. */
+        private fun journalNudge(c: Context) {
+            c.getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(JOURNAL_CHANNEL, "Journal reminder", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "A daily nudge to write today's journal entry" },
+            )
+            val open = PendingIntent.getActivity(
+                c, JOURNAL_REMINDER.hashCode(),
+                Intent(c, MainActivity::class.java).setAction(RecentWidget.ACTION_OPEN).putExtra(RecentWidget.EXTRA_NOTE, JOURNAL_REMINDER).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val skip = PendingIntent.getBroadcast(
+                c, JOURNAL_REMINDER.hashCode() + 1,
+                Intent(c, ReminderReceiver::class.java).setAction(ACTION_SKIP_JOURNAL),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val n = NotificationCompat.Builder(c, JOURNAL_CHANNEL)
+                .setSmallIcon(R.drawable.ic_reminder)
+                .setContentTitle("Time to journal")
+                .setContentText("You haven't written today's entry yet.")
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .addAction(0, "Skip today", skip)
+                .build()
+            runCatching { NotificationManagerCompat.from(c).notify(JOURNAL_REMINDER, NOTIFICATION_ID, n) }
+        }
+
+        private const val JOURNAL_CHANNEL = "journal"
+        const val ACTION_SKIP_JOURNAL = "com.margin.app.JOURNAL_SKIP"
 
         /** A habit's daily nudge: a plain notification (no alarm sound, no full screen) with Done to tick today. */
         private fun nudge(c: Context, noteId: String, title: String, streak: Int) {

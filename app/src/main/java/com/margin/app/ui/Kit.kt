@@ -53,6 +53,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -101,6 +102,8 @@ object Ico {
     const val COPY = "M8 8h12v12H8zM4 16V4h12"
     val INFO = circle(12f, 12f, 9f) + "M12 11v6M12 7.5v.5"
     const val SETTINGS = "M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4"
+    /** Settings: a cog (Feather's, MIT). [SETTINGS] stays the sliders, for adjusting things. */
+    val GEAR = circle(12f, 12f, 3f) + "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
     const val SYNC = "M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"
     const val SINK = "M4 6h10M4 11h10M4 16h6M18 5v13M15 15l3 3 3-3"
     const val GRAMMAR = "M3 17l4-11 4 11M4.5 13h5M13.5 14l2.5 2.5L21 11"
@@ -122,11 +125,15 @@ object Ico {
     const val ARROW_UP = "M12 19V5M6 11l6-6 6 6"
     const val HANDWRITING = "M3 17l4-11 4 11M4.5 13h5M13 16c1.5 0 2-5 3.5-5s1 5 2.5 5 1.5-2 2-2M3 21h18"
     const val SCAN = "M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 10h8M8 14h5"
+    /** Notifications. Reminders use [ALARM]. */
     const val BELL = "M6 16V10a6 6 0 0 1 12 0v6l1.5 2h-15zM10 21h4"
+    /** An alarm clock, for reminders. */
+    val ALARM = circle(12f, 13f, 7f) + "M12 9.5v3.5l2.2 1.5M4 6.5l3-2.5M20 6.5l-3-2.5M7.5 18.5L6 20.5M16.5 18.5L18 20.5"
     const val PLAY = "M8 5v14l11-7z"
     const val PAUSE = "M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"
     const val CHECKLIST = "M4 6l1.5 1.5L8 5M4 12l1.5 1.5L8 11M4 18l1.5 1.5L8 17M12 6h8M12 12h8M12 18h8"
     const val LOCK = "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v2"
+    const val LOCK_OPEN = "M7 11V8a5 5 0 0 1 9.6-1.9M5 11h14v10H5zM12 15v2"
     const val CHECK = "M5 12l5 5 9-10"
     const val CLOSE = "M6 6l12 12M18 6L6 18"
     const val PLUS = "M12 5v14M5 12h14"
@@ -146,6 +153,12 @@ object Ico {
     const val CAMERA = "M3 8h4l2-3h6l2 3h4v11H3zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7"
     val GLOBE = circle(12f, 12f, 9f) + "M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"
     const val ROTATE = "M20 12a8 8 0 1 1-2.3-5.7M20 3v5h-5"
+    const val ROTATE_LEFT = "M4 12a8 8 0 1 0 2.3-5.7M4 3v5h5"
+    const val CROP = "M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"
+    const val FLIP_H = "M12 3v18M9 7L3 17h6zM15 7l6 10h-6z"
+    const val FLIP_V = "M3 12h18M7 9L17 3v6zM7 15l10 6v-6z"
+    const val RESIZE = "M4 14v6h6M20 10V4h-6M4 20l7-7M20 4l-7 7"
+    const val EDIT = "M4 20h4L19 9l-4-4L4 16zM13 7l4 4"
     const val QUOTE = "M5 5v14M10 8h10M10 12h10M10 16h6"
     const val INDENT = "M4 5h16M11 10h9M11 14h9M4 19h16M4 9l3 3-3 3"
     const val OUTDENT = "M4 5h16M11 10h9M11 14h9M4 19h16M7 9l-3 3 3 3"
@@ -205,14 +218,28 @@ fun tapped(onClick: () -> Unit): () -> Unit {
 
 /** A 44dp tap target holding an icon. */
 @Composable
-fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.accent, enabled: Boolean = true, size: Dp = 22.dp, fill: Boolean = false) {
+fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.accent, enabled: Boolean = true, size: Dp = 22.dp, fill: Boolean = false, soft: Boolean = false) {
     val press = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(44.dp).pressScale(press, 0.88f).clip(CircleShape)
+        // [soft]: on a filled circle, as on the home screen's top bar; the tap target stays 44dp.
+        Modifier.size(44.dp).pressScale(press, 0.88f).then(if (soft) Modifier.padding(2.dp).clip(CircleShape).background(jc.card) else Modifier).clip(CircleShape)
             .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { JIcon(d, if (enabled) color else jc.muted.copy(alpha = 0.4f), size = size, fill = fill) }
+}
+
+/** A 56dp round button in the accent colour, floating over a list (the home screen's New note). */
+@Composable
+fun FloatingAction(d: String, label: String, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        Modifier.size(56.dp).pressScale(press, 0.9f)
+            .shadow(6.dp, CircleShape).clip(CircleShape).background(jc.accent)
+            .clickable(press, androidx.compose.material3.ripple(), role = Role.Button, onClick = tapped(onClick))
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) { JIcon(d, jc.bg, size = 26.dp, stroke = 2.2f) }
 }
 
 /** Plain text button in the accent colour (or [color]). */
@@ -269,11 +296,11 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 
 /** The rounded grey search field. */
 @Composable
-fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false) {
+fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false, fill: Color = jc.surface) {
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).background(jc.surface).padding(horizontal = 12.dp),
+        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).background(fill).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -414,11 +441,55 @@ fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> U
     Column(modifier.fillMaxWidth().clip(JShape.md).background(jc.card), content = content)
 }
 
+/** [items] as rows of a [Card], with a hairline between rows starting [inset] in (past the rows' icon). */
+@Composable
+fun <T> DividedCard(items: List<T>, inset: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier.padding(horizontal = 16.dp), row: @Composable (T) -> Unit) {
+    Card(modifier) {
+        items.forEachIndexed { i, item ->
+            if (i > 0) HorizontalDivider(Modifier.padding(start = inset), color = jc.line)
+            row(item)
+        }
+    }
+}
+
 /** A row's icon on a soft tinted square, as in Settings. */
 @Composable
-fun IconTile(icon: String, color: Color = jc.accent) {
-    Box(Modifier.size(30.dp).clip(JShape.xs).background(color.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
-        JIcon(icon, color, size = 18.dp, stroke = 2f)
+fun IconTile(icon: String, color: Color = jc.accent, size: androidx.compose.ui.unit.Dp = 30.dp) {
+    Box(
+        Modifier.size(size).clip(if (size > 36.dp) JShape.sm else JShape.xs).background(color.copy(alpha = 0.13f)),
+        contentAlignment = Alignment.Center,
+    ) { JIcon(icon, color, size = size * 0.6f, stroke = 2f) }
+}
+
+/**
+ * A ring that fills to [fraction] (0..1), grown in once when shown, with [content] in the middle.
+ * The ring is drawn in [color] over a faint track.
+ */
+@Composable
+fun ProgressRing(
+    fraction: Float, modifier: Modifier = Modifier, color: Color = jc.accent, stroke: androidx.compose.ui.unit.Dp = 8.dp,
+    content: @Composable () -> Unit = {},
+) {
+    val grown by animateFloatAsState(fraction.coerceIn(0f, 1f), androidx.compose.animation.core.tween(700, 80, JMotion.ease), label = "ring")
+    val track = color.copy(alpha = 0.16f)
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.matchParentSize()) {
+            val w = stroke.toPx()
+            val d = size.minDimension - w
+            val tl = Offset((size.width - d) / 2, (size.height - d) / 2)
+            drawArc(track, 0f, 360f, false, tl, Size(d, d), style = Stroke(w))
+            if (grown > 0f) drawArc(color, -90f, 360f * grown, false, tl, Size(d, d), style = Stroke(w, cap = StrokeCap.Round))
+        }
+        content()
+    }
+}
+
+/** A small number with its label, for the stat rows on summary cards. */
+@Composable
+fun StatTile(value: String, label: String, modifier: Modifier = Modifier, color: Color = jc.ink, fill: Color = jc.page) {
+    Column(modifier.clip(JShape.sm).background(fill).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(value, style = JType.subheading, color = color, maxLines = 1)
+        Text(label, style = JType.caption, color = jc.muted, maxLines = 1)
     }
 }
 

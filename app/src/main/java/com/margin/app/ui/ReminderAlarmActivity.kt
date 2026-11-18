@@ -109,7 +109,7 @@ private fun AlarmScreen(title: String, body: String?, repeat: Repeat, onSnooze: 
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(1f))
-        JIcon(Ico.BELL, jc.accent, size = 56.dp, stroke = 1.6f)
+        JIcon(Ico.ALARM, jc.accent, size = 56.dp, stroke = 1.6f)
         Text(
             DateUtils.formatDateTime(context, now, DateUtils.FORMAT_SHOW_TIME),
             Modifier.padding(top = 20.dp), style = JType.small.copy(fontSize = 44.sp), color = jc.ink,

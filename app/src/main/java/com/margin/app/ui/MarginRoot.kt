@@ -45,6 +45,7 @@ import com.margin.app.data.color
 import com.margin.app.data.invoke
 import com.margin.app.data.isSmart
 import com.margin.app.data.newId
+import com.margin.app.data.isTracker
 import kotlinx.coroutines.launch
 
 // ---------- Root ----------
@@ -86,7 +87,20 @@ fun MarginRoot(
             null
         }
     }
-    nav.incoming?.let { share ->
+    // "Open with Margin" on a PDF: straight to reading it, in the note that holds it (no folder to pick).
+    nav.incoming?.takeIf { it.open }?.let { share ->
+        LaunchedEffect(share) {
+            nav.incoming = null
+            val uri = share.image ?: return@LaunchedEffect
+            folders.openPdf(uri, onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }) { place ->
+                editor.openPdf = place
+                if ((nav.current as? Screen.Editor)?.noteId == place.noteId) return@openPdf
+                if (nav.current is Screen.Editor) editor.close()
+                nav.push(Screen.Editor(place.noteId, place.folderId))
+            }
+        }
+    }
+    nav.incoming?.takeIf { !it.open }?.let { share ->
         FolderSheet(
             title = "Save to Margin",
             subject = share.subject?.takeIf { it.isNotBlank() } ?: share.text?.lineSequence()?.firstOrNull { it.isNotBlank() } ?: if (share.pdf) "PDF" else "Photo",
@@ -172,6 +186,8 @@ fun MarginRoot(
     fun Content(shown: NavEntry) {
     /** The screen under this one. */
     val below = nav.stack.getOrNull(shown.depth - 2)
+    /** A Library screen's back label: the list it was opened from (the home screen's cards), else Folders. */
+    fun backTo(below: Screen?) = if (below is Screen.Notes) listName(below.folderId) else "Folders"
         when (val screen = shown.screen) {
             Screen.Folders -> FoldersScreen(
                 folders,
@@ -185,6 +201,7 @@ fun MarginRoot(
                 onReminders = { nav.push(Screen.Reminders) },
                 onJournal = { nav.push(Screen.Journal) },
                 onHabits = { nav.push(Screen.Habits) },
+                onTrackers = { nav.push(Screen.Trackers) },
                 onPasswords = { nav.push(Screen.Passwords) },
                 onBack = ::back,
             )
@@ -193,11 +210,25 @@ fun MarginRoot(
                 val all by folders.liveNotes.collectAsState()
                 val reminders by folders.reminders.collectAsState()
                 val repeats by folders.reminderRepeats.collectAsState()
-                RemindersScreen(all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
+                RemindersScreen(all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below))
             }
             Screen.Journal -> {
                 val all by folders.liveNotes.collectAsState()
-                JournalGate(editor, fingerprint, onCancel = ::back) { JournalScreen(all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal, onBack = ::back) }
+                val journalReminder by folders.journalReminderAt.collectAsState()
+                JournalGate(editor, fingerprint, onCancel = ::back) {
+                    // From the journal nudge: straight on to today's entry, once unlocked.
+                    LaunchedEffect(Unit) {
+                        if (editor.openTodayJournal) {
+                            editor.openTodayJournal = false
+                            folders.openJournal(java.time.LocalDate.now()) { id, folder -> nav.push(Screen.Editor(id, folder)) }
+                        }
+                    }
+                    JournalScreen(
+                        all, onOpenDay = { day -> folders.openJournal(day) { id, folder -> nav.push(Screen.Editor(id, folder)) } }, onDelete = folders::deleteJournal,
+                        onBack = ::back, backLabel = backTo(below),
+                        reminderAt = journalReminder, onSetReminder = folders::setJournalReminder, onClearReminder = folders::clearJournalReminder,
+                    )
+                }
             }
             Screen.Passwords -> JournalGate(
                 editor, fingerprint, onCancel = ::back,
@@ -208,9 +239,20 @@ fun MarginRoot(
                 HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onDelete = folders::deleteHabit, onBack = ::back,
                     reminders = folders.reminders.collectAsState().value, onRemind = folders::setHabitReminder)
             }
+            Screen.Trackers -> {
+                val all by folders.liveNotes.collectAsState()
+                TrackersScreen(all, onOpen = { nav.push(Screen.Tracker(it.id)) }, onAdd = folders::addTracker, onSave = folders::saveTracker, onBack = ::back)
+            }
+            is Screen.Tracker -> {
+                val all by folders.liveNotes.collectAsState()
+                TrackerScreen(
+                    all, screen.id, backLabel = when (below) { Screen.Trackers -> "Trackers"; is Screen.Notes -> listName(below.folderId); else -> "Back" },
+                    onRename = folders::renameTracker, onDelete = folders::deleteTracker, onSave = folders::saveTracker, onBack = ::back,
+                )
+            }
             Screen.Todos -> {
                 val all by folders.liveNotes.collectAsState()
-                TodosScreen(all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back)
+                TodosScreen(all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below))
             }
             is Screen.Notes -> NoteListScreen(
                 vm = notes,
@@ -224,6 +266,11 @@ fun MarginRoot(
                 onOpen = {
                     // A saved password opens in Passwords; one in Recently Deleted is recovered first.
                     if (isLogin(it)) Toast.makeText(context, if (it.trashedAt == null) "Open it in Passwords" else "Recover it to see it in Passwords", Toast.LENGTH_SHORT).show()
+                    // A tracker's lines have a format the plain editor could break, so it opens in Trackers.
+                    else if (isTracker(it)) {
+                        if (it.trashedAt == null) nav.push(Screen.Tracker(it.id))
+                        else Toast.makeText(context, "Recover it to see it in Trackers", Toast.LENGTH_SHORT).show()
+                    }
                     else openNote(Screen.Editor(it.id, it.folderId))
                 },
                 onNew = { openNote(Screen.Editor(newId(), screen.folderId.takeIf { !isVirtualList(it) } ?: DEFAULT_FOLDER_ID)) },
@@ -240,11 +287,22 @@ fun MarginRoot(
                     Screen.Reminders -> "Reminders"
                     Screen.Journal -> "Journal"
                     Screen.Habits -> "Habits"
+                    Screen.Trackers -> "Trackers"
                     Screen.Settings -> "Settings"
                     else -> "Folders"
                 },
                 onFolders = { nav.push(Screen.Folders) },
                 onBack = ::back,
+                glance = if (screen.folderId == ALL_ID && shown.depth == 1) {
+                    val all by folders.liveNotes.collectAsState()
+                    val reminders by folders.reminders.collectAsState()
+                    remember(all, reminders) {
+                        todayGlance(
+                            all, reminders, java.time.LocalDate.now(), java.time.ZoneId.systemDefault(),
+                            onTodos = { nav.push(Screen.Todos) }, onReminders = { nav.push(Screen.Reminders) }, onJournal = { nav.push(Screen.Journal) },
+                        )
+                    }
+                } else null,
             )
             is Screen.Editor -> {
                 val backLabel = when (below) {
@@ -254,6 +312,7 @@ fun MarginRoot(
                     Screen.Reminders -> "Reminders"
                     Screen.Journal -> "Journal"
                     Screen.Habits -> "Habits"
+                    Screen.Trackers -> "Trackers"
                     else -> "Folders"
                 }
                 EditorScreen(

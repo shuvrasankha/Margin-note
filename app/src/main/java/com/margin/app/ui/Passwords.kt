@@ -33,7 +33,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -53,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -84,7 +84,9 @@ import com.margin.app.data.loginBody
 import com.margin.app.data.loginFrom
 import com.margin.app.data.newId
 import com.margin.app.data.normalizeUrl
+import com.margin.app.data.relatedWords
 import com.margin.app.data.siteOf
+import com.margin.app.data.stampPasswordChange
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -131,7 +133,7 @@ class VaultViewModel @Inject constructor(
             ?: NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
         val key = session.key(params) ?: return@launch
         val old = id?.let { entries.value?.firstOrNull { e -> e.id == it }?.login }
-        val stamped = if (old == null || old.password != login.password) login.copy(passwordChangedAt = System.currentTimeMillis()) else login
+        val stamped = stampPasswordChange(old, login, System.currentTimeMillis())
         val body = loginBody(stamped.trimmed())
         val cipher = withContext(Dispatchers.Default) { NoteCrypto.seal(body, key, params) }
         repo.saveNote(id ?: (LOGIN_PREFIX + newId()), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = LOGIN_TITLE)) + body, cipher)
@@ -155,8 +157,10 @@ fun copySecret(context: Context, label: String, text: String, sensitive: Boolean
     clipboard.setPrimaryClip(clip)
     if (sensitive) {
         Handler(Looper.getMainLooper()).postDelayed({
-            val still = runCatching { clipboard.primaryClip?.getItemAt(0)?.text?.toString() == text }.getOrDefault(true)
-            if (still) {
+            // From Android 10 an app in the background reads no clipboard at all, which is the usual case by now
+            // (the password went into another app). So clear unless something else can be seen there.
+            val now = runCatching { clipboard.primaryClip?.getItemAt(0)?.text?.toString() }.getOrNull()
+            if (now == null || now == text) {
                 if (Build.VERSION.SDK_INT >= 28) clipboard.clearPrimaryClip() else clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
             }
         }, 60_000)
@@ -181,7 +185,8 @@ private val NEW_ENTRY = VaultEntry("", Login())
 /** Which logins the list shows: the health card's numbers double as filters. */
 private enum class VaultFilter { ALL, REUSED, WEAK }
 
-private fun isWeak(l: Login) = l.password.isNotEmpty() && PasswordGen.strength(l.password) == Strength.WEAK
+private fun strengthOf(l: Login) = PasswordGen.strength(l.password, l.relatedWords())
+private fun isWeak(l: Login) = l.password.isNotEmpty() && strengthOf(l) == Strength.WEAK
 
 @Composable
 fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
@@ -233,7 +238,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
                 list.isEmpty() -> item { VaultEmpty(onAdd = { openId = "" }) }
                 else -> {
                     item {
-                        SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp))
+                        SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp), fill = jc.card)
                         HealthCard(list.size, reused.size, weak.size, filter, { filter = if (filter == it) VaultFilter.ALL else it })
                     }
                     if (shown.isEmpty()) item {
@@ -246,11 +251,8 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
                     shown.groupBy { e -> e.title.firstOrNull()?.uppercaseChar()?.takeIf { it.isLetter() } ?: '#' }.toSortedMap().forEach { (letter, group) ->
                         item(key = "h-$letter") { SectionLabel(letter.toString(), Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(top = 8.dp)) }
                         item(key = "g-$letter") {
-                            Card(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(horizontal = 16.dp).animateContentSize(JMotion.standard())) {
-                                group.forEachIndexed { i, e ->
-                                    if (i > 0) HorizontalDivider(Modifier.padding(start = 66.dp), color = jc.line)
-                                    LoginRow(e, e.id in reused, e.id in weak, onOpen = { openId = e.id }, onCopy = { copySecret(context, "Password", e.login.password) })
-                                }
+                            DividedCard(group, 66.dp, Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(horizontal = 16.dp).animateContentSize(JMotion.standard())) { e ->
+                                LoginRow(e, e.id in reused, e.id in weak, onOpen = { openId = e.id }, onCopy = { copySecret(context, "Password", e.login.password) })
                             }
                         }
                     }
@@ -369,6 +371,15 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
     var confirmDelete by remember { mutableStateOf(false) }
     // Compared with what was last saved here, so the view shows a save straight away.
     var saved by remember { mutableStateOf(entry.login) }
+    // When the stored login comes back from a save (trimmed, its change time and history updated), show that.
+    androidx.compose.runtime.LaunchedEffect(entry.login) {
+        if (!editing && entry.login != saved) {
+            saved = entry.login
+            name = saved.name; username = saved.username; password = saved.password; url = saved.url; notes = saved.notes
+        }
+    }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    var revealedPast by remember { mutableStateOf<Int?>(null) }
     val edited = saved.copy(name = name, username = username, password = password, url = url, notes = notes)
     val changed = edited != saved
     val canSave = name.isNotBlank() || url.isNotBlank() || username.isNotBlank() || password.isNotEmpty()
@@ -444,7 +455,7 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                             if (password.isNotEmpty()) IconAction(if (reveal) Ico.EYE_OFF else Ico.EYE, if (reveal) "Hide password" else "Show password", { reveal = !reveal }, color = jc.muted, size = 20.dp)
                         }
                         if (password.isNotEmpty()) Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-                            StrengthMeter(PasswordGen.strength(password))
+                            StrengthMeter(strengthOf(edited))
                         }
                     }
                     if (generating || password.isEmpty()) Generator(
@@ -475,7 +486,7 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                             }
                         }
                         if (password.isNotEmpty()) Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            StrengthMeter(PasswordGen.strength(password))
+                            StrengthMeter(strengthOf(edited))
                             if (reused) Text("  ·  Used on another login too", style = JType.small, color = jc.danger)
                         }
                         if (url.isNotBlank()) {
@@ -497,6 +508,25 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                         "Password changed " + fullTime(context, saved.passwordChangedAt),
                         Modifier.fillMaxWidth(), style = JType.small, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
+                    if (saved.history.isNotEmpty()) {
+                        Card(Modifier.animateContentSize(JMotion.standard())) {
+                            CardRow(
+                                "Previous Passwords", sub = plural(saved.history.size, "password"),
+                                onClick = { showHistory = !showHistory; revealedPast = null }, icon = Ico.CLOCK,
+                            ) { Box(Modifier.rotate(if (showHistory) 270f else 90f)) { JIcon(Ico.CHEVRON, jc.muted, size = 18.dp, stroke = 2f) } }
+                            if (showHistory) saved.history.forEachIndexed { i, past ->
+                                CardDivider()
+                                val shownPast = revealedPast == i
+                                DetailRow(
+                                    "Until " + fullTime(context, past.replacedAt),
+                                    if (shownPast) past.password else "•".repeat(minOf(past.password.length, 16)), mono = shownPast,
+                                ) {
+                                    IconAction(if (shownPast) Ico.EYE_OFF else Ico.EYE, if (shownPast) "Hide old password" else "Show old password", { revealedPast = if (shownPast) null else i }, color = jc.muted, size = 20.dp)
+                                    IconAction(Ico.COPY, "Copy old password", { copySecret(context, "Old password", past.password) }, color = jc.accent, size = 20.dp)
+                                }
+                            }
+                        }
+                    }
                     Card { CardRow("Delete Password", onClick = { confirmDelete = true }, labelColor = jc.danger, icon = Ico.TRASH) }
                 }
                 Spacer(Modifier.height(16.dp))

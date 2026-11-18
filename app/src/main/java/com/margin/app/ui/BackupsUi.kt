@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.margin.app.data.backupTimeOf
+import com.margin.app.data.BackupPasswordNeededException
+import com.margin.app.data.WrongBackupPasswordException
 import com.margin.app.sync.BackupManager
 import com.margin.app.sync.BackupPrefs
 import com.margin.app.sync.BackupStatus
@@ -63,6 +65,18 @@ class BackupsViewModel @Inject constructor(
     val running: StateFlow<Boolean> = backups.running
     var restoring by mutableStateOf(false)
         private set
+    val sealed: StateFlow<Boolean> = prefs.sealed
+
+    /** A restore waiting for the backup's password: what to restore, and whether a password was already tried. */
+    data class PasswordAsk(val target: BackupTarget?, val name: String?, val uri: Uri?, val wrong: Boolean)
+    var asking by mutableStateOf<PasswordAsk?>(null)
+        private set
+
+    fun setBackupPassword(password: String?, onDone: (String) -> Unit) {
+        prefs.setBackupPassword(password)
+        onDone(if (password == null) "Backups are no longer protected with a password" else "From now on, backups are protected with your password")
+        if (prefs.targets.value.isNotEmpty()) BackupWorker.runSoon(context)
+    }
 
     private fun reschedule() = BackupWorker.schedule(context, prefs.targets.value.isNotEmpty())
 
@@ -130,17 +144,24 @@ class BackupsViewModel @Inject constructor(
 
     suspend fun list(t: BackupTarget): List<String> = backups.backupsIn(t)
 
-    fun restore(t: BackupTarget?, name: String?, uri: Uri?, onDone: (String) -> Unit) = viewModelScope.launch {
+    fun restore(t: BackupTarget?, name: String?, uri: Uri?, onDone: (String) -> Unit, password: String? = null) = viewModelScope.launch {
+        asking = null
         restoring = true
         val msg = try {
-            val n = if (t != null && name != null) backups.restore(t, name) else backups.restore(uri!!)
+            val n = if (t != null && name != null) backups.restore(t, name, password) else backups.restore(uri!!, password)
             if (n == 0) "Restored. This device already had everything in that backup." else "Restored ${plural(n, "note")}"
+        } catch (_: BackupPasswordNeededException) {
+            asking = PasswordAsk(t, name, uri, wrong = false); null
+        } catch (_: WrongBackupPasswordException) {
+            asking = PasswordAsk(t, name, uri, wrong = true); null
         } catch (e: Exception) {
             "Restore failed: ${e.message ?: e.javaClass.simpleName}"
         }
         restoring = false
-        onDone(msg)
+        msg?.let(onDone)
     }
+
+    fun cancelAsk() { asking = null }
 }
 
 /** Settings: the places full backups go besides Drive sync, with Back up now and restore. */
@@ -154,11 +175,25 @@ fun BackupsSection(vm: BackupsViewModel) {
     var addingWebDav by remember { mutableStateOf(false) }
     var opened by remember { mutableStateOf<BackupTarget?>(null) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
+    val sealed by vm.sealed.collectAsState()
+    var settingPassword by remember { mutableStateOf(false) }
+    var clearingPassword by remember { mutableStateOf(false) }
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let { uri -> vm.addFolder(uri, toast) } }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { restoreUri = it }
 
     if (addingWebDav) WebDavDialog(vm, onDismiss = { addingWebDav = false }, onAdded = { addingWebDav = false; toast(it) })
     opened?.let { t -> TargetSheet(vm, t, status[t.id], running, onDismiss = { opened = null }, toast = toast) }
+    if (settingPassword) BackupPasswordDialog(changing = sealed, onDismiss = { settingPassword = false }) { settingPassword = false; vm.setBackupPassword(it, toast) }
+    if (clearingPassword) MarginDialog(
+        onDismissRequest = { clearingPassword = false },
+        title = { Text("Stop protecting backups?") },
+        text = { Text("New backups will be readable by anyone with access to the place they're kept. Backups already made keep their password.") },
+        confirmButton = { TextButton(onClick = { clearingPassword = false; vm.setBackupPassword(null, toast) }) { Text("Turn Off", color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { clearingPassword = false }) { Text("Cancel") } },
+    )
+    vm.asking?.let { ask ->
+        RestorePasswordDialog(ask.wrong, onDismiss = vm::cancelAsk) { pw -> vm.restore(ask.target, ask.name, ask.uri, toast, pw) }
+    }
     restoreUri?.let { uri ->
         RestoreConfirm("the file you picked", onDismiss = { restoreUri = null }) { restoreUri = null; vm.restore(null, null, uri, toast) }
     }
@@ -189,6 +224,14 @@ fun BackupsSection(vm: BackupsViewModel) {
             "Add a WebDAV server", icon = Ico.GLOBE, labelColor = jc.accent,
             sub = "Nextcloud, ownCloud, Koofr, a home NAS…", onClick = { addingWebDav = true },
         )
+        CardDivider()
+        CardRow(
+            "Backup password", icon = Ico.LOCK,
+            sub = if (sealed) "On. Backups can only be opened with it." else "Off. Anyone who can open the place a backup is kept can read your notes.",
+            onClick = { settingPassword = true },
+        ) {
+            JSwitch(sealed, { on -> if (on) settingPassword = true else clearingPassword = true })
+        }
         if (targets.isNotEmpty()) {
             CardDivider()
             CardRow(
@@ -207,7 +250,8 @@ fun BackupsSection(vm: BackupsViewModel) {
         )
     }
     Text(
-        "Backups hold every note and file. Locked notes and saved passwords stay encrypted in them.",
+        if (sealed) "Backups hold every note and file, sealed with your backup password (AES-256)."
+        else "Backups hold every note and file. Locked notes and saved passwords stay encrypted in them; turn on a backup password to seal the rest.",
         Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp), style = JType.small, color = jc.muted,
     )
 }
@@ -313,8 +357,7 @@ private fun WebDavDialog(vm: BackupsViewModel, onDismiss: () -> Unit, onAdded: (
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false))
                 OutlinedTextField(user, { user = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Username") }, shape = JShape.sm,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false))
-                OutlinedTextField(password, { password = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Password") }, shape = JShape.sm,
-                    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                PasswordField(password, { password = it; error = null }, "Password")
             }
         },
         confirmButton = {
@@ -329,3 +372,67 @@ private fun WebDavDialog(vm: BackupsViewModel, onDismiss: () -> Unit, onAdded: (
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Sets or changes the backup password: typed twice, with a plain warning that it can't be recovered. */
+@Composable
+private fun BackupPasswordDialog(changing: Boolean, onDismiss: () -> Unit, onSet: (String) -> Unit) {
+    var pw by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
+    val tooShort = pw.length in 1 until 8
+    val mismatch = again.isNotEmpty() && again != pw
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(if (changing) "Change Backup Password" else "Protect Backups")
+                when {
+                    tooShort -> Text("Use at least 8 characters.", color = jc.danger, style = JType.small)
+                    mismatch -> Text("The two passwords don't match.", color = jc.danger, style = JType.small)
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Backups will be sealed with this password. Write it down: if it's lost, Margin can't open them for you." +
+                        if (changing) " Backups already made keep the password they were made with." else "",
+                )
+                PasswordField(pw, { pw = it }, "Password")
+                PasswordField(again, { again = it }, "Again")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSet(pw) }, enabled = pw.length >= 8 && again == pw) { Text(if (changing) "Change" else "Turn On", fontWeight = FontWeight.SemiBold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** A sealed backup's password, asked for at restore. */
+@Composable
+private fun RestorePasswordDialog(wrong: Boolean, onDismiss: () -> Unit, onRestore: (String) -> Unit) {
+    var pw by remember { mutableStateOf("") }
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Backup Password")
+                if (wrong) Text("That password doesn't open this backup.", color = jc.danger, style = JType.small)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("This backup is protected. Enter the backup password it was made with.")
+                PasswordField(pw, { pw = it }, "Password")
+            }
+        },
+        confirmButton = { TextButton(onClick = { onRestore(pw) }, enabled = pw.isNotEmpty()) { Text("Restore", fontWeight = FontWeight.SemiBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PasswordField(value: String, onChange: (String) -> Unit, label: String) = OutlinedTextField(
+    value, onChange, Modifier.fillMaxWidth(), singleLine = true, label = { Text(label) }, shape = JShape.sm,
+    visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+)

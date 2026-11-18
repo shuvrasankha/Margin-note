@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -70,6 +70,7 @@ import com.margin.app.data.isValidTagName
 import com.margin.app.data.reorderGroup
 import com.margin.app.data.subtreeIds
 import com.margin.app.data.todoReport
+import com.margin.app.data.isTracker
 
 // ---------- Folders ----------
 
@@ -77,7 +78,7 @@ import com.margin.app.data.todoReport
 @Composable
 fun FoldersScreen(
     vm: FoldersViewModel, onOpen: (String) -> Unit, onSearch: () -> Unit, onNew: () -> Unit, onEdit: () -> Unit, onSettings: () -> Unit,
-    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onHabits: () -> Unit, onPasswords: () -> Unit, onBack: () -> Unit,
+    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onHabits: () -> Unit, onTrackers: () -> Unit, onPasswords: () -> Unit, onBack: () -> Unit,
 ) {
     val syncBanner by vm.syncBanner.collectAsState()
     val rows by vm.rows.collectAsState()
@@ -98,7 +99,8 @@ fun FoldersScreen(
     val smart = rows.filter { it.folder.isSmart }
 
     Scaffold(
-        topBar = { NavBar("All Notes", onBack) { TextAction("Edit", onEdit); IconAction(Ico.SETTINGS, "Settings", onSettings) } },
+        containerColor = jc.page,
+        topBar = { NavBar("All Notes", onBack, color = jc.page) { TextAction("Edit", onEdit); IconAction(Ico.GEAR, "Settings", onSettings) } },
         bottomBar = {
             BottomBar {
                 IconAction(Ico.NEW_FOLDER, "New folder", { creatingIn = "" }, size = 24.dp)
@@ -111,8 +113,8 @@ fun FoldersScreen(
             item {
                 // Opens All Notes with its search field focused.
                 Row(
-                    Modifier.padding(horizontal = 20.dp).padding(bottom = 8.dp).fillMaxWidth().height(40.dp).clip(JShape.sm)
-                        .background(jc.surface).clickable(role = Role.Button, onClick = onSearch).semantics { contentDescription = "Search" }
+                    Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp).fillMaxWidth().height(44.dp).clip(JShape.sm)
+                        .background(jc.card).clickable(role = Role.Button, onClick = onSearch).semantics { contentDescription = "Search" }
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -123,41 +125,50 @@ fun FoldersScreen(
             }
             syncBanner?.let { banner -> item { SyncBannerRow(banner, vm::retrySync) } }
             item { SectionLabel("Library") }
-            item { FolderListRow(Ico.FILE, "All Notes", allCount, onClick = { onOpen(ALL_ID) }) }
-            item { FolderListRow(Ico.PIN, "Pinned", pinnedCount, onClick = { onOpen(PINNED_ID) }) }
             item {
-                // To-do lists not finished yet; the screen shows the progress report.
-                val notes by vm.liveNotes.collectAsState()
-                val open = remember(notes) {
-                    todoReport(notes, todayEpochDay(), java.time.ZoneId.systemDefault()).lists.count { it.status != TodoStatus.DONE }
-                }
-                FolderListRow(Ico.CHECKLIST, "To-dos", open, onClick = onTodos)
-            }
-            item {
-                // Notes with a reminder set on this phone (of notes still around).
                 val notes by vm.liveNotes.collectAsState()
                 val reminders by vm.reminders.collectAsState()
-                val count = remember(notes, reminders) { notes.count { it.id in reminders } }
-                FolderListRow(Ico.BELL, "Reminders", count, onClick = onReminders)
-            }
-            item {
-                val notes by vm.liveNotes.collectAsState()
-                FolderListRow(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onClick = onJournal)
-                FolderListRow(ICON_HABITS, "Habits", remember(notes) { notes.count(::isHabit) }, onClick = onHabits)
-                FolderListRow(ICON_PASSWORDS, "Passwords", remember(notes) { notes.count { com.margin.app.data.isLogin(it) } }, onClick = onPasswords)
+                // To-do lists not finished yet (the screen shows the progress report), and reminders of notes still around.
+                val openTodos = remember(notes) {
+                    todoReport(notes, todayEpochDay(), java.time.ZoneId.systemDefault()).lists.count { it.status != TodoStatus.DONE }
+                }
+                val reminderCount = remember(notes, reminders) { notes.count { it.id in reminders } }
+                val tiles = listOf(
+                    LibraryItem(Ico.FILE, "All Notes", allCount) { onOpen(ALL_ID) },
+                    LibraryItem(Ico.PIN, "Pinned", pinnedCount) { onOpen(PINNED_ID) },
+                    LibraryItem(Ico.CHECKLIST, "To-dos", openTodos, onTodos),
+                    LibraryItem(Ico.ALARM, "Reminders", reminderCount, onReminders),
+                    LibraryItem(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onJournal),
+                    LibraryItem(ICON_HABITS, "Habits", remember(notes) { notes.count(::isHabit) }, onHabits),
+                    LibraryItem(ICON_TRACKERS, "Trackers", remember(notes) { notes.count { isTracker(it) } }, onTrackers),
+                    LibraryItem(ICON_PASSWORDS, "Passwords", remember(notes) { notes.count { com.margin.app.data.isLogin(it) } }, onPasswords),
+                )
+                // Two to a row. Plain rows, not a lazy grid: this sits inside the list.
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    tiles.chunked(2).forEach { pair ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            pair.forEach { LibraryTile(it, Modifier.weight(1f)) }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
             }
             item { SectionLabel("Folders") }
-            items(regular, key = { it.folder.id }) { row ->
+            itemsIndexed(regular, key = { _, it -> it.folder.id }) { i, row ->
                 Column(Modifier.animateItem()) {
-                    FolderListRow(Ico.FOLDER, row.folder.name, row.count, row.depth, onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row })
+                    FolderListRow(
+                        Ico.FOLDER, row.folder.name, row.count, row.depth, onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row },
+                        first = i == 0, last = i == regular.lastIndex,
+                    )
                 }
             }
             if (smart.isNotEmpty()) {
                 item { SectionLabel("Smart folders") }
-                items(smart, key = { it.folder.id }) { row ->
+                itemsIndexed(smart, key = { _, it -> it.folder.id }) { i, row ->
                     FolderListRow(
                         Ico.SMART_FOLDER, row.folder.name, row.count, sub = describe(row.folder.smartFilter!!, tags),
                         onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row },
+                        first = i == 0, last = i == smart.lastIndex,
                     )
                 }
             }
@@ -165,7 +176,7 @@ fun FoldersScreen(
                 item { SectionLabel("Tags") }
                 item {
                     FlowRow(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -466,26 +477,59 @@ internal fun describe(filter: SmartFilter, tags: List<TagCount>): String {
     return if (parts.isEmpty()) "Every note" else parts.joinToString(" · ")
 }
 
+/** A Library place: its icon, name, count and where a tap goes. */
+internal data class LibraryItem(val icon: String, val name: String, val count: Int, val onClick: () -> Unit)
+
+/** A Library place as a card: icon tile and count on top, the name under them. */
+@Composable
+internal fun LibraryTile(item: LibraryItem, modifier: Modifier = Modifier) {
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Column(
+        modifier.pressScale(press).clip(JShape.lg).background(jc.card)
+            .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = item.onClick)
+            .padding(14.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconTile(item.icon, size = 38.dp)
+            Spacer(Modifier.weight(1f))
+            CountText(item.count, JType.heading, jc.ink)
+        }
+        Text(item.name, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * A folder in a rounded group: [first] and [last] round the group's top and bottom corners, and rows between
+ * them are split by a hairline. Sub-folders indent by [depth].
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun FolderListRow(icon: String, name: String, count: Int, depth: Int = 0, sub: String? = null, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
-    val start = 20.dp + 24.dp * depth
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = if (sub == null) 48.dp else 60.dp)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = start, end = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        JIcon(icon, jc.accent, size = 20.dp)
-        Column(Modifier.weight(1f).padding(vertical = if (sub == null) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(name, style = JType.row, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            sub?.let { Text(it, style = JType.small, color = jc.muted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+internal fun FolderListRow(
+    icon: String, name: String, count: Int, depth: Int = 0, sub: String? = null, onClick: () -> Unit, onLongClick: (() -> Unit)? = null,
+    first: Boolean = true, last: Boolean = true,
+) {
+    val shape = JShape.group(first, last)
+    val start = 16.dp + 22.dp * depth
+    Column(Modifier.padding(horizontal = 16.dp).clip(shape).background(jc.card)) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = if (sub == null) 52.dp else 64.dp)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .padding(start = start, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconTile(icon)
+            Column(Modifier.weight(1f).padding(vertical = if (sub == null) 0.dp else 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(name, style = JType.row, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                sub?.let { Text(it, style = JType.small, color = jc.muted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+            CountText(count, JType.secondary, jc.muted)
+            JIcon(Ico.CHEVRON, jc.muted, size = 14.dp, stroke = 2.2f)
         }
-        CountText(count, JType.secondary, jc.muted)
-        JIcon(Ico.CHEVRON, jc.muted, size = 14.dp, stroke = 2.2f)
+        if (!last) HorizontalDivider(Modifier.padding(start = start + 42.dp), color = jc.line)
     }
-    HorizontalDivider(Modifier.padding(start = start, end = 20.dp), color = jc.line)
 }
 
 /** Name plus filter for a smart folder. Every condition that's set must match. */

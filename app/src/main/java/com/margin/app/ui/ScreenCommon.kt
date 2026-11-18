@@ -8,6 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -220,12 +222,30 @@ internal fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        JIcon(icon, jc.muted, size = 56.dp, stroke = 1.2f)
-        Text(title, Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading, color = jc.ink, textAlign = TextAlign.Center)
+        EmptyHeading(icon, title)
         Text(text, style = JType.secondary.copy(fontSize = 16.sp, lineHeight = 23.sp), color = jc.muted, textAlign = TextAlign.Center)
         if (button != null) PrimaryButton(button, onButton, Modifier.padding(top = 28.dp))
         if (secondary != null) Box(Modifier.padding(top = 8.dp)) { TextAction(secondary, onSecondary) }
     }
+}
+
+/** A big icon in a soft circle, a heading, a line of help and an optional button: an empty page inside a list. */
+@Composable
+internal fun BigEmpty(icon: String, title: String, text: String, button: String? = null, onButton: () -> Unit = {}) {
+    Column(Modifier.fillMaxWidth().appear().padding(horizontal = 32.dp, vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        EmptyHeading(icon, title)
+        Text(text, style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
+        if (button != null) PrimaryButton(button, onButton, Modifier.padding(top = 28.dp))
+    }
+}
+
+/** The empty pages' icon in a soft circle over their heading. */
+@Composable
+private fun EmptyHeading(icon: String, title: String) {
+    Box(Modifier.size(96.dp).clip(CircleShape).background(jc.selected), contentAlignment = Alignment.Center) {
+        JIcon(icon, jc.accent, size = 44.dp, stroke = 1.6f)
+    }
+    Text(title, Modifier.padding(top = 22.dp, bottom = 8.dp), style = JType.heading, color = jc.ink, textAlign = TextAlign.Center)
 }
 
 /** Search found nothing: what was searched, other things to try, and a note titled with the query. */

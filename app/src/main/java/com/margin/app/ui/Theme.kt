@@ -100,6 +100,12 @@ object JShape {
     val lg = RoundedCornerShape(20.dp)
     val pill = RoundedCornerShape(50)
     val sheet = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+    /** One row of a lazy list drawn as a [md] card: rounded on top when [first], at the bottom when [last]. */
+    fun group(first: Boolean, last: Boolean): RoundedCornerShape {
+        val top = if (first) 16.dp else 0.dp
+        val bottom = if (last) 16.dp else 0.dp
+        return RoundedCornerShape(top, top, bottom, bottom)
+    }
 }
 
 object JElevation {

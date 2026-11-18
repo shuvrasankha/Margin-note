@@ -51,6 +51,18 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         _fingerprint.value = blob
     }
 
+    /**
+     * App lock: a tiny sealed sample (the locked-note format) that the notes passcode opens, so the passcode can
+     * be checked even with no locked notes. Null when the app lock is off. Device-only.
+     */
+    private val _appLock = MutableStateFlow(prefs.getString(K_APP_LOCK, null))
+    val appLock: StateFlow<String?> = _appLock
+
+    fun setAppLock(sample: String?) {
+        prefs.edit().putString(K_APP_LOCK, sample).apply()
+        _appLock.value = sample
+    }
+
     /** Look of the app: theme, text size and list preview lines. */
     private val _appearance = MutableStateFlow(
         Appearance(
@@ -118,6 +130,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         const val K_GRID_VIEW = "gridView"
         const val K_WELCOME = "welcomeDone"
         const val K_FINGERPRINT = "fingerprintPassword"
+        const val K_APP_LOCK = "appLockSample"
         const val K_AUTO_SORT = "autoSortChecked"
         const val K_DEFAULT_SORT = "defaultSort"
         const val K_DEFAULT_ASC = "defaultSortAscending"

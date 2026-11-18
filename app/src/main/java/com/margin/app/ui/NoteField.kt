@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -160,6 +161,9 @@ internal val FOLDED_SIZE = 0.5.sp // a folded line still exists in the field, ju
 
 /** Extra room under each line of text on four-line paper, as a share of its font size. */
 internal const val FOUR_LINE_GAP = 0.6f
+
+/** Extra height (sp) of a to-do line, split above and below it, so the items don't sit tight together. */
+internal const val CHECK_GAP = 12f
 
 @Composable
 internal fun lineStyle(type: BlockType, font: FontFamily = Inter): TextStyle = when (type) {
@@ -287,6 +291,9 @@ internal fun NoteField(
     // A PDF open full screen, by its line's id (its file changes when a tool edits it).
     var viewingPdf by remember { mutableStateOf<String?>(null) }
     viewingPdf?.let { id -> PdfViewer(vm, id, onClose = { viewingPdf = null }) }
+    // A PDF opened with Margin goes straight to the viewer once its note is showing (after unlocking, if locked).
+    val pdfToOpen by remember { derivedStateOf { vm.pdfToOpen() } }
+    LaunchedEffect(pdfToOpen) { pdfToOpen?.let { viewingPdf = it; vm.openPdf = null } }
     // The table editor, for a table just added or tapped.
     vm.editingTable?.let { id ->
         val line = vm.doc.lines.indexOfFirst { it.id == id }
@@ -328,7 +335,7 @@ internal fun NoteField(
     val fourLine = vm.paper == Paper.FOUR_LINE
     fun textHeight(style: TextStyle) = if (fourLine) (style.lineHeight.value + style.fontSize.value * FOUR_LINE_GAP).sp else style.lineHeight
     val foldedLines = remember(doc) { aiFoldedLines(doc) }
-    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine) {
+    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine, vm.justChecked) {
         buildAnnotatedString {
             // Each ParagraphStyle range is already its own paragraph, so a real '\n' would add an empty one
             // after every line. Show a zero-width space in its place (same length, so offsets still map 1:1).
@@ -347,7 +354,10 @@ internal fun NoteField(
                     ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp }
                     // shortcut: the gap goes under every row of a wrapped title, not just its last; fine while titles are short.
                     ?: if (i == 0) (textHeight(style).value + TITLE_GAP).sp
-                    else if (aiRunStart(doc, i) && line.isEmpty()) AI_HEADER.sp else textHeight(style)
+                    else if (aiRunStart(doc, i) && line.isEmpty()) AI_HEADER.sp
+                    // shortcut: the room goes on every row of a wrapped item, not only between items (Compose has no paragraph spacing).
+                    else if (meta.type == BlockType.CHECK && !fourLine) (textHeight(style).value + CHECK_GAP).sp
+                    else textHeight(style)
                 // A one-row paragraph is trimmed to its font height by default; an attachment's line must keep its full height.
                 // A link with a preview keeps its text at the top, leaving the space below for the card.
                 val heightStyle = when {
@@ -356,6 +366,7 @@ internal fun NoteField(
                     fourLine -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
                     i == 0 -> LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.None) // the gap below the title
                     meta.ai && line.isEmpty() -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+                    meta.type == BlockType.CHECK -> LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None) // room above and below
                     else -> null
                 }
                 if (foldedLines[i]) {
@@ -369,7 +380,8 @@ internal fun NoteField(
                 addStyle(
                     style.toSpanStyle().copy(
                         color = if (checked) muted else style.color,
-                        textDecoration = if (checked) TextDecoration.LineThrough else null,
+                        // The line ticked a moment ago gets its strike drawn on as it animates (see the drawing below).
+                        textDecoration = if (checked && meta.id != vm.justChecked) TextDecoration.LineThrough else null,
                     ),
                     start, end,
                 )
@@ -468,6 +480,15 @@ internal fun NoteField(
     // The paper runs on past the text to fill the rest of the screen (the note's scroll view clips it).
     val pageBelow = with(px) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val lineStarts = remember(doc) { doc.texts.runningFold(0) { at, t -> at + t.length + 1 }.dropLast(1) }
+    // The strike-through sweep for a line just ticked; done, the line's own strike-through shows.
+    val sweep = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(vm.justChecked) {
+        if (vm.justChecked == null) return@LaunchedEffect
+        sweep.snapTo(0f)
+        sweep.animateTo(1f, androidx.compose.animation.core.tween(300, easing = JMotion.ease))
+        vm.justChecked = null
+    }
+    val strikeAt = vm.justChecked?.let { id -> doc.lines.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
     fun docLine(offset: Int) = lineStarts.binarySearch(offset).let { if (it >= 0) it else -it - 2 }.coerceIn(0, doc.lines.lastIndex)
     // No paper under objects (they carry their own background) or under the title and headings.
     fun bareLine(offset: Int): Boolean = docLine(offset).let { i ->
@@ -575,6 +596,25 @@ internal fun NoteField(
                 .drawWithContent {
                     drawContent()
                     val l = layout ?: return@drawWithContent
+                    // A line just ticked: its strike-through draws across it, row by row, before the text's own takes over.
+                    strikeAt?.let { i ->
+                        if (l.layoutInput.text.length != doc.text.length) return@let
+                        val start = lineStarts[i]
+                        val end = start + doc.texts[i].length
+                        if (end <= start) return@let
+                        val fs = styles.getValue(doc.lines[i].type).fontSize.let { if (it.isSp) it else JType.body.fontSize }.toPx()
+                        val rows = (l.getLineForOffset(start)..l.getLineForOffset(end)).map { r ->
+                            val x0 = if (r == l.getLineForOffset(start)) l.getHorizontalPosition(start, true) else l.getLineLeft(r)
+                            Triple(x0, maxOf(x0, l.getLineRight(r)), l.getLineBaseline(r) - fs * 0.3f)
+                        }
+                        var left = rows.sumOf { (a, b, _) -> (b - a).toDouble() }.toFloat() * sweep.value
+                        for ((x0, x1, y) in rows) {
+                            if (left <= 0f) break
+                            val x = minOf(x1, x0 + left)
+                            drawLine(muted, Offset(x0, y), Offset(x, y), strokeWidth = maxOf(1.dp.toPx(), fs / 16f))
+                            left -= x1 - x0
+                        }
+                    }
                     val flagged = misspelled.map { Triple(it.start, it.end, squiggle) } + grammar.map { Triple(it.start, it.end, grammarLine) }
                     if (l.layoutInput.text.length == doc.text.length) flagged.forEach { (start, end, color) ->
                         // A wavy underline under the flagged words (per row, should they wrap).
@@ -825,7 +865,7 @@ internal fun NoteField(
                         else -> CheckCircle(
                             meta.checked,
                             size = with(density) { minOf(firstRow * 0.8f, GUTTER.toPx() * 0.75f).toDp() }.coerceAtMost(22.dp),
-                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.readOnly, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) })
+                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.trashed, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) })
                                 .semantics { contentDescription = if (meta.checked) "Checked" else "Not checked" },
                         )
                     }

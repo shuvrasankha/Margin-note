@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -64,6 +65,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -85,6 +87,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.margin.app.data.Drawing
@@ -102,6 +105,7 @@ import com.margin.app.data.isPdf
 import com.margin.app.data.isSmart
 import com.margin.app.data.lastEdited
 import com.margin.app.data.snippet
+import com.margin.app.data.isTracker
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -126,6 +130,8 @@ fun NoteListScreen(
     backLabel: String?,
     onFolders: () -> Unit,
     onBack: () -> Unit,
+    /** The home screen's date and "today" cards; null elsewhere. */
+    glance: TodayGlance? = null,
 ) {
     LaunchedEffect(folderId) { vm.show(folderId) }
     val filter by vm.filter.collectAsState()
@@ -150,6 +156,24 @@ fun NoteListScreen(
     val keepDays by vm.keepDeletedDays.collectAsState()
     var confirmEmpty by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Locking the selected notes: asks for the notes passcode first unless notes are already unlocked.
+    var lockPasscode by remember { mutableStateOf<PasswordMode?>(null) }
+    val lockScope = rememberCoroutineScope()
+    val lockContext = LocalContext.current
+    val lockSelected = {
+        vm.lockSelected { n ->
+            val msg = when (n) { 0 -> "Those notes are already locked"; 1 -> "Note locked"; else -> "$n notes locked" }
+            android.widget.Toast.makeText(lockContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    lockPasscode?.let { mode ->
+        var old by remember { mutableStateOf(false) }
+        val submit: suspend (CharArray) -> String? = { pw ->
+            if (vm.enterPassword(pw)) { lockPasscode = null; lockSelected(); null } else if (old) "Wrong password" else "Wrong passcode"
+        }
+        if (old) OldPasswordDialog(onDismiss = { lockPasscode = null }, onSubmit = submit)
+        else PasscodeDialog(mode, onDismiss = { lockPasscode = null }, onOldPassword = if (mode == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit)
+    }
     var picking by remember { mutableStateOf(false) }
     var pickingTemplate by remember { mutableStateOf(false) }
     val savedTemplates by vm.templates.collectAsState()
@@ -166,7 +190,11 @@ fun NoteListScreen(
         vm.selected.filter { it !in ids }.forEach(vm::toggleSelected)
     }
 
+    // The floating New note button, wherever notes can be made; the lists leave room under it.
+    val showNew = canCreate && !selecting
+    val listEnd = if (showNew) 96.dp else 24.dp
     Scaffold(
+        containerColor = jc.page,
         snackbarHost = {
             SnackbarHost(snackbar) { data ->
                 Snackbar(
@@ -174,30 +202,36 @@ fun NoteListScreen(
                 )
             }
         },
+        floatingActionButton = {
+            if (showNew) FloatingAction(Ico.COMPOSE, "New note", onNew)
+        },
         topBar = {
-            if (selecting) NavBar(null, {}) { TextAction("Done", vm::clearSelection, bold = true) }
+            if (selecting) NavBar(null, {}, color = jc.page) { TextAction("Done", vm::clearSelection, bold = true) }
             else NavBar(
-                backLabel, onBack,
+                backLabel, onBack, color = jc.page,
                 leading = if (backLabel != null) null else ({
+                    // A soft pill, matching the round buttons on the right.
                     Row(
-                        Modifier.heightIn(min = 44.dp).clip(JShape.xs).clickable(role = Role.Button, onClick = onFolders)
-                            .padding(horizontal = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        Modifier.padding(start = 6.dp).height(40.dp).clip(JShape.pill).background(jc.card)
+                            .clickable(role = Role.Button, onClick = onFolders).padding(start = 12.dp, end = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        JIcon(Ico.FOLDER, jc.accent, stroke = 2f)
-                        Text("Folders", style = JType.row, color = jc.accent)
+                        JIcon(Ico.FOLDER, jc.accent, size = 20.dp, stroke = 2f)
+                        Text("Folders", style = JType.row, color = jc.ink, fontWeight = FontWeight.Medium)
                     }
                 }),
             ) {
                 if (!isTrash && query.isBlank()) {
                     val f = folder
                     if (f != null) SortMenu(
-                        f.sortBy, f.sortAscending, grid = grid, onGrid = onGrid, onChange = vm::setSort,
+                        f.sortBy, f.sortAscending, grid = grid, onGrid = onGrid, onChange = vm::setSort, soft = backLabel == null,
                         templateLabel = if (f.isSmart) null else templateLabel(f.template, savedTemplates), onTemplate = { pickingTemplate = true },
                     )
-                    else ViewMenu(grid, onGrid)
+                    else ViewMenu(grid, onGrid, soft = backLabel == null)
                 }
-                IconAction(Ico.SETTINGS, "Settings", onSettings)
+                IconAction(Ico.GEAR, "Settings", onSettings, soft = backLabel == null)
+                // Same margin as the Folders pill on the left.
+                if (backLabel == null) Spacer(Modifier.width(4.dp))
             }
         },
         bottomBar = {
@@ -216,7 +250,10 @@ fun NoteListScreen(
                     }
                     Text("${vm.selected.size} selected", style = JType.small, color = jc.muted)
                     // Same width as the left pair so the count stays centred.
-                    Row(Modifier.width(88.dp), horizontalArrangement = Arrangement.End) { IconAction(Ico.TRASH, "Delete", vm::trashSelected, color = jc.danger) }
+                    Row(Modifier.width(88.dp), horizontalArrangement = Arrangement.End) {
+                        IconAction(Ico.LOCK, "Lock with passcode", { lockScope.launch { vm.passcodeNeeded()?.let { lockPasscode = it } ?: lockSelected() } })
+                        IconAction(Ico.TRASH, "Delete", vm::trashSelected, color = jc.danger)
+                    }
                 }
                 isTrash -> if (notes.isNotEmpty()) BottomBar {
                     Spacer(Modifier.width(44.dp))
@@ -226,13 +263,19 @@ fun NoteListScreen(
                 else -> BottomBar {
                     Spacer(Modifier.size(44.dp))
                     CountText(notes.size, JType.small, jc.muted) { if (query.isBlank()) plural(it, "Note") else plural(it, "Result") }
-                    if (canCreate) IconAction(Ico.COMPOSE, "New note", onNew, size = 24.dp) else Spacer(Modifier.size(44.dp))
+                    // New note is the floating button; this keeps the count centred.
+                    Spacer(Modifier.size(44.dp))
                 }
             }
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            PageTitle(folderName)
+            // Home shows today's date in place of "All Notes".
+            if (glance != null) DateHeading(remember { java.time.LocalDate.now() }) else PageTitle(folderName)
+            // Out of the way while searching or picking notes.
+            AnimatedVisibility(glance != null && query.isBlank() && !selecting) {
+                glance?.let { TodayCards(it, Modifier.padding(bottom = 14.dp)) }
+            }
             if (isTrash) {
                 Text(
                     "Notes stay here for $keepDays days, then they're removed for good.",
@@ -240,10 +283,10 @@ fun NoteListScreen(
                     style = JType.para, color = jc.muted,
                 )
             } else {
-                SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 20.dp), autoFocus = search)
+                SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 16.dp), autoFocus = search, fill = jc.card)
                 if (hasNotes) {
                     Row(
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 4.dp),
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         // In Pinned every note is pinned already, so that pill would do nothing.
@@ -269,10 +312,10 @@ fun NoteListScreen(
                 )
                 notes.isEmpty() -> EmptyState("No notes yet", "Notes show up here when they match.")
                 // Search results and Recently Deleted keep rows: their extra details (match, days left) need the width.
-                grid && !isTrash && query.isBlank() -> NoteGrid(entries, folder?.sortBy ?: NoteSort.EDITED, vm, onOpen)
+                grid && !isTrash && query.isBlank() -> NoteGrid(entries, folder?.sortBy ?: NoteSort.EDITED, vm, onOpen, listEnd)
                 else -> NoteList(
                     entries, folder?.sortBy ?: NoteSort.EDITED, isTrash, previewLines, keepDays, query.trim(),
-                    folders.associate { it.folder.id to it.folder.name }, vm, onOpen, onMove = { moving = setOf(it.id) },
+                    folders.associate { it.folder.id to it.folder.name }, vm, onOpen, onMove = { moving = setOf(it.id) }, bottom = listEnd,
                 )
             }
         }
@@ -327,10 +370,14 @@ internal fun NoteList(
     vm: NotesViewModel,
     onOpen: (NoteEntity) -> Unit,
     onMove: (NoteEntity) -> Unit,
+    bottom: Dp = 24.dp,
 ) {
-    // The last note before a section header (or the end) has no line under it.
-    val ends = remember(entries) { entries.filterIndexed { i, e -> e is ListEntry.Row && entries.getOrNull(i + 1) !is ListEntry.Row }.toSet() }
-    LazyColumn(Modifier.fillMaxSize()) {
+    // Notes between section headers sit in one rounded card: the first rounds its top, the last its bottom
+    // and has no line under it.
+    fun isNote(e: ListEntry?) = e is ListEntry.Row || e is ListEntry.AttachmentRow
+    val ends = remember(entries) { entries.filterIndexed { i, e -> isNote(e) && !isNote(entries.getOrNull(i + 1)) }.toSet() }
+    val starts = remember(entries) { entries.filterIndexed { i, e -> isNote(e) && !isNote(entries.getOrNull(i - 1)) }.toSet() }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = bottom)) {
         items(entries, key = {
             when (it) {
                 is ListEntry.Row -> it.note.id
@@ -338,7 +385,10 @@ internal fun NoteList(
                 is ListEntry.AttachmentRow -> "a:" + it.note.id + ":" + it.attachment.file
             }
         }) { entry ->
-            Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
+            val group = if (entry is ListEntry.Header) Modifier
+            else Modifier.padding(horizontal = 16.dp).padding(top = if (entry in starts) 6.dp else 0.dp)
+                .clip(JShape.group(entry in starts, entry in ends)).background(jc.card)
+            Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).then(group)) {
             when (entry) {
                 is ListEntry.Header -> SectionHeader(entry.text, entry.collapsed, vm::togglePinnedCollapsed)
                 is ListEntry.AttachmentRow -> AttachmentHitRow(entry, query, folderNames[entry.note.folderId], onOpen)
@@ -378,7 +428,7 @@ internal fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fol
         Modifier.fillMaxWidth().clickable { onOpen(entry.note) }.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.surface), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.page), contentAlignment = Alignment.Center) {
             val a = entry.attachment
             JIcon(if (a.isAudio) Ico.MIC else if (a.isImage) Ico.CAMERA else if (a.isPdf) ICON_PDF else Ico.FILE, jc.muted, size = 22.dp)
         }
@@ -398,7 +448,7 @@ internal fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fol
 @Composable
 internal fun SyncBannerRow(banner: com.margin.app.sync.SyncBanner, onRetry: () -> Unit) {
     Row(
-        Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).background(jc.surface)
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).background(jc.card)
             .let { if (banner.retry) it.clickable(role = Role.Button, onClick = onRetry) else it }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -457,10 +507,11 @@ internal fun SortMenu(
     onChange: (NoteSort, Boolean) -> Unit,
     /** When set, a "New notes start from" item showing this template's name, which calls [onTemplate]. */
     templateLabel: String? = null, onTemplate: () -> Unit = {},
+    soft: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        if (label == null) IconAction(Ico.MORE, if (grid != null) "View and sort" else "Sort", { open = true }, fill = true) else TextAction(label, { open = true })
+        if (label == null) IconAction(Ico.MORE, if (grid != null) "View and sort" else "Sort", { open = true }, fill = true, soft = soft) else TextAction(label, { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             @Composable
             fun item(text: String, icon: String, checked: Boolean, onClick: () -> Unit) = DropdownMenuItem(
@@ -523,10 +574,10 @@ internal fun TemplatePicker(current: String?, saved: List<NoteEntity>, onDismiss
 
 /** Lists without their own sort (smart lists): just List or Grid. */
 @Composable
-internal fun ViewMenu(grid: Boolean, onGrid: (Boolean) -> Unit) {
+internal fun ViewMenu(grid: Boolean, onGrid: (Boolean) -> Unit, soft: Boolean = false) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction(Ico.MORE, "View", { open = true }, fill = true)
+        IconAction(Ico.MORE, "View", { open = true }, fill = true, soft = soft)
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             ViewChoices(grid) { onGrid(it); open = false }
         }
@@ -556,10 +607,10 @@ internal fun ViewChoices(grid: Boolean, onPick: (Boolean) -> Unit) {
 
 /** Notes as two columns of cards, each as tall as its text; section headers (Pinned, Today...) span both. */
 @Composable
-internal fun NoteGrid(entries: List<ListEntry>, sortBy: NoteSort, vm: NotesViewModel, onOpen: (NoteEntity) -> Unit) {
+internal fun NoteGrid(entries: List<ListEntry>, sortBy: NoteSort, vm: NotesViewModel, onOpen: (NoteEntity) -> Unit, bottom: Dp = 24.dp) {
     LazyVerticalStaggeredGrid(
         StaggeredGridCells.Fixed(2), Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = bottom),
         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalItemSpacing = 10.dp,
     ) {
         entries.forEach { entry ->
@@ -588,13 +639,12 @@ internal fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: 
     val isSelected = note.id in vm.selected
     // The same preview text as the list rows (attachments read as "Drawing", "Voice note (1:52)"...), more of it.
     val body = remember(note) { note.searchText.lineSequence().filter { it.isNotBlank() }.take(8).joinToString("\n") { it.trim() } }
-    val shape = JShape.md
-    val fill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.bg, JMotion.standard(), label = "cardFill")
-    val edge by animateColorAsState(if (isSelected) jc.accent else jc.line, JMotion.standard(), label = "cardEdge")
+    val fill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.card, JMotion.standard(), label = "cardFill")
+    val edge by animateColorAsState(if (isSelected) jc.accent else Color.Transparent, JMotion.standard(), label = "cardEdge")
     val press = remember { MutableInteractionSource() }
     Column(
-        Modifier.fillMaxWidth().pressScale(press).clip(shape).background(fill)
-            .border(if (isSelected) 2.dp else 1.dp, edge, shape)
+        Modifier.fillMaxWidth().pressScale(press).clip(JShape.lg).background(fill)
+            .border(2.dp, edge, JShape.lg)
             .combinedClickable(
                 interactionSource = press, indication = androidx.compose.material3.ripple(),
                 onClick = { if (selecting) vm.toggleSelected(note.id) else onOpen(note) },
@@ -614,6 +664,7 @@ internal fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: 
                 journalDay(note) != null -> "Journal"
                 isLogin(note) -> "Password"
                 isHabit(note) -> "Habit"
+                isTracker(note) -> "Tracker"
                 note.isLocked -> "Locked"
                 body.isEmpty() -> "No additional text"
                 else -> body
@@ -698,7 +749,7 @@ internal fun NoteRow(
     val deleteArmed = offset < -width * 0.6f
     LaunchedEffect(pinArmed, deleteArmed) { if (pinArmed || deleteArmed) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
     val armScale by animateFloatAsState(if (pinArmed || deleteArmed) 1.2f else 1f, JMotion.bounce(), label = "armed")
-    val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.bg, JMotion.standard(), label = "rowFill")
+    val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.card, JMotion.standard(), label = "rowFill")
     val content = @Composable {
         Row(
             Modifier.fillMaxWidth()
@@ -738,7 +789,7 @@ internal fun NoteRow(
                     return@Column
                 }
                 // Preview: 0 lines shows only the time; 2 lines adds the next line of text below.
-                val lines = if (journalDay(note) != null) listOf("Journal") else if (isLogin(note)) listOf("Password") else if (isHabit(note)) listOf("Habit") else if (note.isLocked) listOf("Locked")
+                val lines = if (journalDay(note) != null) listOf("Journal") else if (isLogin(note)) listOf("Password") else if (isHabit(note)) listOf("Habit") else if (isTracker(note)) listOf("Tracker") else if (note.isLocked) listOf("Locked")
                 else note.searchText.lineSequence().filter { it.isNotBlank() }.take(2).toList().ifEmpty { listOf("No additional text") }
                 val signedIn by vm.signedIn.collectAsState()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -72,6 +72,7 @@ import com.margin.app.data.tagCounts
 import com.margin.app.data.tagKey
 import com.margin.app.data.tagKeys
 import com.margin.app.data.tagPrefixAt
+import com.margin.app.data.isTracker
 import com.margin.app.sync.DriveAuthorizer
 import com.margin.app.sync.GoogleAccount
 import com.margin.app.sync.NeedsUserConsentException
@@ -113,7 +114,7 @@ const val PINNED_ID = "pinned"
 
 /** A list that isn't a stored folder. */
 /** Journal entries and habits have their own screens, so All Notes leaves them out (search still finds them). */
-fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
+fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTracker(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
 
 fun isVirtualList(id: String) = id == TRASH_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
 
@@ -130,18 +131,26 @@ sealed interface Screen {
     /** The journal calendar: a note per day. */
     data object Journal : Screen
     data object Habits : Screen
+    /** Lists like "Movies watched", counted per year. */
+    data object Trackers : Screen
+    /** One tracker, a year at a time. */
+    data class Tracker(val id: String) : Screen
     /** Saved passwords, behind the notes passcode. */
     data object Passwords : Screen
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
-data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false)
+data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false, val open: Boolean = false)
 
-/** Reads a share intent; null for anything else (or a share with nothing usable in it). */
-fun sharedIn(intent: android.content.Intent?): SharedIn? {
-    // "Open with Margin" on a PDF: a new note holding it.
-    if (intent?.action == android.content.Intent.ACTION_VIEW && intent.type == "application/pdf") {
-        return intent.data?.let { SharedIn(null, null, it, pdf = true) }
+/**
+ * Reads a share intent; null for anything else (or a share with nothing usable in it). [typeOf] finds a URI's
+ * type when the sending app left it out.
+ */
+fun sharedIn(intent: android.content.Intent?, typeOf: (android.net.Uri) -> String? = { null }): SharedIn? {
+    // "Open with Margin" on a PDF: opened to read at once (see OpenedPdfs), not filed like a share.
+    if (intent?.action == android.content.Intent.ACTION_VIEW) {
+        val uri = intent.data ?: return null
+        return if ((intent.type ?: typeOf(uri)) == "application/pdf") SharedIn(null, null, uri, pdf = true, open = true) else null
     }
     if (intent?.action != android.content.Intent.ACTION_SEND) return null
     // A shared photo or PDF is copied into the note.
@@ -157,6 +166,8 @@ class NavViewModel : ViewModel() {
     val stack = mutableStateListOf<Screen>(Screen.Notes(ALL_ID))
     /** A share waiting for its folder; kept here so it survives rotation. */
     var incoming by mutableStateOf<SharedIn?>(null)
+    /** A share that came while the app lock was up; it becomes [incoming] once unlocked. */
+    var held by mutableStateOf<SharedIn?>(null)
     val current get() = stack.last()
     fun push(screen: Screen) { stack.add(screen) }
     fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
@@ -176,10 +187,24 @@ class FoldersViewModel @Inject constructor(
     connectivity: Connectivity,
     private val scheduler: SyncScheduler,
     private val alarms: com.margin.app.data.Reminders,
+    private val openedPdfs: com.margin.app.data.OpenedPdfs,
 ) : ViewModel() {
     /** Note id → when its reminder rings, for the Reminders list. */
     val reminders: StateFlow<Map<String, Long>> = alarms.all
     val reminderRepeats: StateFlow<Map<String, com.margin.app.data.Repeat>> = alarms.repeats
+
+    /** Next time the daily journal reminder rings, or null when it's off. */
+    val journalReminderAt: StateFlow<Long?> = alarms.all.map { it[JOURNAL_REMINDER] }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Rings every day at [time], starting today if that's still to come. */
+    fun setJournalReminder(time: java.time.LocalTime) {
+        val now = java.time.ZonedDateTime.now()
+        var at = now.with(time).withSecond(0).withNano(0)
+        if (!at.isAfter(now)) at = at.plusDays(1)
+        alarms.set(JOURNAL_REMINDER, at.toInstant().toEpochMilli(), com.margin.app.data.Repeat.DAILY)
+    }
+
+    fun clearJournalReminder() = alarms.clear(JOURNAL_REMINDER)
 
     /** Offline with changes waiting, or the last sync failed. Null when there's nothing to say. */
     val syncBanner: StateFlow<SyncBanner?> = combine(syncPrefs.status, connectivity.online, repo.pendingCount()) { s, online, pending ->
@@ -204,6 +229,14 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
+    /** "Open with Margin" on a PDF: [onReady] gets the note holding it (made in Notes the first time). */
+    fun openPdf(uri: android.net.Uri, onError: (String) -> Unit, onReady: (com.margin.app.data.PdfPlace) -> Unit) {
+        viewModelScope.launch {
+            val place = try { openedPdfs.open(uri) } catch (e: Exception) { onError(e.message ?: "Couldn't open the PDF"); return@launch }
+            onReady(place)
+        }
+    }
+
     /** Opens [day]'s journal entry, starting it (titled with the date, in Notes) when there isn't one. */
     fun openJournal(day: java.time.LocalDate, onReady: (id: String, folderId: String) -> Unit) {
         viewModelScope.launch {
@@ -216,8 +249,10 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    fun addHabit(name: String) = viewModelScope.launch {
-        if (name.isNotBlank()) repo.saveNote("habit-" + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
+    fun addHabit(name: String) = addTitled("habit-", name)
+    /** A new note in the default folder holding only the title [name], its id starting with [prefix]. */
+    private fun addTitled(prefix: String, name: String) = viewModelScope.launch {
+        if (name.isNotBlank()) repo.saveNote(prefix + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
     }
     /** Ticks [day] off for the habit [note], or unticks it: the body is rewritten as one line per day, newest first. */
     fun toggleHabit(note: NoteEntity, day: java.time.LocalDate) = viewModelScope.launch {
@@ -228,6 +263,13 @@ class FoldersViewModel @Inject constructor(
         if (name.isNotBlank()) repo.saveNote(note.id, note.folderId, listOf(note.blocks.first().copy(text = name.trim())) + note.blocks.drop(1))
     }
     fun deleteHabit(note: NoteEntity) = viewModelScope.launch { alarms.clear(note.id); repo.moveToTrash(note.id) }
+    fun addTracker(name: String) = addTitled(com.margin.app.data.TRACKER_PREFIX, name)
+    fun renameTracker(note: NoteEntity, name: String) = renameHabit(note, name)
+    fun deleteTracker(note: NoteEntity) = viewModelScope.launch { repo.moveToTrash(note.id) }
+    /** Rewrites the tracker [note] as [entries], one line each, newest first. */
+    fun saveTracker(note: NoteEntity, entries: List<com.margin.app.data.TrackerEntry>) = viewModelScope.launch {
+        repo.saveNote(note.id, note.folderId, com.margin.app.data.trackerBlocks(note, entries))
+    }
     /** Rings the habit [note] every day at [at], or no more for null. */
     fun setHabitReminder(note: NoteEntity, at: java.time.LocalTime?) {
         if (at == null) alarms.clear(note.id)
@@ -279,7 +321,49 @@ class NotesViewModel @Inject constructor(
     private val repo: NoteRepository,
     private val appPrefs: AppPrefs,
     syncPrefs: SyncPrefs,
+    private val session: LockSession,
+    private val files: AttachmentFiles,
+    private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
+    /** What locking the selected notes must ask first: nothing (notes are unlocked), the passcode, or a new one. */
+    suspend fun passcodeNeeded(): PasswordMode? = when {
+        session.unlocked.value -> null
+        appLock.passcodeSample() != null -> PasswordMode.ENTER
+        else -> PasswordMode.CREATE
+    }
+
+    /** As in the editor: checks [password] against a locked note, or makes it the notes passcode when there is none. */
+    suspend fun enterPassword(password: CharArray): Boolean {
+        val sample = appLock.passcodeSample() // the app lock's passcode, when no note is locked yet
+        val ok = if (sample == null) { session.startWith(password); true } else session.unlock(password, sample) != null
+        password.fill('\u0000')
+        return ok
+    }
+
+    /**
+     * Locks the selected notes with the notes passcode (the session must be unlocked): each body and its files
+     * are encrypted, as the editor's Lock does. Calls [onDone] with how many were locked.
+     */
+    fun lockSelected(onDone: (Int) -> Unit) {
+        val ids = selected
+        clearSelection()
+        viewModelScope.launch {
+            var n = 0
+            for (id in ids) {
+                val note = repo.getNote(id)?.takeIf { !it.isLocked && it.trashedAt == null && !it.deleted && !isTemplate(it) && !isLogin(it) } ?: continue
+                val params = NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
+                val key = session.key(params) ?: break
+                val (blocks, swapped) = files.sealAll(note.blocks)
+                val cipher = withContext(Dispatchers.Default) { NoteCrypto.seal(blocks.drop(1), key, params) }
+                repo.saveNote(note.id, note.folderId, blocks, cipher)
+                // The readable copies of files that are now encrypted go at once, unless another note still uses them.
+                if (swapped.isNotEmpty()) files.dropUnused(swapped.keys, repo.attachmentsInUse())
+                n++
+            }
+            onDone(n)
+        }
+    }
+
     /** Two panes: the note open beside the list, shown tinted in it. Null on a phone. */
     var openId by mutableStateOf<String?>(null)
 
@@ -483,6 +567,7 @@ class EditorViewModel @Inject constructor(
     val files: AttachmentFiles,
     private val reminders: com.margin.app.data.Reminders,
     val ai: com.margin.app.data.AiKeys,
+    private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
     companion object {
         const val START_SCAN = "scan"
@@ -496,14 +581,14 @@ class EditorViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** Sets the reminder; a new note is saved first (an empty one can't have a reminder). */
-    fun setReminder(time: Long, repeat: com.margin.app.data.Repeat) { if (noteId.isNotEmpty() && !readOnly) afterSave { reminders.set(it, time, repeat) } }
+    fun setReminder(time: Long, repeat: com.margin.app.data.Repeat) { if (noteId.isNotEmpty() && !trashed) afterSave { reminders.set(it, time, repeat) } }
 
     /** How this note's reminder repeats. */
     val reminderRepeat: StateFlow<com.margin.app.data.Repeat> = combine(reminders.repeats, openId) { all, id -> all[id] ?: com.margin.app.data.Repeat.NEVER }
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.margin.app.data.Repeat.NEVER)
 
     /** A reminder can be set: the note is stored, or has text that will be saved first. */
-    val canRemind get() = !readOnly && !needsUnlock && (exists || doc.text.isNotBlank())
+    val canRemind get() = !trashed && !needsUnlock && (exists || doc.text.isNotBlank())
     fun clearReminder() { if (noteId.isNotEmpty()) reminders.clear(noteId) }
     val remindersOnTime get() = reminders.canRingOnTime()
     /** Whether a ringing reminder may fill the screen (Android 14+ asks the user for this). */
@@ -575,7 +660,7 @@ class EditorViewModel @Inject constructor(
 
     /** Conflict chooser: keep both notes; this one just loses its "(conflict)" title. */
     fun keepBothVersions() {
-        if (conflictWith == null || readOnly) return
+        if (conflictWith == null || trashed) return
         conflictWith = null
         val blocks = doc.toBlocks()
         doc = EditorDoc.fromBlocks(listOf(blocks.first().copy(text = blocks.first().text.removeSuffix(CONFLICT_SUFFIX))) + blocks.drop(1))
@@ -591,7 +676,12 @@ class EditorViewModel @Inject constructor(
     var paper by mutableStateOf(com.margin.app.data.Paper.PLAIN); private set
     var font by mutableStateOf(com.margin.app.data.NoteFont.DEFAULT); private set
     var value by mutableStateOf(TextFieldValue()); private set
-    var readOnly by mutableStateOf(false); private set
+    /** In Recently Deleted: nothing can change until it is recovered. */
+    var trashed by mutableStateOf(false); private set
+    /** Read mode: the note is view-only until read mode is turned off. Pin, share, move and the rest still work. */
+    var viewOnly by mutableStateOf(false); private set
+    /** The text and its attachments can't be changed: deleted, or in read mode. */
+    val readOnly get() = trashed || viewOnly
     var loaded by mutableStateOf(false); private set
     /** True right after a new note opens, so the UI puts the keyboard on the title. */
     var focusOnOpen by mutableStateOf(false)
@@ -655,6 +745,9 @@ class EditorViewModel @Inject constructor(
             locked = sealed != null
             lockParams = sealed?.let(NoteCrypto::paramsOf)
             unlockError = null
+            // Every locked note asks for the passcode when it opens, even if the journal or another note was just
+            // unlocked. Journal entries are let in by the journal's own passcode.
+            if (sealed != null && !noteId.startsWith("journal-")) session.lock()
             val body = sealed?.let { session.open(it) }
             body?.let { files.reveal(it) }
             needsUnlock = locked && body == null
@@ -664,11 +757,12 @@ class EditorViewModel @Inject constructor(
             show(if (start != null) listOf(Block(type = BlockType.TITLE)) + start else if (body != null) stored.take(1) + body else stored)
             if (start != null) value = TextFieldValue(doc.text, TextRange(0)) // type the title first
             if (isNew) lastSaved = doc.toBlocks()
-            readOnly = note?.trashedAt != null
+            trashed = note?.trashedAt != null
+            viewOnly = note?.viewOnly == true
             focusOnOpen = isNew
             loaded = true
             // Journal entries are always locked notes (the journal itself asks for the passcode first).
-            if (noteId.startsWith("journal-") && !locked && !readOnly && session.unlocked.value) lock()
+            if (noteId.startsWith("journal-") && !locked && !trashed && session.unlocked.value) lock()
         }
     }
 
@@ -687,7 +781,7 @@ class EditorViewModel @Inject constructor(
         show(lastSaved.take(1))
     }
 
-    /** Tries the notes password on this note; success unlocks every locked note until the app goes to the background. */
+    /** Tries the notes password on this note; success keeps it open until you leave it or the app goes to the background. */
     fun unlock(password: CharArray) {
         val cipher = sealed ?: return
         viewModelScope.launch {
@@ -708,7 +802,7 @@ class EditorViewModel @Inject constructor(
     }
 
     /** Whether a notes password already exists (some note is locked with it). */
-    suspend fun hasPassword() = session.unlocked.value || repo.lockedNotes().isNotEmpty()
+    suspend fun hasPassword() = session.unlocked.value || appLock.passcodeSample() != null
 
     val sessionUnlocked get() = session.unlocked
 
@@ -717,7 +811,7 @@ class EditorViewModel @Inject constructor(
      * password. Returns false if it's wrong.
      */
     suspend fun enterPassword(password: CharArray): Boolean {
-        val sample = repo.lockedNotes().firstOrNull()?.cipher
+        val sample = appLock.passcodeSample() // the app lock's passcode, when no note is locked yet
         val ok = if (sample == null) { session.startWith(password); true } else session.unlock(password, sample) != null
         password.fill('\u0000')
         return ok
@@ -1100,8 +1194,37 @@ class EditorViewModel @Inject constructor(
         }
     }
 
+    /** Saves the photo editor's [edit] of the photo on [line] (a new file; Undo brings the old one back). */
+    fun editImage(line: Int, edit: com.margin.app.data.PhotoEdit, onDone: () -> Unit, onError: (String) -> Unit) {
+        val a = doc.lines.getOrNull(line)?.attachment?.takeIf { it.isImage } ?: return
+        if (readOnly) return
+        if (edit.isIdentity) { onDone(); return }
+        val id = doc.lines[line].id
+        viewModelScope.launch {
+            val done = try { files.edited(a, edit) } catch (e: Exception) { onError(e.message ?: "Couldn't save the photo"); return@launch }
+            val at = doc.lines.indexOfFirst { it.id == id && it.attachment == a }
+            if (at >= 0) {
+                doc = EditorDoc.fromBlocks(doc.toBlocks().mapIndexed { i, b -> if (i == at) b.copy(attachment = done) else b })
+                changed()
+            }
+            onDone()
+        }
+    }
+
     /** Set by an app shortcut: what the newly opened note starts with ([START_SCAN], [START_VOICE]); the editor clears it. */
     var startAction by mutableStateOf<String?>(null)
+    /** Set by the journal nudge: once the journal is unlocked, open today's entry. */
+    var openTodayJournal = false
+
+    /** A PDF opened with Margin: its note and line, shown full screen once that note is open; the editor clears it. */
+    var openPdf by mutableStateOf<com.margin.app.data.PdfPlace?>(null)
+
+    /** The line of [openPdf] when its note is the one open and that line is showing, so the viewer can open it. */
+    fun pdfToOpen(): String? {
+        val p = openPdf ?: return null
+        if (p.noteId != noteId || !loaded || needsUnlock) return null
+        return p.lineId.takeIf { id -> doc.lines.any { it.id == id && it.attachment?.isPdf == true } }
+    }
 
     /** This note's earlier versions, newest first (see NoteRepository.keepVersion). */
     fun versions() = repo.versionsOf(noteId)
@@ -1183,7 +1306,7 @@ class EditorViewModel @Inject constructor(
     }
 
     fun lock() {
-        if (readOnly || locked || needsUnlock) return
+        if (trashed || locked || needsUnlock) return
         if (isNew && doc.toBlocks().all { it.text.isBlank() }) return
         viewModelScope.launch {
             val params = NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
@@ -1213,7 +1336,7 @@ class EditorViewModel @Inject constructor(
 
     /** Stores the note unlocked again. Only while it's open. */
     fun removeLock() {
-        if (readOnly || !locked || needsUnlock) return
+        if (trashed || !locked || needsUnlock) return
         locked = false
         lockParams = null
         sealed = null
@@ -1232,6 +1355,9 @@ class EditorViewModel @Inject constructor(
             if (keepShown) titleAtOpen = newTitle // the close that follows has nothing left to rename
         }
         if (keepShown) return
+        // Leaving a locked note locks the notes again, so the next one asks for the passcode. Journal entries
+        // stay open while you're in the journal (it asks once, at its door). flush() above has already sealed it.
+        if (locked && !id.startsWith("journal-")) session.lock()
         noteId = ""
         loaded = false // the next note must not briefly show this one
     }
@@ -1309,8 +1435,9 @@ class EditorViewModel @Inject constructor(
      * and the strike-through are seen before it goes. Ticking more lines in that moment waits for the last one.
      */
     fun toggleChecked(line: Int) {
-        if (readOnly) return
+        if (trashed || needsUnlock) return // ticking stays allowed while editing is locked
         doc = doc.toggleChecked(line, autoSort = false)
+        justChecked = doc.lines.getOrNull(line)?.takeIf { it.checked }?.id
         value = value.copy(text = doc.text, composition = null)
         changed()
         if (!appPrefs.autoSortChecked.value) return
@@ -1318,6 +1445,9 @@ class EditorViewModel @Inject constructor(
         sortJob?.cancel()
         sortJob = viewModelScope.launch { kotlinx.coroutines.delay(CHECK_SORT_DELAY_MS); sortPending() }
     }
+
+    /** The id of the line ticked a moment ago, while its strike-through draws on; null once it has. */
+    var justChecked by mutableStateOf<String?>(null)
 
     private val sortLines = mutableSetOf<Int>()
     private var sortJob: kotlinx.coroutines.Job? = null
@@ -1391,7 +1521,7 @@ class EditorViewModel @Inject constructor(
 
     /** Moving isn't editing. A note that hasn't been saved yet just gets saved in the new folder. */
     fun moveTo(target: String) {
-        if (readOnly || target == folderId) return
+        if (trashed || target == folderId) return
         folderId = target
         if (!isNew) viewModelScope.launch { repo.moveNotes(listOf(noteId), target) }
     }
@@ -1428,12 +1558,21 @@ class EditorViewModel @Inject constructor(
         afterSave { repo.setFont(it, f) }
     }
 
-    fun togglePin() { if (!readOnly) afterSave { repo.togglePin(it); pinned = repo.getNote(it)?.isPinned == true } }
+    /** Turns read mode on (the note becomes view-only, pending edits saved first) or off. */
+    fun toggleViewOnly() {
+        if (trashed || needsUnlock || (!exists && doc.text.isBlank())) return
+        val on = !viewOnly
+        if (on) { sortPending(); focused = false }
+        viewOnly = on
+        afterSave { repo.setViewOnly(it, on) }
+    }
 
-    fun duplicate(onDone: (NoteEntity) -> Unit) { if (!readOnly && !needsUnlock) afterSave { id -> repo.duplicate(id)?.let(onDone) } }
+    fun togglePin() { if (!trashed) afterSave { repo.togglePin(it); pinned = repo.getNote(it)?.isPinned == true } }
+
+    fun duplicate(onDone: (NoteEntity) -> Unit) { if (!trashed && !needsUnlock) afterSave { id -> repo.duplicate(id)?.let(onDone) } }
 
     fun delete(onDone: () -> Unit) {
-        if (readOnly) return
+        if (trashed) return
         clearReminder()
         afterSave { repo.moveToTrash(it) }
         onDone()
@@ -1464,7 +1603,7 @@ class EditorViewModel @Inject constructor(
     private suspend fun persist() { prepareSave()?.invoke() }
 
     private fun prepareSave(): (suspend () -> Unit)? {
-        if (!loaded || readOnly || needsUnlock) return null
+        if (!loaded || trashed || needsUnlock) return null // read mode still saves a lock being added or removed
         val current = doc.toBlocks()
         if (current == lastSaved) { saved = true; return null }
         if (isNew && current.all { it.text.isBlank() }) return null // don't create empty notes
@@ -1517,6 +1656,7 @@ class SettingsViewModel @Inject constructor(
     private val files: AttachmentFiles,
     val ai: com.margin.app.data.AiKeys,
     connectivity: Connectivity,
+    private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
     val status = prefs.status
     val pending: StateFlow<Int> = repo.pendingCount().stateIn(viewModelScope, SharingStarted.Eagerly, 0)
@@ -1619,9 +1759,31 @@ class SettingsViewModel @Inject constructor(
 
     fun lockNow() = session.lock()
 
+    /** App lock: non-null while it's on. */
+    val appLockState = appLock.state
+    /** Whether turning the app lock on must check an existing passcode (else it creates one). */
+    suspend fun hasPasscode() = appLock.passcodeSample() != null
+
+    /** Turns the app lock on with [code]: checked against the existing passcode, if any. Clears [code]. */
+    suspend fun turnOnAppLock(code: CharArray): Boolean {
+        val sample = appLock.passcodeSample()
+        val ok = sample == null || session.unlock(code, sample) != null
+        if (ok) appLock.turnOn(code)
+        code.fill('\u0000')
+        return ok
+    }
+
+    /** Turns the app lock off once [code] is right. Clears [code]. */
+    suspend fun turnOffAppLock(code: CharArray): Boolean {
+        val ok = appLock.unlock(code)
+        if (ok) appLock.turnOff()
+        code.fill('\u0000')
+        return ok
+    }
+
     /** Checks the current notes password; on success the session is unlocked. */
     suspend fun checkPassword(password: CharArray): Boolean {
-        val sample = repo.lockedNotes().firstOrNull()?.cipher ?: return false
+        val sample = appLock.passcodeSample() ?: return false
         val ok = session.unlock(password, sample) != null
         password.fill('\u0000')
         return ok
@@ -1633,6 +1795,7 @@ class SettingsViewModel @Inject constructor(
         try {
             val skipped = repo.changeLockPassword(newPassword) { session.open(it) }
             session.startWith(newPassword)
+            appLock.passcodeChanged(newPassword)
             appPrefs.setFingerprint(null)
             message = if (skipped == 0) "Passcode changed" else "Passcode changed. $skipped note(s) use a different password and weren't changed."
         } finally {
