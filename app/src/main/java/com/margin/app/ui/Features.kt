@@ -113,7 +113,7 @@ fun FeaturesScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                     "${FEATURES.sumOf { it.second.size }} features, all in one app. Tap one with an arrow to go there.",
                     Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), style = JType.para, color = jc.muted,
                 )
-                SearchField(query, { query = it }, "Search features", Modifier.padding(horizontal = 16.dp))
+                SearchField(query, { query = it }, "Search features", Modifier.padding(horizontal = 16.dp), fill = jc.card)
             }
             if (groups.isEmpty()) item {
                 Text("No features match “$q”.", Modifier.padding(20.dp), style = JType.para, color = jc.muted)
