@@ -255,19 +255,30 @@ fun EditorScreen(
         if (!granted) toast("Reminder set, but notifications are off for Margin, so it won't show. Turn them on in the phone's settings.")
         else askForExactAlarms()
     }
+    val reminderScope = rememberCoroutineScope()
     if (reminding) {
         ReminderDialog(
-            current = reminderAt, currentRepeat = reminderRepeat, onTime = vm.remindersOnTime,
-            onPick = { time, repeat ->
+            current = reminderAt, currentRepeat = reminderRepeat, onTime = vm.remindersOnTime, calendarFor = vm.noteId,
+            onPick = { time, repeat, calendar ->
                 reminding = false
                 vm.setReminder(time, repeat)
-                toast("You'll be reminded " + reminderLabel(context, time, repeat).replaceFirstChar { it.lowercaseChar() } + ".")
+                // The note's first line is the event's title; the rest (never a locked note's) its description.
+                val lines = vm.doc.texts
+                reminderToCalendar(
+                    context, reminderScope, vm.noteId, lines.first().trim(),
+                    if (vm.locked) null else lines.drop(1).joinToString("\n").trim().take(2000), time, repeat, calendar,
+                )
                 if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
                     != android.content.pm.PackageManager.PERMISSION_GRANTED
                 ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                 else askForExactAlarms()
             },
-            onRemove = { reminding = false; vm.clearReminder() },
+            onRemove = {
+                reminding = false
+                vm.clearReminder()
+                val id = vm.noteId
+                reminderScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.margin.app.data.CalendarEvents.remove(context, id) }
+            },
             onDismiss = { reminding = false },
         )
     }

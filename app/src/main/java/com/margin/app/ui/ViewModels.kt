@@ -137,6 +137,8 @@ sealed interface Screen {
     data class Tracker(val id: String) : Screen
     /** Saved passwords, behind the notes passcode. */
     data object Passwords : Screen
+    /** Everything Margin can do, from Settings. */
+    data object Features : Screen
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
@@ -205,6 +207,21 @@ class FoldersViewModel @Inject constructor(
     }
 
     fun clearJournalReminder() = alarms.clear(JOURNAL_REMINDER)
+
+    /** For the Reminders list: change or remove a note's reminder without opening it. */
+    fun setReminder(noteId: String, time: Long, repeat: com.margin.app.data.Repeat) = alarms.set(noteId, time, repeat)
+    fun clearReminder(noteId: String) = alarms.clear(noteId)
+    /** A reminder made on the Reminders screen: a new note in Notes titled [title], with [details] below, ringing at [at]. */
+    fun newReminder(title: String, details: String, at: Long, repeat: com.margin.app.data.Repeat): String {
+        val id = newId()
+        viewModelScope.launch {
+            repo.saveNote(id, DEFAULT_FOLDER_ID, com.margin.app.data.sharedNoteBlocks(title, details, null))
+            alarms.set(id, at, repeat)
+        }
+        return id
+    }
+    /** False when Android may deliver reminders late (no exact-alarm permission). */
+    val remindersOnTime get() = alarms.canRingOnTime()
 
     /** Offline with changes waiting, or the last sync failed. Null when there's nothing to say. */
     val syncBanner: StateFlow<SyncBanner?> = combine(syncPrefs.status, connectivity.online, repo.pendingCount()) { s, online, pending ->
@@ -728,7 +745,8 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    private var noteId = ""
+    var noteId = ""
+        private set
     var folderId by mutableStateOf(""); private set
     /** When the open note was last edited; null for a new note. */
     var editedAt by mutableStateOf<Long?>(null); private set

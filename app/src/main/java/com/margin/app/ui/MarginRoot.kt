@@ -187,7 +187,7 @@ fun MarginRoot(
     /** The screen under this one. */
     val below = nav.stack.getOrNull(shown.depth - 2)
     /** A Library screen's back label: the list it was opened from (the home screen's cards), else Folders. */
-    fun backTo(below: Screen?) = if (below is Screen.Notes) listName(below.folderId) else "Folders"
+    fun backTo(below: Screen?) = when (below) { is Screen.Notes -> listName(below.folderId); Screen.Features -> "Features"; else -> "Folders" }
         when (val screen = shown.screen) {
             Screen.Folders -> FoldersScreen(
                 folders,
@@ -210,7 +210,12 @@ fun MarginRoot(
                 val all by folders.liveNotes.collectAsState()
                 val reminders by folders.reminders.collectAsState()
                 val repeats by folders.reminderRepeats.collectAsState()
-                RemindersScreen(all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below))
+                RemindersScreen(
+                    all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below),
+                    onTime = folders.remindersOnTime, onJournal = { nav.push(Screen.Journal) },
+                    onSet = { note, time, repeat -> folders.setReminder(note.id, time, repeat) }, onRemove = { folders.clearReminder(it.id) },
+                    onCreate = folders::newReminder,
+                )
             }
             Screen.Journal -> {
                 val all by folders.liveNotes.collectAsState()
@@ -327,7 +332,8 @@ fun MarginRoot(
                     onNewNote = { folder -> editor.close(); nav.pop(); nav.push(Screen.Editor(newId(), folder)) },
                 )
             }
-            Screen.Settings -> SettingsScreen(settings, backups, onBack = ::back)
+            Screen.Settings -> SettingsScreen(settings, backups, onBack = ::back, onFeatures = { nav.push(Screen.Features) })
+            Screen.Features -> FeaturesScreen(onBack = ::back, onOpen = { nav.push(it) })
         }
     }
 
@@ -345,7 +351,7 @@ fun MarginRoot(
             }.apply { targetContentZIndex = to.depth.toFloat() }
         },
     ) { shown ->
-    Box(Modifier.fillMaxSize().background(if (shown.screen == Screen.Settings) jc.page else jc.bg)) {
+    Box(Modifier.fillMaxSize().background(if (shown.screen == Screen.Settings || shown.screen == Screen.Features) jc.page else jc.bg)) {
         when {
             shown.split -> Row(Modifier.fillMaxSize()) {
                 Box(Modifier.width(listWidth).fillMaxHeight()) { Content(shown) }
