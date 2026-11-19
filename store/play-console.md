@@ -116,6 +116,15 @@ No declaration form. It's covered by the Data safety answers and the privacy pol
 
 Play re-signs the app with its own **app signing key**, so Google sign-in from a Play install fails until Google Cloud knows that key.
 
+Already done on 19 Nov 2026 in the Google Cloud project "My First Project" (`midyear-node-233902`):
+- Android client **Margin release (com.margin.note)**, with the upload key's SHA-1.
+- Android client **Margin debug (com.margin.note.debug)**, with the debug key's SHA-1 `D1:C2:97:5A:08:DD:0A:C1:E1:7B:A4:B0:ED:E9:41:21:DA:52:9B:81`.
+- `drive.appdata` is declared under Data access. Google treats it as a non-sensitive scope.
+- Branding (name, home page, privacy and terms links, `shuvrasankha.github.io`) is filled in, and the publishing status is **In production**.
+- The old `com.margin.app` clients (Android client 1 and 2) are kept for the builds already installed.
+
+Still to do: steps 1 and 2 below with the Play app-signing SHA-1, after the first upload. Optionally, also submit the branding for verification so the logo and name show on the consent screen. That needs `shuvrasankha.github.io` verified in Google Search Console.
+
 1. After the first upload: Play Console → Test and release → **App integrity** → App signing. Copy the **App signing key certificate SHA-1**.
 2. Google Cloud Console (the project that has the Drive API): APIs & Services → Credentials → **Create credentials → OAuth client ID → Android**. Package `com.margin.note`, with that SHA-1. Keep the existing client for the upload key (SHA-1 above) and the debug one too.
 3. APIs & Services → **OAuth consent screen**:
