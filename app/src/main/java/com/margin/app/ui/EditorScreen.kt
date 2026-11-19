@@ -528,6 +528,7 @@ fun EditorScreen(
                         onAttach = { attaching = !attaching; formatting = false; sharing = false }, onDraw = { drawing = null to null },
                         onNew = { formatting = false; attaching = false; onNewNote(vm.folderId) },
                         onFont = { formatting = false; attaching = false; sharing = false; pickingFont = true },
+                        onAi = if (!vm.locked && !vm.needsUnlock) ({ formatting = false; attaching = false; sharing = false; asking = true }) else null,
                     )
                     if (vm.mathKeys && vm.focused) MathKeyboard(vm.value, vm::onValueChange, onLetters = { vm.mathKeys = false })
                 }
@@ -610,14 +611,39 @@ fun EditorScreen(
     if (info) NoteInfoDialog(vm, folderName) { info = false }
     if (history) VersionHistory(vm) { history = false }
     peek?.let { n -> LinkedNotePreview(n, onOpen = { peek = null; onOpenNote(n) }, onDismiss = { peek = null }) }
-    if (asking) AiSheet(
+    if (asking) {
+        // Text selected when AI was opened: its actions can work on just that. (Not tied to focus: the ⋯ menu
+        // takes it, but the selection is still what was picked.)
+        val picked = remember { vm.value.selection.takeIf { !it.collapsed } }
+        val pickedRaw = remember { picked?.let { vm.value.text.substring(it.min, it.max) } }
+        val pickedText = remember { pickedRaw?.replace(com.margin.app.data.ATTACHMENT_CHAR.toString(), "")?.takeIf { it.isNotBlank() } }
+        // Only plain text in one part (title or body) can be replaced: a photo, file or table in it would be lost.
+        val replaceable = remember {
+            picked != null && run {
+                val a = vm.doc.lineAt(picked.min); val z = vm.doc.lineAt(picked.max)
+                (a == 0) == (z == 0) && (a..z).none { vm.doc.lines.getOrNull(it)?.isObject == true }
+            }
+        }
+        AiSheet(
         vm.ai, noteText = shareText(vm.doc.toBlocks()),
+        selection = pickedText,
+        onReplaceSelection = if (vm.readOnly || picked == null || !replaceable) null else ({ answer ->
+            // The note may have changed while the answer came: replace only if that text is still there.
+            if (picked.max <= vm.value.text.length && vm.value.text.substring(picked.min, picked.max) == pickedRaw) {
+                vm.replaceSelection(picked, plainAnswer(answer)); asking = false
+            } else toast("The note changed, so the selection wasn't replaced. Use Copy or Add below instead.")
+        }),
+        onTitle = if (vm.readOnly) null else ({ vm.setTitle(it); asking = false }),
+        onChecklist = if (vm.readOnly) null else ({ vm.addChecklist(it); asking = false }),
+        // Tags go in as a plain line at the end, so they work as the note's tags.
+        onTags = if (vm.readOnly) null else ({ vm.insertText(it, afterLine = vm.doc.lines.lastIndex); asking = false }),
         // Added at the end of the note, not after wherever the cursor last was.
         onInsert = if (vm.readOnly) null else ({ vm.insertText(com.margin.app.data.untagged(plainAnswer(it)), afterLine = vm.doc.lines.lastIndex, ai = true); asking = false }),
         // Only a note of plain text can be replaced: its photos and files aren't sent, so they'd be lost.
         onReplace = if (vm.readOnly || !vm.textOnly) null else ({ vm.replaceBody(plainAnswer(it)); asking = false }),
         onClose = { asking = false },
     )
+    }
     if (linked) {
         val notes = vm.linkedNotes(targets)
         MarginDialog(
@@ -882,7 +908,7 @@ internal fun LinkSuggestions(notes: List<NoteEntity>, typed: String, folders: Li
 @Composable
 internal fun EditorToolbar(
     vm: EditorViewModel, formatting: Boolean, attaching: Boolean, onFormat: () -> Unit, onHideKeyboard: () -> Unit, onAttach: () -> Unit, onDraw: () -> Unit,
-    onNew: () -> Unit, onFont: () -> Unit,
+    onNew: () -> Unit, onFont: () -> Unit, onAi: (() -> Unit)? = null,
 ) {
     val focusedType = if (vm.focused) vm.doc.lines.getOrNull(vm.cursorLine)?.type else null
     val canFormat = focusedType != null && focusedType != BlockType.TITLE
@@ -901,6 +927,11 @@ internal fun EditorToolbar(
         Slot(focusedType == BlockType.CHECK) { IconAction(Ico.CHECKLIST, "Checklist", { vm.setType(BlockType.CHECK) }, enabled = canFormat, size = 20.dp) }
         Slot(attaching) { IconAction(Ico.ATTACH, "Attach", onAttach, size = 20.dp) }
         Slot { IconAction(Ico.PEN, "Draw", onDraw, size = 20.dp) }
+        // AI: tinted while text is selected, since it then works on the selection.
+        onAi?.let { ai ->
+            val picked = vm.focused && !vm.value.selection.collapsed
+            Slot(picked) { IconAction(Ico.SPARKLE, if (picked) "Ask AI about the selection" else "Ask AI", ai, size = 20.dp) }
+        }
         // While the math keyboard is up, its button stays in the bar so it can be put away.
         if (vm.focused && vm.mathKeys) Slot(true) {
             GlyphAction("π", "Phone keyboard", { vm.mathKeys = false }, JType.rowTitle.copy(fontSize = 20.sp))

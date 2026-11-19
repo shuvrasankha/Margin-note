@@ -94,4 +94,13 @@ class AiTest {
     }
 
     @Test fun everyProviderHasAKeyPage() = assertTrue(AI_PROVIDERS.all { it.keyUrl.startsWith("https://") })
+
+    @Test fun followUpsCarryTheConversation() {
+        val past = listOf("user" to "Summarize", "assistant" to "A short summary.")
+        for (p in AI_PROVIDERS) {
+            val msgs = Json.parseToJsonElement(aiRequest(p, "k", "m", "sys", "Shorter", 100, past).body).jsonObject["messages"]!!.jsonArray
+            val texts = msgs.map { it.jsonObject["content"]!!.jsonPrimitive.content }
+            assertEquals(listOf("Summarize", "A short summary.", "Shorter"), texts.takeLast(3))
+        }
+    }
 }

@@ -75,7 +75,11 @@ class AiRequest(val url: String, val headers: Map<String, String>, val body: Str
 private const val THINKING_HEADROOM = 2048
 
 /** One question ([system] instructions, [user] text) as [p] wants it. */
-fun aiRequest(p: AiProvider, key: String, model: String, system: String, user: String, maxTokens: Int): AiRequest {
+/**
+ * One request to [p]. [history] is the conversation so far, as ("user" | "assistant") to text, oldest first;
+ * [user] follows it as the newest message.
+ */
+fun aiRequest(p: AiProvider, key: String, model: String, system: String, user: String, maxTokens: Int, history: List<Pair<String, String>> = emptyList()): AiRequest {
     val json = mapOf("Content-Type" to "application/json", "Accept" to "application/json")
     val default = model == p.defaultModel
     if (p.id == "anthropic") {
@@ -84,7 +88,10 @@ fun aiRequest(p: AiProvider, key: String, model: String, system: String, user: S
             put("model", model)
             put("max_tokens", maxTokens + THINKING_HEADROOM)
             if (system.isNotEmpty()) put("system", system)
-            putJsonArray("messages") { addJsonObject { put("role", "user"); put("content", user) } }
+            putJsonArray("messages") {
+                history.forEach { (role, text) -> addJsonObject { put("role", role); put("content", text) } }
+                addJsonObject { put("role", "user"); put("content", user) }
+            }
             if (default) putJsonObject("output_config") { put("effort", "low") }
         }
         return AiRequest(p.url, json + mapOf("x-api-key" to key, "anthropic-version" to "2026-10-21"), body.toString())
@@ -93,6 +100,7 @@ fun aiRequest(p: AiProvider, key: String, model: String, system: String, user: S
         put("model", model)
         putJsonArray("messages") {
             if (system.isNotEmpty()) addJsonObject { put("role", "system"); put("content", system) }
+            history.forEach { (role, text) -> addJsonObject { put("role", role); put("content", text) } }
             addJsonObject { put("role", "user"); put("content", user) }
         }
         when (p.id) {
@@ -241,8 +249,8 @@ class AiKeys @Inject constructor(private val prefs: AppPrefs) {
     fun setModel(model: String) = prefs.setAi(config.value.copy(model = model.trim()))
 
     /** The provider's answer to [user]. Throws [AiException] with words for the user. */
-    suspend fun ask(system: String, user: String): String =
-        send(system, user, 4096) ?: throw AiException("The provider sent back an empty answer. Try again, or another model.")
+    suspend fun ask(system: String, user: String, history: List<Pair<String, String>> = emptyList()): String =
+        send(system, user, 4096, history) ?: throw AiException("The provider sent back an empty answer. Try again, or another model.")
 
     /** One token of answer: enough to prove the key and model work. Throws [AiException] when they don't. */
     suspend fun test() { send("", "Hi", 1) }
@@ -261,12 +269,12 @@ class AiKeys @Inject constructor(private val prefs: AppPrefs) {
         }
     }
 
-    private suspend fun send(system: String, user: String, maxTokens: Int): String? = withContext(Dispatchers.IO) {
+    private suspend fun send(system: String, user: String, maxTokens: Int, history: List<Pair<String, String>> = emptyList()): String? = withContext(Dispatchers.IO) {
         val cfg = config.value
         val p = aiProvider(cfg.provider)
         val key = key() ?: throw AiException(if (cfg.key == null) "Add your API key in Settings first." else "Your saved key couldn't be read, so it was removed. Add it again in Settings.")
         val (status, body) = try {
-            post(aiRequest(p, key, cfg.model.ifBlank { p.defaultModel }, system, user, maxTokens))
+            post(aiRequest(p, key, cfg.model.ifBlank { p.defaultModel }, system, user, maxTokens, history))
         } catch (e: SocketTimeoutException) {
             throw AiException("Provider took too long. Try again.")
         } catch (e: IOException) {
