@@ -69,7 +69,14 @@ enum class CardFont(val label: String) {
 }
 
 /** How a card looks: [foot] off leaves out the hairline, the Margin mark and the date. */
-data class CardOptions(val style: CardStyle = CardStyle.PAPER, val size: CardSize = CardSize.PORTRAIT, val font: CardFont = CardFont.SANS, val foot: Boolean = true)
+data class CardOptions(
+    val style: CardStyle = CardStyle.PAPER, val size: CardSize = CardSize.PORTRAIT, val font: CardFont = CardFont.SANS, val foot: Boolean = true,
+    /** Put the note's first photo at the top of the first card. */
+    val photo: Boolean = true,
+)
+
+/** The photo at the top of the first card: its file and how tall it's drawn (the full text width wide). */
+private class CardPhoto(val file: java.io.File, val height: Int)
 
 /** The text area of a card: from the top margin down to above the foot (or a matching margin when there's none). */
 private fun CardOptions.textBottom() = size.h - if (foot) 130f else 120f
@@ -114,6 +121,7 @@ private const val LAST_STYLE = "style"
 private const val LAST_SIZE = "size"
 private const val LAST_FONT = "font"
 private const val SHOW_FOOT = "foot"
+private const val SHOW_PHOTO = "photo"
 
 /** A dark card: the Margin mark gets a hairline edge so it doesn't melt into the background. */
 private val CardStyle.isDark get() = androidx.core.graphics.ColorUtils.calculateLuminance(bg.toInt()) < 0.2
@@ -122,9 +130,10 @@ private val CardStyle.isDark get() = androidx.core.graphics.ColorUtils.calculate
  * The note as pictures for social media: on a warm paper card with the app's amber margin rule, the title,
  * the text, and the Margin mark at the foot. A note that fits is one card; a longer one runs on over as many
  * cards as it needs, each foot numbered. Each entry draws its card when called, so a long note isn't held
- * in memory all at once. Photos, drawings and other attachments are left out; tables come as plain text.
+ * in memory all at once. [photo], when given (and [CardOptions.photo] is on), heads the first card; other
+ * attachments are left out, and tables come as plain text.
  */
-fun noteCards(context: Context, blocks: List<Block>, date: String, options: CardOptions = CardOptions()): List<() -> Bitmap> {
+fun noteCards(context: Context, blocks: List<Block>, date: String, options: CardOptions = CardOptions(), photo: java.io.File? = null): List<() -> Bitmap> {
     val style = options.style
     val bold = options.font.typeface(context, true)
     val regular = options.font.typeface(context, false)
@@ -147,6 +156,15 @@ fun noteCards(context: Context, blocks: List<Block>, date: String, options: Card
         return layout(title, paint, 4, 1.1f)
     }
     val room = (options.textBottom() - CARD_TOP).toInt()
+    // The photo keeps its shape, within limits: no thinner than 2:1, no taller than a share of the card.
+    val pic = photo?.takeIf { options.photo }?.let { f ->
+        val small = runCatching { com.margin.app.data.decodeImage(f, 96) }.getOrNull() ?: return@let null
+        val aspect = small.width / small.height.toFloat()
+        small.recycle()
+        val cap = room * when (options.size) { CardSize.SQUARE -> 0.38f; CardSize.PORTRAIT -> 0.44f; CardSize.STORY -> 0.48f }
+        CardPhoto(f, (width / aspect).coerceIn(width / 2f, cap).toInt())
+    }
+    val picH = pic?.let { it.height + PHOTO_GAP } ?: 0
 
     val title = blocks.firstOrNull()?.text?.trim().orEmpty().ifEmpty { "Untitled" }
     val (body, ai) = cardBody(blocks.drop(1).filter { it.attachment == null }, style.rule.toInt())
@@ -154,10 +172,10 @@ fun noteCards(context: Context, blocks: List<Block>, date: String, options: Card
     for (size in listOf(64f, 56f, 50f, 44f, 40f)) {
         val (titlePaint, bodyPaint) = paints(size)
         val t = titleLayout(title, titlePaint)
-        if (body.isEmpty()) return listOf { drawCard(context, options, date, t, null, 0, 0, center = true, ai) }
+        if (body.isEmpty()) return listOf { drawCard(context, options, date, t, null, 0, 0, center = true, ai, pic) }
         val b = layout(body, bodyPaint, Int.MAX_VALUE, 1.4f)
-        if (b.getLineBottom(b.lineCount - 1) <= room - t.height - 48f)
-            return listOf { drawCard(context, options, date, t, b, 0, b.lineCount, center = true, ai) }
+        if (b.getLineBottom(b.lineCount - 1) <= room - picH - t.height - 48f)
+            return listOf { drawCard(context, options, date, t, b, 0, b.lineCount, center = true, ai, pic) }
     }
     // Still too long: keep a readable size and run the text on over more cards, the title on the first only.
     val (titlePaint, bodyPaint) = paints(44f)
@@ -165,9 +183,9 @@ fun noteCards(context: Context, blocks: List<Block>, date: String, options: Card
     val b = layout(body, bodyPaint, Int.MAX_VALUE, 1.4f)
     // A card ends at a paragraph's end when one is near enough, so a lone line doesn't start the next card.
     val paraEnd = { line: Int -> line == b.lineCount - 1 || body.getOrNull(b.getLineEnd(line) - 1) == '\n' }
-    val pages = cardPages(b.lineCount, b::getLineTop, b::getLineBottom, room - t.height - 48, room, paraEnd)
+    val pages = cardPages(b.lineCount, b::getLineTop, b::getLineBottom, room - picH - t.height - 48, room, paraEnd)
     return pages.mapIndexed { i, lines ->
-        { drawCard(context, options, "$date  ·  ${i + 1}/${pages.size}", t.takeIf { i == 0 }, b, lines.first, lines.last + 1, center = false, ai) }
+        { drawCard(context, options, "$date  ·  ${i + 1}/${pages.size}", t.takeIf { i == 0 }, b, lines.first, lines.last + 1, center = false, ai, pic.takeIf { i == 0 }) }
     }
 }
 
@@ -219,9 +237,10 @@ internal fun cardPages(count: Int, top: (Int) -> Int, bottom: (Int) -> Int, firs
 }
 
 private const val CARD_TOP = 120f
+private const val PHOTO_GAP = 44
 
 /** One card: the paper, the [title] (if any) and lines [from] until [to] of [body], and the foot with [footNote]. */
-private fun drawCard(context: Context, options: CardOptions, footNote: String, title: StaticLayout?, body: StaticLayout?, from: Int, to: Int, center: Boolean, ai: List<IntRange> = emptyList()): Bitmap {
+private fun drawCard(context: Context, options: CardOptions, footNote: String, title: StaticLayout?, body: StaticLayout?, from: Int, to: Int, center: Boolean, ai: List<IntRange> = emptyList(), photo: CardPhoto? = null): Bitmap {
     val style = options.style
     val CARD_H = options.size.h
     val CARD_BOTTOM = options.textBottom()
@@ -260,7 +279,8 @@ private fun drawCard(context: Context, options: CardOptions, footNote: String, t
     // Ruled paper runs it from the top edge, like a real pad; it always ends just above the foot.
     c.drawLine(100f, if (style.lines != null) 0f else 110f, 100f, if (options.foot) FOOT_LINE - 10f else if (style.lines != null) FOOT_LINE else CARD_H - 110f, rule)
 
-    val titleH = title?.let { it.height + 48f } ?: 0f
+    val picH = photo?.let { it.height + PHOTO_GAP.toFloat() } ?: 0f
+    val titleH = (title?.let { it.height + 48f } ?: 0f) + picH
     val slice = if (body != null && to > from) (body.getLineBottom(to - 1) - body.getLineTop(from)).toFloat() else 0f
     var y = CARD_TOP + if (center) ((CARD_BOTTOM - CARD_TOP - titleH - slice) / 2).coerceAtLeast(0f) else 0f
     val bodyTop = y + titleH
@@ -272,11 +292,26 @@ private fun drawCard(context: Context, options: CardOptions, footNote: String, t
                 (if (b.lineCount > 1) (b.getLineBaseline(1) - b.getLineBaseline(0)).toFloat() else b.paint.fontSpacing * 1.4f)
         } ?: ((bodyTop + 40f) to 70f)
         var at = first
-        while (at - pitch > y + (title?.height ?: 0)) at -= pitch
+        while (at - pitch > y + picH + (title?.height ?: 0)) at -= pitch
         // The last line keeps clear of the foot's hairline rather than doubling it.
         while (at < FOOT_LINE - 24f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
     }
-    title?.let { c.save(); c.translate(left, y); it.draw(c); c.restore() }
+    // The photo, cropped to fill its box, with rounded corners and a hairline edge.
+    photo?.let { ph ->
+        com.margin.app.data.decodeImage(ph.file, 1600)?.let { bm ->
+            val box = RectF(left, y, CARD_W - 96f, y + ph.height)
+            val scale = maxOf(box.width() / bm.width, box.height() / bm.height)
+            val sw = box.width() / scale; val sh = box.height() / scale
+            val src = android.graphics.Rect(((bm.width - sw) / 2).toInt(), ((bm.height - sh) / 2).toInt(), ((bm.width + sw) / 2).toInt(), ((bm.height + sh) / 2).toInt())
+            c.save()
+            c.clipPath(android.graphics.Path().apply { addRoundRect(box, 28f, 28f, android.graphics.Path.Direction.CW) })
+            c.drawBitmap(bm, src, box, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+            c.restore()
+            c.drawRoundRect(box, 28f, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.hair.toInt(); this.style = Paint.Style.STROKE; strokeWidth = 2f })
+            bm.recycle()
+        }
+    }
+    title?.let { c.save(); c.translate(left, y + picH); it.draw(c); c.restore() }
     if (body != null && to > from) {
         c.save()
         c.clipRect(0f, bodyTop, CARD_W.toFloat(), bodyTop + slice)
@@ -329,7 +364,7 @@ private fun drawMark(c: Canvas, x: Float, y: Float, s: Float, edge: Boolean) {
 
 /** Share as image: the card as it will look, a row of styles to try, and Share. */
 @androidx.compose.runtime.Composable
-fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onSave: (CardOptions) -> Unit, onShare: (CardOptions) -> Unit) {
+fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, onDismiss: () -> Unit, onSave: (CardOptions) -> Unit, onShare: (CardOptions) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // Opens on the style used last time.
     val prefs = androidx.compose.runtime.remember { context.getSharedPreferences(CARD_PREFS, Context.MODE_PRIVATE) }
@@ -343,14 +378,15 @@ fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onSave:
         androidx.compose.runtime.mutableStateOf(runCatching { CardFont.valueOf(prefs.getString(LAST_FONT, null)!!) }.getOrDefault(CardFont.SANS))
     }
     var foot by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(prefs.getBoolean(SHOW_FOOT, true)) }
-    val options = CardOptions(style, size, font, foot)
+    var withPhoto by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(prefs.getBoolean(SHOW_PHOTO, true)) }
+    val options = CardOptions(style, size, font, foot, withPhoto)
     // Saved when the cards go out, so the next note opens the same way.
     fun remembered(o: CardOptions) = o.also {
-        prefs.edit().putString(LAST_STYLE, it.style.name).putString(LAST_SIZE, it.size.name).putString(LAST_FONT, it.font.name).putBoolean(SHOW_FOOT, it.foot).apply()
+        prefs.edit().putString(LAST_STYLE, it.style.name).putString(LAST_SIZE, it.size.name).putString(LAST_FONT, it.font.name).putBoolean(SHOW_FOOT, it.foot).putBoolean(SHOW_PHOTO, it.photo).apply()
     }
     var pages by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<() -> Bitmap>>(emptyList()) }
     androidx.compose.runtime.LaunchedEffect(options) {
-        pages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { noteCards(context, blocks, date, options) }
+        pages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { noteCards(context, blocks, date, options, photo) }
     }
     val pager = androidx.compose.foundation.pager.rememberPagerState { pages.size }
     androidx.compose.ui.window.Dialog(onDismiss, androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
@@ -423,6 +459,7 @@ fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onSave:
                 CardFont.entries.forEach { f -> Pill(f.label, f == font, { font = f }) }
                 Box(Modifier.size(1.dp, 24.dp).background(jc.line))
                 Pill("Date & Margin", foot, { foot = !foot })
+                if (photo != null) Pill("Photo", withPhoto, { withPhoto = !withPhoto })
             }
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SecondaryButton(if (pages.size > 1) "Save ${pages.size}" else "Save", { onSave(remembered(options)) }, Modifier.weight(1f))
