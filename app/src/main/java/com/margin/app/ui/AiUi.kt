@@ -41,57 +41,62 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.margin.app.data.AI_PROVIDERS
 import com.margin.app.data.AiException
 import com.margin.app.data.AiKeys
 import com.margin.app.data.aiProvider
+import com.margin.app.data.providerForKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-/** Settings › AI: the provider, the user's own API key for it, the model, and a connection test. */
+/**
+ * Settings › AI. Not set up: a short guided setup ([AiSetup]). Set up: which provider is connected, a test,
+ * the model under Advanced, and Remove.
+ */
 @Composable
 fun AiSettingsCard(ai: AiKeys) {
     val cfg by ai.config.collectAsState()
     val p = aiProvider(cfg.provider)
     val scope = rememberCoroutineScope()
-    // Keyed by provider so a half-typed key never carries over. Not saveable: the key stays out of saved state.
-    var typed by remember(p) { mutableStateOf("") }
-    var note by remember(p, cfg.key, cfg.model) { mutableStateOf<String?>(null) }
+    // A result line under the card; [ok] shows it in green.
+    var note by remember(cfg.key, cfg.model) { mutableStateOf<String?>(null) }
+    var ok by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
+    // Just connected through setup (Connect tests the key): say so, in green.
+    var hadKey by remember { mutableStateOf(cfg.key != null) }
+    androidx.compose.runtime.LaunchedEffect(cfg.key) {
+        if (cfg.key != null && !hadKey) { note = "✓ Connected. AI is ready to use in your notes."; ok = true }
+        hadKey = cfg.key != null
+    }
+    var advanced by remember { mutableStateOf(cfg.model.isNotBlank()) }
     Card {
-        CardRow("Provider", icon = Ico.SPARKLE, sub = p.name) {
-            var open by remember { mutableStateOf(false) }
-            Box {
-                TextAction("Change", { open = true })
-                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                    AI_PROVIDERS.forEach { DropdownMenuItem(text = { Text(it.name, style = JType.row, color = if (it == p) jc.accent else jc.ink) }, onClick = { open = false; ai.setProvider(it.id) }) }
-                }
-            }
+        if (cfg.key == null) {
+            AiSetup(ai, Modifier.padding(16.dp))
+            return@Card
         }
-        CardDivider()
-        if (cfg.key != null) {
-            CardRow("Key saved ••••${cfg.mask.orEmpty()}", icon = Ico.KEY, sub = "Encrypted on this phone only. Never synced.") {
-                TextAction("Remove", { ai.remove() }, color = jc.danger)
-            }
-        } else {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    typed, { typed = it }, Modifier.fillMaxWidth(), singleLine = true, shape = JShape.sm,
-                    label = { Text("${p.name} API key") }, placeholder = { Text(p.keyHint) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
-                )
-                Text("${p.keyHelp} It's stored encrypted on this phone only.", style = JType.small, color = jc.muted)
-                TextAction("Save key", {
-                    val saved = ai.save(typed.trim())
-                    typed = ""
-                    if (!saved) note = "That doesn't look like an API key."
-                }, bold = true, enabled = typed.isNotBlank())
-            }
+        CardRow("Connected to ${p.name}", icon = Ico.SPARKLE, sub = "Key ••••${cfg.mask.orEmpty()}, encrypted on this phone only. Never synced.") {
+            TextAction("Remove", { ai.remove() }, color = jc.danger)
         }
+        // Where the key lives: to check usage, limits or make a new one.
+        ProviderLink(p, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), prefix = "Manage your key at ")
         CardDivider()
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        CardRow(if (testing) "Testing…" else "Test connection", labelColor = jc.accent, onClick = {
+            if (testing) return@CardRow
+            testing = true
+            scope.launch {
+                val result = try { ai.test(); ok = true; "✓ Connection works." } catch (e: AiException) { ok = false; "Test failed: ${e.message}" }
+                testing = false
+                note = result
+            }
+        })
+        CardDivider()
+        CardRow("Advanced", sub = if (cfg.model.isBlank()) "Model: ${p.defaultModel} (default)" else "Model: ${cfg.model}", onClick = { advanced = !advanced }) {
+            JIcon(if (advanced) Ico.ARROW_UP else Ico.ARROW_DOWN, jc.muted, size = 18.dp)
+        }
+        if (advanced) Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 cfg.model, ai::setModel, Modifier.fillMaxWidth(), singleLine = true, shape = JShape.sm,
                 label = { Text("Model") }, placeholder = { Text(p.defaultModel) },
@@ -99,19 +104,92 @@ fun AiSettingsCard(ai: AiKeys) {
             )
             Text("Leave empty for ${p.defaultModel}. ${p.name} sets the limits and the price.", style = JType.small, color = jc.muted)
         }
-        if (cfg.key != null) {
-            CardDivider()
-            CardRow(if (testing) "Testing…" else "Test connection", labelColor = jc.accent, onClick = {
-                if (testing) return@CardRow
-                testing = true
-                scope.launch {
-                    val result = try { ai.test(); "Connection works." } catch (e: AiException) { "Test failed: ${e.message}" }
-                    testing = false
-                    note = result
-                }
-            })
+        note?.let {
+            Text(
+                it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).semantics { liveRegion = LiveRegionMode.Polite },
+                style = JType.small.copy(fontWeight = if (ok) androidx.compose.ui.text.font.FontWeight.SemiBold else null), color = if (ok) jc.success else jc.danger,
+            )
         }
-        note?.let { Text(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp).semantics { liveRegion = LiveRegionMode.Polite }, style = JType.small, color = jc.ink) }
+    }
+}
+
+private fun openLink(context: android.content.Context, url: String) {
+    runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+}
+
+/** The provider's key page as a tappable link, shown as its address without "https://". */
+@Composable
+private fun ProviderLink(p: com.margin.app.data.AiProvider, modifier: Modifier = Modifier, prefix: String = "Or open ") {
+    val context = LocalContext.current
+    val address = p.keyUrl.removePrefix("https://")
+    Text(
+        androidx.compose.ui.text.buildAnnotatedString {
+            append(prefix)
+            withLink(androidx.compose.ui.text.LinkAnnotation.Clickable("key", androidx.compose.ui.text.TextLinkStyles(androidx.compose.ui.text.SpanStyle(color = jc.accent, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))) { openLink(context, p.keyUrl) }) {
+                append(address)
+            }
+        },
+        modifier.semantics { contentDescription = "$prefix$address, link" }, style = JType.small, color = jc.muted,
+    )
+}
+
+/**
+ * Guided AI setup: pick a provider (the free ones first), open its key page, paste the key and Connect,
+ * which saves and tests it at once. A pasted key moves the choice to the provider it belongs to.
+ */
+@Composable
+fun AiSetup(ai: AiKeys, modifier: Modifier = Modifier) {
+    val cfg by ai.config.collectAsState()
+    val p = aiProvider(cfg.provider)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // Not saveable: the key stays out of saved state.
+    var typed by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    fun take(key: String) {
+        typed = key; error = null
+        providerForKey(key)?.takeIf { it.id != cfg.provider }?.let { ai.setProvider(it.id) }
+    }
+    fun connect() {
+        if (busy || typed.isBlank()) return
+        busy = true; error = null
+        scope.launch {
+            try { ai.connect(typed); typed = "" } catch (e: AiException) { error = e.message }
+            busy = false
+        }
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Use AI with your own key. Margin has no AI of its own; Gemini, Groq and NVIDIA have free keys.", style = JType.para, color = jc.ink)
+        // 1. Provider, free ones first.
+        Text("1. Choose a provider", style = JType.small, color = jc.muted)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AI_PROVIDERS.sortedByDescending { it.free }.forEach { q ->
+                Pill(if (q.free) "${q.short} · free" else q.short, q.id == p.id, { if (q.id != p.id) { ai.setProvider(q.id); error = null } })
+            }
+        }
+        // 2. Its key page, in the browser.
+        Text("2. Get a key", style = JType.small, color = jc.muted)
+        SecondaryButton(if (p.free) "Get a free ${p.short} key" else "Get a ${p.short} key", { openLink(context, p.keyUrl) }, Modifier.fillMaxWidth())
+        ProviderLink(p)
+        Text("Sign in, create a key, copy it, then come back here.", style = JType.small, color = jc.muted)
+        // 3. Paste and connect.
+        Text("3. Paste it and connect", style = JType.small, color = jc.muted)
+        OutlinedTextField(
+            typed, ::take, Modifier.fillMaxWidth(), singleLine = true, shape = JShape.sm,
+            label = { Text("${p.name} API key") }, placeholder = { Text(p.keyHint) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+            trailingIcon = {
+                TextAction("Paste", {
+                    context.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)
+                        ?.coerceToText(context)?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let(::take)
+                })
+            },
+        )
+        PrimaryButton(if (busy) "Connecting…" else "Connect", ::connect, Modifier.fillMaxWidth(), enabled = typed.isNotBlank() && !busy)
+        error?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = JType.small, color = jc.danger) }
+        Text("The key is stored encrypted on this phone only and never synced. Notes you ask about go to ${p.name} under its terms.", style = JType.small, color = jc.muted)
     }
 }
 
@@ -154,6 +232,10 @@ fun AiSheet(ai: AiKeys, noteText: String, onInsert: ((String) -> Unit)?, onRepla
     /** The answer is a rewrite of the whole note. */
     var rewrite by remember { mutableStateOf(false) }
     var translating by remember { mutableStateOf(false) }
+    // Set up from this sheet: a green line confirms it before the first question.
+    var hadKey by remember { mutableStateOf(cfg.key != null) }
+    var connected by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(cfg.key) { if (cfg.key != null && !hadKey) connected = true; hadKey = cfg.key != null }
     val busy = job?.isActive == true
     fun ask(request: String, rewrites: Boolean = false) {
         if (busy) return
@@ -176,11 +258,14 @@ fun AiSheet(ai: AiKeys, noteText: String, onInsert: ((String) -> Unit)?, onRepla
                 Box(Modifier.align(Alignment.CenterStart)) { TextAction("Close", onClose) }
                 Text("Ask AI", Modifier.align(Alignment.Center), style = JType.rowTitle, color = jc.ink)
             }
+            // Not set up yet: set up right here, then carry on with the note.
             if (cfg.key == null) {
-                Text("Add your own API key in Settings › AI to use this. Margin has no AI of its own.", style = JType.para, color = jc.ink)
+                AiSetup(ai, Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()))
             } else if (noteText.isBlank()) {
+                if (connected) Text("✓ Connected to ${p.name}.", style = JType.para.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = jc.success)
                 Text("This note is empty.", style = JType.para, color = jc.muted)
             } else {
+                if (connected) Text("✓ Connected to ${p.name}. Pick something to do with this note.", style = JType.para.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = jc.success)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
                     AI_ASKS.forEach { a -> Chip(a.label, { ask(a.request, a.rewrites) }) }
                     Box {

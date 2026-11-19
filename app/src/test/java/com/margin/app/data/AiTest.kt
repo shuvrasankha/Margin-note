@@ -83,4 +83,15 @@ class AiTest {
     )
 
     @Test fun unknownProviderFallsBackToTheFirst() = assertEquals(AI_PROVIDERS.first(), aiProvider("gone"))
+
+    @Test fun pastedKeysAreMatchedToTheirProvider() {
+        assertEquals("gemini", providerForKey("AIzaSyAbc123")?.id)
+        assertEquals("anthropic", providerForKey("sk-ant-api03-xyz")?.id)
+        assertEquals("openai", providerForKey("sk-proj-xyz")?.id)
+        assertEquals("groq", providerForKey(" gsk_abc ")?.id)
+        assertEquals("nvidia", providerForKey("nvapi-abc")?.id)
+        assertNull(providerForKey("not-a-key"))
+    }
+
+    @Test fun everyProviderHasAKeyPage() = assertTrue(AI_PROVIDERS.all { it.keyUrl.startsWith("https://") })
 }

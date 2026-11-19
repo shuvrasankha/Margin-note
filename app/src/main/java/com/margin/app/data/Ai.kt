@@ -33,15 +33,36 @@ import javax.inject.Singleton
  */
 
 /** A provider the user can bring a key for. [keyHint] is the field placeholder, [keyHelp] where to get one. */
-data class AiProvider(val id: String, val name: String, val url: String, val defaultModel: String, val keyHint: String, val keyHelp: String)
+/**
+ * An AI provider: where requests go, its default model, how its keys start ([keyHint], also used to tell
+ * a pasted key's provider), the page where a key is made ([keyUrl]), and whether it has a free tier.
+ */
+data class AiProvider(
+    val id: String, val name: String, val url: String, val defaultModel: String, val keyHint: String, val keyHelp: String,
+    val keyUrl: String = "", val free: Boolean = false, val short: String = name,
+)
 
 val AI_PROVIDERS = listOf(
-    AiProvider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "gemini-3.8-flash", "AIza…", "Get a key at aistudio.google.com."),
-    AiProvider("openai", "OpenAI", "https://api.openai.com/v1/chat/completions", "gpt-6-luna", "sk-…", "Get a key at platform.openai.com."),
-    AiProvider("anthropic", "Anthropic", "https://api.anthropic.com/v1/messages", "claude-opus-5-5", "sk-ant-…", "Get a key at platform.claude.com."),
-    AiProvider("groq", "Groq", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b", "gsk_…", "Get a key at console.groq.com."),
-    AiProvider("nvidia", "NVIDIA", "https://integrate.api.nvidia.com/v1/chat/completions", "nvidia/nemotron-3.5-super-vl-120b-a12b", "nvapi-…", "Get a key at build.nvidia.com."),
+    AiProvider("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", "gemini-3.8-flash", "AIza…", "Get a key at aistudio.google.com.", "https://aistudio.google.com/apikey", free = true, short = "Gemini"),
+    AiProvider("openai", "OpenAI", "https://api.openai.com/v1/chat/completions", "gpt-6-luna", "sk-…", "Get a key at platform.openai.com.", "https://platform.openai.com/api-keys"),
+    AiProvider("anthropic", "Anthropic", "https://api.anthropic.com/v1/messages", "claude-opus-5-5", "sk-ant-…", "Get a key at platform.claude.com.", "https://platform.claude.com/settings/keys", short = "Claude"),
+    AiProvider("groq", "Groq", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b", "gsk_…", "Get a key at console.groq.com.", "https://console.groq.com/keys", free = true),
+    AiProvider("nvidia", "NVIDIA", "https://integrate.api.nvidia.com/v1/chat/completions", "nvidia/nemotron-3.5-super-vl-120b-a12b", "nvapi-…", "Get a key at build.nvidia.com.", "https://build.nvidia.com/settings/api-keys", free = true),
 )
+
+/** The provider a pasted key belongs to, told by how it starts; null when it's not clear. */
+fun providerForKey(key: String): AiProvider? {
+    val k = key.trim()
+    val id = when {
+        k.startsWith("AIza") -> "gemini"
+        k.startsWith("sk-ant-") -> "anthropic"
+        k.startsWith("gsk_") -> "groq"
+        k.startsWith("nvapi-") -> "nvidia"
+        k.startsWith("sk-") -> "openai"
+        else -> return null
+    }
+    return AI_PROVIDERS.first { it.id == id }
+}
 
 fun aiProvider(id: String?) = AI_PROVIDERS.firstOrNull { it.id == id } ?: AI_PROVIDERS.first()
 
@@ -225,6 +246,20 @@ class AiKeys @Inject constructor(private val prefs: AppPrefs) {
 
     /** One token of answer: enough to prove the key and model work. Throws [AiException] when they don't. */
     suspend fun test() { send("", "Hi", 1) }
+
+    /**
+     * Setup in one step: switches to the provider [key] belongs to (when it's clear), saves it and tests it.
+     * A key the provider rejects isn't kept, so the next paste starts clean. Throws [AiException] in words.
+     */
+    suspend fun connect(key: String) {
+        val k = key.trim()
+        providerForKey(k)?.let { setProvider(it.id) }
+        if (!save(k)) throw AiException("That doesn't look like an API key.")
+        try { test() } catch (e: AiException) {
+            if (e.message?.startsWith("API key rejected") == true) remove()
+            throw e
+        }
+    }
 
     private suspend fun send(system: String, user: String, maxTokens: Int): String? = withContext(Dispatchers.IO) {
         val cfg = config.value
