@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         // The Play Store ID. The code keeps its own namespace (com.margin.app), which users never see.
-        applicationId = "com.margin.app"
+        applicationId = "com.margin.note"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 1

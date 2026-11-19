@@ -6,7 +6,7 @@ Everything Play Console asks for, in the order you meet it. The listing text and
 
 | | |
 |---|---|
-| Package name | `com.margin.app` (it can't change after the first upload) |
+| Package name | `com.margin.note` (it can't change after the first upload; `com.margin.app` was taken). The code's own namespace stays `com.margin.app`. |
 | Version | 1.0.0 (versionCode 1) |
 | Min / target SDK | 26 (Android 8.0) / 37 |
 | Upload file | `app/build/outputs/bundle/release/app-release.aab` (`./gradlew bundleRelease`) |
@@ -117,7 +117,7 @@ No declaration form. It's covered by the Data safety answers and the privacy pol
 Play re-signs the app with its own **app signing key**, so Google sign-in from a Play install fails until Google Cloud knows that key.
 
 1. After the first upload: Play Console → Test and release → **App integrity** → App signing. Copy the **App signing key certificate SHA-1**.
-2. Google Cloud Console (the project that has the Drive API): APIs & Services → Credentials → **Create credentials → OAuth client ID → Android**. Package `com.margin.app`, with that SHA-1. Keep the existing client for the upload key (SHA-1 above) and the debug one too.
+2. Google Cloud Console (the project that has the Drive API): APIs & Services → Credentials → **Create credentials → OAuth client ID → Android**. Package `com.margin.note`, with that SHA-1. Keep the existing client for the upload key (SHA-1 above) and the debug one too.
 3. APIs & Services → **OAuth consent screen**:
    - App name Margin, support email, logo `store/icon-512.png`;
    - Home page `https://shuvrasankha.github.io/Margin-note/`;

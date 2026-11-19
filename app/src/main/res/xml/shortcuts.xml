@@ -4,16 +4,16 @@
     <shortcut android:shortcutId="new_note" android:enabled="true" android:icon="@drawable/shortcut_note"
         android:shortcutShortLabel="@string/shortcut_new_note">
         <intent android:action="com.margin.app.NEW_NOTE"
-            android:targetPackage="com.margin.app" android:targetClass="com.margin.app.MainActivity" />
+            android:targetPackage="com.margin.note" android:targetClass="com.margin.app.MainActivity" />
     </shortcut>
     <shortcut android:shortcutId="scan" android:enabled="true" android:icon="@drawable/shortcut_scan"
         android:shortcutShortLabel="@string/shortcut_scan">
         <intent android:action="com.margin.app.SCAN"
-            android:targetPackage="com.margin.app" android:targetClass="com.margin.app.MainActivity" />
+            android:targetPackage="com.margin.note" android:targetClass="com.margin.app.MainActivity" />
     </shortcut>
     <shortcut android:shortcutId="voice" android:enabled="true" android:icon="@drawable/shortcut_voice"
         android:shortcutShortLabel="@string/shortcut_voice">
         <intent android:action="com.margin.app.VOICE_NOTE"
-            android:targetPackage="com.margin.app" android:targetClass="com.margin.app.MainActivity" />
+            android:targetPackage="com.margin.note" android:targetClass="com.margin.app.MainActivity" />
     </shortcut>
 </shortcuts>
