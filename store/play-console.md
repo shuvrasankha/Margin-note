@@ -7,12 +7,14 @@ Everything Play Console asks for, in the order you meet it. The listing text and
 | | |
 |---|---|
 | Package name | `com.margin.note` (it can't change after the first upload; `com.margin.app` was taken). The code's own namespace stays `com.margin.app`. |
-| Version | 1.0.0 (versionCode 1) |
+| Version | 1.0.1 (versionCode 2). 1.0.0 (versionCode 1) went to internal testing first. |
 | Min / target SDK | 26 (Android 8.0) / 37 |
 | Upload file | `app/build/outputs/bundle/release/app-release.aab` (`./gradlew bundleRelease`) |
 | Upload key | `margin-release.jks` (with `keystore.properties`). Back up both somewhere safe, outside the repo. Losing them means asking Google for an upload key reset. |
 | Upload key SHA-1 | `DB:0C:6E:B7:0E:7F:1D:61:D9:35:83:7A:06:D1:8F:97:C3:5D:1C:5B` |
 | Upload key SHA-256 | `7A:56:58:BD:8F:AC:5A:AB:0C:16:E8:CD:78:23:85:34:E4:EE:44:83:86:C3:AE:70:A0:16:B9:14:7E:E9:8A:E5` |
+| Play app signing key SHA-1 | `59:17:DF:0E:94:E2:0B:E3:51:27:1C:2C:0C:A0:FE:9C:B3:8E:1F:72` (classical key; the beta post-quantum key is `8A:59:81:CF:78:66:F2:C5:C6:A1:05:36:D0:21:18:40:FD:DF:D7:42`) |
+| Play app signing key SHA-256 | `65:03:A1:EE:75:E3:7B:3E:40:9E:50:FF:27:16:C2:51:6F:6E:18:39:4D:5F:11:29:E5:E2:B6:46:4E:C4:AC:00` |
 
 For every later release, raise `versionCode` (and `versionName`) in `app/build.gradle.kts`.
 
@@ -96,11 +98,8 @@ Why "Not shared": Google counts transfers that the user starts and expects (send
 
 Play Console shows these forms once the AAB is uploaded (App content → Sensitive permissions, or on the release page).
 
-### Foreground service: `FOREGROUND_SERVICE_MICROPHONE`
-- Feature: **Media → Voice recording** (user-initiated recording of a voice note)
-- Description: "The user taps record in a note to make a voice note. Recording runs in a foreground service with a visible notification and a stop button, so it continues if the user switches apps or the screen turns off. It stops when the user taps stop."
-- Impact if deferred or interrupted: the recording would be cut off and lost.
-- **Video link (required):** record a 30-second screen video on a phone. Open a note, tap the mic, start recording, go to the home screen to show the recording notification, come back and stop. Upload it to YouTube as *Unlisted* and paste the link.
+### Foreground service: not used since 1.0.1
+1.0.0 recorded voice notes in a microphone foreground service, which needs a declaration with a video. From 1.0.1 (versionCode 2) there's no foreground service: leaving Margin while recording stops the recording and adds it to the note. So the declaration goes away once no active track has the 1.0.0 bundle (put 1.0.1 on internal and closed testing). The plain `FOREGROUND_SERVICE` permission in the merged manifest comes from WorkManager and needs no form.
 
 ### Full-screen intent: `USE_FULL_SCREEN_INTENT`
 - Use case: **Alarms set by the user**. Reminders can be set to ring as an alarm, and the full-screen alert shows them when the phone is locked.
@@ -121,9 +120,10 @@ Already done on 19 Nov 2026 in the Google Cloud project "My First Project" (`mid
 - Android client **Margin debug (com.margin.note.debug)**, with the debug key's SHA-1 `D1:C2:97:5A:08:DD:0A:C1:E1:7B:A4:B0:ED:E9:41:21:DA:52:9B:81`.
 - `drive.appdata` is declared under Data access. Google treats it as a non-sensitive scope.
 - Branding (name, home page, privacy and terms links, `shuvrasankha.github.io`) is filled in, and the publishing status is **In production**.
+- Android client **Margin Play signing (com.margin.note)**, with the Play app signing SHA-1 `59:17:DF:…:1F:72`, added after the first upload.
 - The old `com.margin.app` clients (Android client 1 and 2) are kept for the builds already installed.
 
-Still to do: steps 1 and 2 below with the Play app-signing SHA-1, after the first upload. Optionally, also submit the branding for verification so the logo and name show on the consent screen. That needs `shuvrasankha.github.io` verified in Google Search Console.
+Steps 1 to 4 below are done. Optionally, also submit the branding for verification so the logo and name show on the consent screen. That needs `shuvrasankha.github.io` verified in Google Search Console.
 
 1. After the first upload: Play Console → Test and release → **App integrity** → App signing. Copy the **App signing key certificate SHA-1**.
 2. Google Cloud Console (the project that has the Drive API): APIs & Services → Credentials → **Create credentials → OAuth client ID → Android**. Package `com.margin.note`, with that SHA-1. Keep the existing client for the upload key (SHA-1 above) and the debug one too.
@@ -136,6 +136,8 @@ Still to do: steps 1 and 2 below with the Play app-signing SHA-1, after the firs
 4. Publishing status: **Push to production**. While it's in "Testing", only listed test users can sign in, and their tokens expire after 7 days. Google may ask to verify the brand (home page, privacy link, domain ownership via Search Console). `drive.appdata` doesn't need the paid security assessment.
 
 ## 6. Testing and release
+
+Status on 19 Nov 2026: 1.0.1 is on internal testing, and the closed test (Alpha, 5 countries, the "Alpha testers" list) was sent for review. Play's pre-check flagged `android.hardware.screen.portrait`, which ML Kit's document scanner implies. It was acknowledged as "plans to resolve", and the manifest now marks it as not required from the next build (versionCode 3).
 
 - **New personal developer account?** Accounts made after 13 Nov 2023 must run a **closed test with at least 12 testers, opted in for 14 days in a row**, before they can apply for production. Start this first, since it's the longest wait.
   - Test and release → Testing → Closed testing → Create track.
@@ -154,6 +156,5 @@ Still to do: steps 1 and 2 below with the Play app-signing SHA-1, after the firs
   - [ ] the app lock;
   - [ ] Drive sign-in.
 - [ ] Back up `margin-release.jks` and `keystore.properties` off this computer.
-- [ ] Record the microphone video for the declaration.
 - [ ] Play app-signing SHA-1 added to Google Cloud. OAuth consent screen in production.
 - [ ] Privacy policy URL opens (it's live on GitHub Pages).

@@ -5,9 +5,8 @@
     <!-- Voice notes. Asked for the first time the user taps record. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
-    <!-- Keeps a voice recording going in the background, with a notification to pause or stop it. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- ML Kit's document scanner locks itself to portrait; don't let that hide Margin from landscape-only devices. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- New reminders can also go on the phone's calendar as events. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
@@ -75,10 +74,6 @@
             </intent-filter>
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
         </service>
-        <service
-            android:name=".ui.RecordingService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
         <receiver
             android:name=".ui.RecentWidget"
             android:exported="false">
