@@ -66,9 +66,8 @@ private const val BARS = 40
 /**
  * Full-screen recorder, laid out like the design: Cancel and a red "Recording" label on top, a large timer,
  * a level meter from the microphone, then pause, stop-and-insert and discard. Stop (or Back) hands over the
- * file and its length; Cancel and Discard throw it away. Needs RECORD_AUDIO already granted. The recording runs in
- * [Recorder], so it carries on in the background; Stop in the notification ends it and it's added on return.
- * shortcut: leaving the note (or swiping Margin away) while recording discards it, as before; keep it as a draft if that bites.
+ * file and its length; Cancel and Discard throw it away. Needs RECORD_AUDIO already granted. Leaving Margin (Home,
+ * another app, screen off) stops the recording and adds it to the note, so nothing records in the background.
  */
 @Composable
 fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: () -> Unit) {
@@ -93,7 +92,16 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
         // Leaving without Stop or Discard (the note closed under it): discard.
         onDispose { if (Recorder.state.value.active) Recorder.discard() }
     }
-    // Stopped here, from the notification, or at the length limit: hand the file over.
+    // Margin went to the background: stop and keep what was recorded (the effect below adds it to the note).
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && Recorder.state.value.active) Recorder.stop()
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    // Stopped here, on leaving Margin, or at the length limit: hand the file over.
     LaunchedEffect(rec.doneMs, rec.active, started) {
         val ms = rec.doneMs
         val f = Recorder.file
