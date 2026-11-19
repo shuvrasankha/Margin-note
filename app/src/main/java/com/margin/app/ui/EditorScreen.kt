@@ -396,18 +396,18 @@ fun EditorScreen(
                         val blocks = remember { vm.doc.toBlocks() }
                         val date = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(java.util.Date(vm.editedAt ?: System.currentTimeMillis())) }
                         val title = remember { blocks.first().text.trim().ifEmpty { "Note" } }
-                        CardDialog(blocks, date, onDismiss = { carding = false }, onSave = { style ->
+                        CardDialog(blocks, date, onDismiss = { carding = false }, onSave = { options ->
                             carding = false
                             if (android.os.Build.VERSION.SDK_INT < 29 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
                                 != android.content.pm.PackageManager.PERMISSION_GRANTED
-                            ) { pendingSave = { saveCards(context, blocks, date, style, title, ::toast) }; storagePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) }
-                            else scope.launch { saveCards(context, blocks, date, style, title, ::toast) }
-                        }) { style ->
+                            ) { pendingSave = { saveCards(context, blocks, date, options, title, ::toast) }; storagePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                            else scope.launch { saveCards(context, blocks, date, options, title, ::toast) }
+                        }) { options ->
                             carding = false
                             scope.launch {
                                 val files = withContext(Dispatchers.IO) {
                                     runCatching {
-                                        val pages = noteCards(context, blocks, date, style)
+                                        val pages = noteCards(context, blocks, date, options)
                                         pages.mapIndexed { i, draw ->
                                             val bmp = draw()
                                             val name = safeFileName(title) + (if (pages.size > 1) " ${i + 1}" else "") + ".png"
@@ -1407,10 +1407,10 @@ fun Tint.swatch(): Color = when (this) {
 
 
 /** Saves the note's cards to the phone's Pictures/Margin, then says how many went in. */
-internal suspend fun saveCards(context: android.content.Context, blocks: List<com.margin.app.data.Block>, date: String, style: CardStyle, title: String, toast: (String) -> Unit) {
+internal suspend fun saveCards(context: android.content.Context, blocks: List<com.margin.app.data.Block>, date: String, options: CardOptions, title: String, toast: (String) -> Unit) {
     val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         runCatching {
-            val pages = noteCards(context, blocks, date, style)
+            val pages = noteCards(context, blocks, date, options)
             pages.forEachIndexed { i, draw ->
                 val bmp = draw()
                 val name = safeFileName(title) + (if (pages.size > 1) " ${i + 1}" else "") + ".png"
