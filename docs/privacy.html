@@ -17,13 +17,14 @@
   </header>
 
   <h1>Privacy policy</h1>
-  <p class="meta">Effective 11 November 2026</p>
+  <p class="meta">Effective 19 November 2026</p>
 
-  <p>Margin ("the app") is a notes app for Android made by Shuvrasankha Paul ("we"). This policy explains what happens to your information when you use it. In short: your notes stay on your phone and, if you choose, in your own Google Drive. We don't run servers that store your notes, we don't show ads, and we don't track you.</p>
+  <p>Margin ("the app") is a notes app for Android made by Shuvrasankha Paul ("we"). This policy explains what happens to your information when you use it. In short: your notes stay on your phone and, if you choose, in your own Google Drive or another storage place you pick. We don't run servers that store your notes, we don't show ads, and we don't track you.</p>
 
   <h2>What stays on your phone</h2>
-  <p>Everything you put in the app is stored in the app's private storage on your phone: notes, checklists, tables, drawings, photos, scans, PDFs, voice recordings, reminders and settings. This also includes data the app makes for you, such as earlier versions of your notes and the text it reads from your photos and PDFs so you can search them. We can't see any of it.</p>
+  <p>Everything you put in the app is stored in the app's private storage on your phone: notes, checklists, tables, drawings, photos, scans, PDFs, voice recordings, reminders, your journal, habits, trackers, saved passwords and settings. This also includes data the app makes for you, such as earlier versions of your notes and the text it reads from your photos and PDFs so you can search them. We can't see any of it.</p>
   <p>Locked notes are encrypted on your phone with a key made from your passcode. We never see your passcode.</p>
+  <p>Saved passwords in the app's password vault are stored as locked notes: everything about each login, including the site name, is encrypted with your passcode. Copied passwords are cleared from the clipboard after a short time.</p>
 
   <h2>Google sign-in and Drive backup</h2>
   <p>Backup is optional and off until you turn it on. When you sign in with Google, the app receives your Google account's email address and name, which it uses to show which account is backing up. It then asks for permission to use one hidden app-only folder in your Google Drive (the <code>drive.appdata</code> permission). The app can't see or change any of your other Drive files, and the folder doesn't appear in the Drive app.</p>
@@ -31,11 +32,25 @@
   <p>You can sign out at any time in the app's settings. To delete the backup, remove Margin's data from Google Drive (Settings → Manage apps in Drive on the web).</p>
   <p>The app's use of information received from Google APIs follows the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. The Drive data is used only to back up and sync your notes, and is never sold, used for ads or shared with anyone.</p>
 
+  <h2>Other backup places</h2>
+  <p>You can also have the app copy full backups to a place you choose: a folder from the system file picker (for example Dropbox, OneDrive, Box or a folder on your phone) or a WebDAV server you give the address of. The backup goes from your phone straight to that place; it doesn't pass through us, and that service's own privacy policy applies to it. A WebDAV password you enter is encrypted on your phone with a key kept in the Android Keystore.</p>
+  <p>If you set a backup password, each backup is encrypted with it before it leaves your phone, so the place it's kept in can't read it. Without one, locked notes and saved passwords stay encrypted in the backup, but the rest of your notes can be read by anyone who can open the backup file.</p>
+
+  <h2>Ask AI (optional)</h2>
+  <p>Ask AI is off until you add an API key of your own from one of these providers: <a href="https://ai.google.dev/gemini-api/terms">Google Gemini</a>, <a href="https://openai.com/policies/privacy-policy">OpenAI</a>, <a href="https://www.anthropic.com/legal/privacy">Anthropic (Claude)</a>, <a href="https://groq.com/privacy-policy/">Groq</a> or <a href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">NVIDIA</a>. Your key is encrypted on your phone with a key kept in the Android Keystore, and is never synced or sent to us.</p>
+  <p>When you use Ask AI on a note (for example to summarise, rewrite, translate or ask a question), the text of that note, or the part you selected, and what you type in the chat are sent directly from your phone to the provider you chose, using your key. Photos, files and recordings are not sent. Ask AI isn't available on locked notes, so their text is never sent. What the provider does with that text, including whether it keeps it, is covered by the provider's own terms and privacy policy for the key you use.</p>
+
+  <h2>Your phone's calendar (optional)</h2>
+  <p>When you set a reminder you can turn on "Add to phone calendar". The first time, the app asks for permission to read and write your calendars. It reads only the list of your calendars, to choose one it can save to, and it writes one event for each reminder you put on the calendar: the reminder's time and repeat, the note's title and, unless the note is locked, the rest of its text as the event's description. If you change or remove that reminder, the app moves or deletes the event it made. It doesn't read your other events.</p>
+  <p>The event is saved by your phone's calendar, so if that calendar belongs to an account (such as Google or Samsung), the account syncs it as it does your other events. If you don't give calendar permission, the app instead opens your calendar app with the event filled in for you to save.</p>
+
   <h2>Features that use the internet</h2>
   <table>
     <thead><tr><th>Feature</th><th>What is sent, and to whom</th></tr></thead>
     <tbody>
       <tr><td>Drive backup (optional)</td><td>Your notes and attachments, to your own Google Drive, as described above.</td></tr>
+      <tr><td>Other backup places (optional)</td><td>A full backup of your notes, to the folder or WebDAV server you choose, as described above.</td></tr>
+      <tr><td>Ask AI (optional, needs your own key)</td><td>The note text you ask about and your messages, to the AI provider you chose, as described above.</td></tr>
       <tr><td>Web links</td><td>When you add a web link, the app loads that page to show its title, description and picture. The website sees an ordinary request from your phone, like a browser visit.</td></tr>
       <tr><td>Cloud grammar check (optional, off by default)</td><td>If you turn it on, the text of the note you are editing (never locked notes) is sent to <a href="https://languagetool.org/legal/privacy">LanguageTool</a> to find grammar mistakes. The basic grammar check works offline and sends nothing.</td></tr>
       <tr><td>Text recognition, document scanner, handwriting</td><td>These run on your phone using Google's ML Kit and Google Play services. Your photos, scans and handwriting are not uploaded. Google Play services may download the models these features need, and ML Kit may send Google basic usage and performance information, as described in <a href="https://developers.google.com/ml-kit/terms">ML Kit's terms</a>.</td></tr>
@@ -46,7 +61,9 @@
   <ul>
     <li><strong>Microphone:</strong> to record voice notes, only when you start a recording. A notification shows while it's recording.</li>
     <li><strong>Notifications:</strong> for reminders and the recording controls.</li>
-    <li><strong>Alarms and reminders:</strong> so reminders ring on time.</li>
+    <li><strong>Alarms and reminders:</strong> so reminders ring on time, and come back after the phone restarts.</li>
+    <li><strong>Full-screen alerts:</strong> so a ringing reminder can fill the screen like an alarm clock when the phone is locked.</li>
+    <li><strong>Calendar:</strong> only if you turn on "Add to phone calendar", to save reminders as events as described above.</li>
     <li><strong>Internet:</strong> for the features listed above.</li>
   </ul>
   <p>Photos and scans come from your camera app, the system file picker or Google's document scanner, and the app only receives the pictures you choose.</p>
@@ -62,7 +79,7 @@
   <p>When you share or export a note, it goes where you send it (another app, a file, a printer). What happens next is up to that app or person.</p>
 
   <h2>Deleting your data</h2>
-  <p>Delete notes in the app, or uninstall the app to remove everything on your phone. If you used Drive backup, also remove Margin's data from your Google Drive as described above.</p>
+  <p>Delete notes in the app, or uninstall the app to remove everything on your phone. If you used Drive backup, also remove Margin's data from your Google Drive as described above, and delete any backups you kept in other places. Events the app added to your calendar stay there until you delete them, or the reminders they belong to, in the app.</p>
 
   <h2>Children</h2>
   <p>Margin is a general notes app and isn't directed at children under 13.</p>
