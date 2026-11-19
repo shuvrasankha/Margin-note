@@ -255,6 +255,26 @@ class FoldersViewModel @Inject constructor(
         if (name.isNotBlank()) repo.saveNote(prefix + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
     }
     /** Ticks [day] off for the habit [note], or unticks it: the body is rewritten as one line per day, newest first. */
+    /** To-dos: ticks or unticks the checklist line [blockId] in [note], without opening it. */
+    fun toggleTask(note: NoteEntity, blockId: String) = viewModelScope.launch {
+        val fresh = repo.getNote(note.id)?.takeIf { it.trashedAt == null && !it.deleted && it.cipher == null } ?: return@launch
+        repo.saveNote(fresh.id, fresh.folderId, fresh.blocks.map { if (it.id == blockId && it.type == BlockType.CHECK) it.copy(checked = !it.checked) else it })
+    }
+
+    /** To-dos: adds [text] as a new task in [note], after its last checklist line (or at the end). */
+    fun addTask(note: NoteEntity, text: String) = viewModelScope.launch {
+        if (text.isBlank()) return@launch
+        val fresh = repo.getNote(note.id)?.takeIf { it.trashedAt == null && !it.deleted && it.cipher == null } ?: return@launch
+        repo.saveNote(fresh.id, fresh.folderId, com.margin.app.data.withTask(fresh.blocks, text.trim()))
+    }
+
+    /** To-dos: a new list titled [title] holding [tasks], in the default folder. */
+    fun newTodoList(title: String, tasks: List<String>) = viewModelScope.launch {
+        val items = tasks.map { it.trim() }.filter { it.isNotEmpty() }
+        if (title.isBlank() || items.isEmpty()) return@launch
+        repo.saveNote(newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = title.trim())) + items.map { Block(type = BlockType.CHECK, text = it) })
+    }
+
     fun toggleHabit(note: NoteEntity, day: java.time.LocalDate) = viewModelScope.launch {
         val days = habitDays(note).let { if (day in it) it - day else it + day }.sortedDescending()
         repo.saveNote(note.id, note.folderId, listOf(note.blocks.first()) + days.map { Block(text = it.toString()) })

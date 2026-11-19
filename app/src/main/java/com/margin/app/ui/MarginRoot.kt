@@ -252,7 +252,10 @@ fun MarginRoot(
             }
             Screen.Todos -> {
                 val all by folders.liveNotes.collectAsState()
-                TodosScreen(all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below))
+                TodosScreen(
+                    all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below),
+                    onToggle = folders::toggleTask, onAdd = folders::addTask, onNewList = folders::newTodoList,
+                )
             }
             is Screen.Notes -> NoteListScreen(
                 vm = notes,

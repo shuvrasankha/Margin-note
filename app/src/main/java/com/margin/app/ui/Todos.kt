@@ -3,7 +3,9 @@ package com.margin.app.ui
 import android.content.Context
 import android.text.format.DateUtils
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -201,21 +203,32 @@ fun TargetDateDialog(current: Long?, onPick: (Long) -> Unit, onRemove: () -> Uni
  * it stands. Tap a list to open it.
  */
 @Composable
-fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit, backLabel: String = "Folders") {
+fun TodosScreen(
+    notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit, backLabel: String = "Folders",
+    onToggle: (NoteEntity, String) -> Unit = { _, _ -> }, onAdd: (NoteEntity, String) -> Unit = { _, _ -> },
+    onNewList: (String, List<String>) -> Unit = { _, _ -> },
+) {
     val context = LocalContext.current
     // Moves on at midnight if the screen is left open.
     var today by remember { mutableLongStateOf(todayEpochDay()) }
     LaunchedEffect(Unit) { while (true) { delay(60_000); today = todayEpochDay() } }
     val zone = ZoneId.systemDefault()
     val report = remember(notes, today) { todoReport(notes, today, zone) }
-    Scaffold(containerColor = jc.page, topBar = { NavBar(backLabel, onBack, color = jc.page) }) { padding ->
+    // Lists opened out in place, to tick and add tasks without opening the note.
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(listOf<String>()) }
+    var creating by remember { androidx.compose.runtime.mutableStateOf(false) }
+    if (creating) NewListDialog(onDismiss = { creating = false }) { title, tasks -> creating = false; onNewList(title, tasks) }
+    Scaffold(containerColor = jc.page, topBar = {
+        NavBar(backLabel, onBack, color = jc.page) { IconAction(Ico.COMPOSE, "New to-do list", { creating = true }) }
+    }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("To-dos") }
             if (report.lists.isEmpty()) {
                 item {
                     BigEmpty(
                         Ico.CHECKLIST, "No to-do lists yet",
-                        "Add checklist items to a note and it shows up here. Set a target date from the note's … menu to see whether you're on track.",
+                        "Start a list here, or add checklist items to any note and it shows up. Set a target date from the note's … menu to see whether you're on track.",
+                        button = "New list", onButton = { creating = true },
                     )
                 }
                 return@LazyColumn
@@ -237,7 +250,13 @@ fun TodosScreen(notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onBack: (
                             },
                         )
                         DividedCard(lists, 70.dp) { l ->
-                            ListRow(l, context, today, onOpen)
+                            val open = l.note.id in expanded
+                            Column {
+                                ListRow(l, context, today, open) { expanded = if (open) expanded - l.note.id else expanded + l.note.id }
+                                androidx.compose.animation.AnimatedVisibility(open) {
+                                    ListTasks(l, onToggle = { id -> onToggle(l.note, id) }, onAdd = { onAdd(l.note, it) }, onOpen = { onOpen(l.note) })
+                                }
+                            }
                         }
                     }
                 }
@@ -282,11 +301,11 @@ private fun Summary(report: com.margin.app.data.TodoReport, today: Long) {
 
 /** One list: a small ring, its title, "3 of 5 · Target Fri, 20 Nov" and where it stands. */
 @Composable
-private fun ListRow(list: TodoList, context: Context, today: Long, onOpen: (NoteEntity) -> Unit) {
+private fun ListRow(list: TodoList, context: Context, today: Long, open: Boolean, onClick: () -> Unit) {
     val target = list.note.targetDate
     val color = if (list.status == TodoStatus.OVERDUE) jc.danger else jc.accent
     Row(
-        Modifier.fillMaxWidth().clickable { onOpen(list.note) }.padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().clickable(onClickLabel = if (open) "Hide tasks" else "Show tasks") { onClick() }.padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         ProgressRing(list.count.fraction, Modifier.size(40.dp), color = color, stroke = 4.dp) {
@@ -309,4 +328,96 @@ private fun ListRow(list: TodoList, context: Context, today: Long, onOpen: (Note
             style = JType.caption, color = sc, fontWeight = FontWeight.SemiBold, maxLines = 1,
         )
     }
+}
+
+/**
+ * A list opened out: its open tasks to tick, the done ones folded under "N done", a field to add a task, and
+ * a way into the note itself.
+ */
+@Composable
+private fun ListTasks(list: TodoList, onToggle: (String) -> Unit, onAdd: (String) -> Unit, onOpen: () -> Unit) {
+    val tasks = list.note.blocks.filter { it.type == com.margin.app.data.BlockType.CHECK && it.attachment == null }
+    val (done, open) = tasks.partition { it.checked }
+    var showDone by remember { androidx.compose.runtime.mutableStateOf(false) }
+    var typed by remember { androidx.compose.runtime.mutableStateOf("") }
+    fun add() { if (typed.isNotBlank()) { onAdd(typed.trim()); typed = "" } }
+    Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 12.dp, bottom = 10.dp)) {
+        if (open.isEmpty() && tasks.isNotEmpty()) Text("All done.", Modifier.padding(start = 6.dp, top = 2.dp, bottom = 6.dp), style = JType.small, color = jc.success, fontWeight = FontWeight.SemiBold)
+        open.forEach { t -> TaskRow(t.text, false) { onToggle(t.id) } }
+        if (done.isNotEmpty()) {
+            Text(
+                if (showDone) "Hide ${done.size} done" else "${done.size} done · Show",
+                Modifier.clip(JShape.xs).clickable(role = Role.Button) { showDone = !showDone }.padding(horizontal = 6.dp, vertical = 8.dp),
+                style = JType.small, color = jc.accent,
+            )
+            if (showDone) done.forEach { t -> TaskRow(t.text, true) { onToggle(t.id) } }
+        }
+        // Add a task: Enter adds and keeps the field ready for the next one.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.text.BasicTextField(
+                typed, { typed = it.replace("\n", "") }, Modifier.weight(1f).padding(start = 6.dp, top = 10.dp, bottom = 10.dp),
+                textStyle = JType.row.copy(color = jc.ink), singleLine = true,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(jc.accent),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done, capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { add() }),
+                decorationBox = { inner ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        JIcon(Ico.PLUS, jc.muted, size = 18.dp)
+                        Spacer(Modifier.size(12.dp))
+                        Box { if (typed.isEmpty()) Text("Add a task", style = JType.row, color = jc.muted); inner() }
+                    }
+                },
+            )
+            if (typed.isNotBlank()) TextAction("Add", ::add, bold = true)
+        }
+        TextAction("Open note", onOpen)
+    }
+}
+
+/** One task: a round tick box and its text, struck through once done. */
+@Composable
+private fun TaskRow(text: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(JShape.xs).clickable(role = Role.Checkbox, onClickLabel = if (checked) "Mark not done" else "Mark done") { onToggle() }
+            .padding(horizontal = 6.dp, vertical = 8.dp).semantics { contentDescription = (if (checked) "Done: " else "To do: ") + text },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(20.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                .background(if (checked) jc.accent else Color.Transparent)
+                .then(if (checked) Modifier else Modifier.border(1.6.dp, jc.muted, androidx.compose.foundation.shape.CircleShape)),
+            contentAlignment = Alignment.Center,
+        ) { if (checked) JIcon(Ico.CHECK, jc.bg, size = 13.dp, stroke = 2.8f) }
+        Text(
+            text.ifBlank { "Untitled task" }, Modifier.weight(1f), style = JType.row,
+            color = if (checked) jc.muted else jc.ink,
+            textDecoration = if (checked) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+        )
+    }
+}
+
+/** A new to-do list: its name, and its tasks one per line. */
+@Composable
+private fun NewListDialog(onDismiss: () -> Unit, onCreate: (String, List<String>) -> Unit) {
+    var title by remember { androidx.compose.runtime.mutableStateOf("") }
+    var tasks by remember { androidx.compose.runtime.mutableStateOf("") }
+    val items = tasks.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New to-do list") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    title, { title = it.replace("\n", "") }, Modifier.fillMaxWidth(), singleLine = true, shape = JShape.sm, label = { Text("Name") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    tasks, { tasks = it }, Modifier.fillMaxWidth().heightIn(min = 120.dp), shape = JShape.sm, label = { Text("Tasks, one per line") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                )
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { onCreate(title.trim(), items) }, enabled = title.isNotBlank() && items.isNotEmpty()) { Text("Create") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
