@@ -49,9 +49,37 @@ import com.margin.app.R
 import com.margin.app.data.Block
 import com.margin.app.data.shareLines
 
-/** Portrait 4:5, the size Instagram and most feeds show without cropping. */
 private const val CARD_W = 1080
-private const val CARD_H = 1350
+
+/** The card's shape. Portrait 4:5 is what most feeds show uncropped; Story fills a phone screen. */
+enum class CardSize(val label: String, val h: Int) {
+    PORTRAIT("Portrait", 1350), SQUARE("Square", 1080), STORY("Story", 1920);
+    val ratio get() = CARD_W / h.toFloat()
+}
+
+/** The card's lettering: Inter (the app's), or one of the phone's own serif, mono or casual faces. */
+enum class CardFont(val label: String) {
+    SANS("Sans"), SERIF("Serif"), MONO("Mono"), HAND("Casual");
+    fun typeface(context: Context, bold: Boolean): android.graphics.Typeface = when (this) {
+        SANS -> ResourcesCompat.getFont(context, if (bold) R.font.inter_bold else R.font.inter_regular) ?: android.graphics.Typeface.DEFAULT
+        SERIF -> android.graphics.Typeface.create(android.graphics.Typeface.SERIF, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        MONO -> android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        HAND -> android.graphics.Typeface.create("casual", if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+    }
+}
+
+/** How a card looks: [foot] off leaves out the hairline, the Margin mark and the date. */
+data class CardOptions(
+    val style: CardStyle = CardStyle.PAPER, val size: CardSize = CardSize.PORTRAIT, val font: CardFont = CardFont.SANS, val foot: Boolean = true,
+    /** Put the note's first photo at the top of the first card. */
+    val photo: Boolean = true,
+)
+
+/** The photo at the top of the first card: its file and how tall it's drawn (the full text width wide). */
+private class CardPhoto(val file: java.io.File, val height: Int)
+
+/** The text area of a card: from the top margin down to above the foot (or a matching margin when there's none). */
+private fun CardOptions.textBottom() = size.h - if (foot) 130f else 120f
 
 /**
  * A look for the card: the background (one colour, or two for a diagonal gradient), the text colours, the
@@ -71,44 +99,93 @@ enum class CardStyle(
     AMBER("Amber", 0xFFFFCC66, 0xFFFF9500, ink = 0xFF1A1205, body = 0xFF3B2A0A, muted = 0xFF6B4A12, rule = 0xFF1A1205, hair = 0x33000000),
     OCEAN("Ocean", 0xFF0A4FB5, 0xFF36B5E8, ink = 0xFFFFFFFF, body = 0xFFE6F2FF, muted = 0xFFBFDDF7, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
     ROSE("Rose", 0xFFFFD1DC, 0xFFB794F6, ink = 0xFF2A1033, body = 0xFF47284F, muted = 0xFF7A5A82, rule = 0xFF2A1033, hair = 0x33000000),
+    KRAFT("Kraft", 0xFFD9B98C, ink = 0xFF2B1D0E, body = 0xFF3D2A15, muted = 0xFF6E5233, rule = 0xFF8A3B12, hair = 0x33000000, dots = 0x1A2B1D0E),
+    BLUEPRINT("Blueprint", 0xFF1D4E89, ink = 0xFFFFFFFF, body = 0xFFDCE9F7, muted = 0xFF9DBBDD, rule = 0xFFFFFFFF, hair = 0x40FFFFFF, grid = 0x26FFFFFF),
+    CHALK("Chalkboard", 0xFF23332B, ink = 0xFFF4F1E8, body = 0xFFD9D5C9, muted = 0xFF9BA399, rule = 0xFFF2C14E, hair = 0x33FFFFFF),
+    SAGE("Sage", 0xFFE4EBDD, ink = 0xFF1C2A1C, body = 0xFF34442F, muted = 0xFF6B7A63, rule = 0xFF5B7F4E, hair = 0x1F000000, lines = 0xFFC3D2B8),
+    MINT("Mint", 0xFFB8F2D9, 0xFF5AC8C8, ink = 0xFF0B2A26, body = 0xFF173F39, muted = 0xFF3F6B64, rule = 0xFF0B2A26, hair = 0x33000000),
+    SUNSET("Sunset", 0xFFFF7E5F, 0xFFC9406A, ink = 0xFFFFFFFF, body = 0xFFFFEDE6, muted = 0xFFFFD0C2, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
+    MIDNIGHT("Midnight", 0xFF141E30, 0xFF35577D, ink = 0xFFF5F7FA, body = 0xFFD3DCE8, muted = 0xFF93A4BA, rule = 0xFFFFB340, hair = 0x33FFFFFF, dots = 0x1FFFFFFF),
+    MONO("Mono", 0xFF000000, ink = 0xFFFFFFFF, body = 0xFFE5E5E5, muted = 0xFF8E8E93, rule = 0xFFFFFFFF, hair = 0x33FFFFFF),
 }
+
+/** The style row's sections, in order. */
+private val CARD_GROUPS = listOf(
+    "Paper" to listOf(CardStyle.PAPER, CardStyle.RULED, CardStyle.LEGAL, CardStyle.GRID, CardStyle.DOTS, CardStyle.KRAFT, CardStyle.SAGE),
+    "Colour" to listOf(CardStyle.AMBER, CardStyle.OCEAN, CardStyle.ROSE, CardStyle.MINT, CardStyle.SUNSET),
+    "Dark" to listOf(CardStyle.NIGHT, CardStyle.BLUEPRINT, CardStyle.CHALK, CardStyle.MIDNIGHT, CardStyle.MONO),
+).let { g -> g + listOfNotNull(("More" to CardStyle.entries.filter { s -> g.none { s in it.second } }).takeIf { it.second.isNotEmpty() }) }
+
+private const val CARD_PREFS = "share_card"
+private const val LAST_STYLE = "style"
+private const val LAST_SIZE = "size"
+private const val LAST_FONT = "font"
+private const val SHOW_FOOT = "foot"
+private const val SHOW_PHOTO = "photo"
+
+/** A dark card: the Margin mark gets a hairline edge so it doesn't melt into the background. */
+private val CardStyle.isDark get() = androidx.core.graphics.ColorUtils.calculateLuminance(bg.toInt()) < 0.2
 
 /**
  * The note as pictures for social media: on a warm paper card with the app's amber margin rule, the title,
  * the text, and the Margin mark at the foot. A note that fits is one card; a longer one runs on over as many
  * cards as it needs, each foot numbered. Each entry draws its card when called, so a long note isn't held
- * in memory all at once. Photos, drawings and other attachments are left out; tables come as plain text.
+ * in memory all at once. [photo], when given (and [CardOptions.photo] is on), heads the first card; other
+ * attachments are left out, and tables come as plain text.
  */
-fun noteCards(context: Context, blocks: List<Block>, date: String, style: CardStyle = CardStyle.PAPER): List<() -> Bitmap> {
-    fun font(id: Int) = ResourcesCompat.getFont(context, id)
+fun noteCards(context: Context, blocks: List<Block>, date: String, options: CardOptions = CardOptions(), photo: java.io.File? = null): List<() -> Bitmap> {
+    val style = options.style
+    val bold = options.font.typeface(context, true)
+    val regular = options.font.typeface(context, false)
     val width = (CARD_W - 96 - 150)
     fun layout(text: CharSequence, paint: TextPaint, maxLines: Int, spacing: Float) =
         StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
             .setLineSpacing(0f, spacing).setMaxLines(maxLines).setEllipsize(TextUtils.TruncateAt.END)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).build()
     fun paints(size: Float) =
-        TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = style.ink.toInt(); textSize = size * 1.35f; typeface = font(R.font.inter_bold); letterSpacing = -0.02f } to
-            TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = style.body.toInt(); textSize = size; typeface = font(R.font.inter_regular) }
+        TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = style.ink.toInt(); textSize = size * 1.35f; typeface = bold; letterSpacing = if (options.font == CardFont.SANS) -0.02f else 0f } to
+            TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = style.body.toInt(); textSize = size; typeface = regular }
+    // A long title steps down in size to fit three lines; only past that is it cut short.
+    fun titleLayout(title: String, paint: TextPaint): StaticLayout {
+        val full = paint.textSize
+        for (f in listOf(1f, 0.86f, 0.74f, 0.64f)) {
+            paint.textSize = full * f
+            val l = layout(title, paint, Int.MAX_VALUE, 1.1f)
+            if (l.lineCount <= 3) return l
+        }
+        return layout(title, paint, 4, 1.1f)
+    }
+    val room = (options.textBottom() - CARD_TOP).toInt()
+    // The photo keeps its shape, within limits: no thinner than 2:1, no taller than a share of the card.
+    val pic = photo?.takeIf { options.photo }?.let { f ->
+        val small = runCatching { com.margin.app.data.decodeImage(f, 96) }.getOrNull() ?: return@let null
+        val aspect = small.width / small.height.toFloat()
+        small.recycle()
+        val cap = room * when (options.size) { CardSize.SQUARE -> 0.38f; CardSize.PORTRAIT -> 0.44f; CardSize.STORY -> 0.48f }
+        CardPhoto(f, (width / aspect).coerceIn(width / 2f, cap).toInt())
+    }
+    val picH = pic?.let { it.height + PHOTO_GAP } ?: 0
 
     val title = blocks.firstOrNull()?.text?.trim().orEmpty().ifEmpty { "Untitled" }
     val (body, ai) = cardBody(blocks.drop(1).filter { it.attachment == null }, style.rule.toInt())
     // A short note is set large and centred, like a quote; a long one steps down in size until it fits.
     for (size in listOf(64f, 56f, 50f, 44f, 40f)) {
         val (titlePaint, bodyPaint) = paints(size)
-        val t = layout(title, titlePaint, 3, 1.1f)
-        if (body.isEmpty()) return listOf { drawCard(context, style, date, t, null, 0, 0, center = true, ai) }
+        val t = titleLayout(title, titlePaint)
+        if (body.isEmpty()) return listOf { drawCard(context, options, date, t, null, 0, 0, center = true, ai, pic) }
         val b = layout(body, bodyPaint, Int.MAX_VALUE, 1.4f)
-        if (b.getLineBottom(b.lineCount - 1) <= CARD_BOTTOM - CARD_TOP - t.height - 48f)
-            return listOf { drawCard(context, style, date, t, b, 0, b.lineCount, center = true, ai) }
+        if (b.getLineBottom(b.lineCount - 1) <= room - picH - t.height - 48f)
+            return listOf { drawCard(context, options, date, t, b, 0, b.lineCount, center = true, ai, pic) }
     }
     // Still too long: keep a readable size and run the text on over more cards, the title on the first only.
     val (titlePaint, bodyPaint) = paints(44f)
-    val t = layout(title, titlePaint, 3, 1.1f)
+    val t = titleLayout(title, titlePaint)
     val b = layout(body, bodyPaint, Int.MAX_VALUE, 1.4f)
-    val room = (CARD_BOTTOM - CARD_TOP).toInt()
-    val pages = cardPages(b.lineCount, b::getLineTop, b::getLineBottom, room - t.height - 48, room)
+    // A card ends at a paragraph's end when one is near enough, so a lone line doesn't start the next card.
+    val paraEnd = { line: Int -> line == b.lineCount - 1 || body.getOrNull(b.getLineEnd(line) - 1) == '\n' }
+    val pages = cardPages(b.lineCount, b::getLineTop, b::getLineBottom, room - picH - t.height - 48, room, paraEnd)
     return pages.mapIndexed { i, lines ->
-        { drawCard(context, style, "$date  ·  ${i + 1}/${pages.size}", t.takeIf { i == 0 }, b, lines.first, lines.last + 1, center = false, ai) }
+        { drawCard(context, options, "$date  ·  ${i + 1}/${pages.size}", t.takeIf { i == 0 }, b, lines.first, lines.last + 1, center = false, ai, pic.takeIf { i == 0 }) }
     }
 }
 
@@ -144,13 +221,15 @@ internal fun cardBody(blocks: List<Block>, badge: Int): Pair<CharSequence, List<
 }
 
 /** Splits [count] lines into runs that fit [firstRoom] px on the first card and [room] on the rest. */
-internal fun cardPages(count: Int, top: (Int) -> Int, bottom: (Int) -> Int, firstRoom: Int, room: Int): List<IntRange> {
+internal fun cardPages(count: Int, top: (Int) -> Int, bottom: (Int) -> Int, firstRoom: Int, room: Int, paragraphEnd: (Int) -> Boolean = { false }): List<IntRange> {
     val pages = mutableListOf<IntRange>()
     var start = 0
     while (start < count) {
         val fits = if (pages.isEmpty()) firstRoom else room
         var end = start + 1 // at least one line a card, so a line taller than a card can't loop forever
         while (end < count && bottom(end) - top(start) <= fits) end++
+        // More to come: end at the last paragraph end instead, if that still fills at least two thirds of the card.
+        if (end < count) (end - 1 downTo start + 1).firstOrNull { paragraphEnd(it) && bottom(it) - top(start) >= fits * 2 / 3 }?.let { end = it + 1 }
         pages += start until end
         start = end
     }
@@ -158,10 +237,16 @@ internal fun cardPages(count: Int, top: (Int) -> Int, bottom: (Int) -> Int, firs
 }
 
 private const val CARD_TOP = 120f
-private const val CARD_BOTTOM = CARD_H - 130f
+private const val PHOTO_GAP = 44
 
 /** One card: the paper, the [title] (if any) and lines [from] until [to] of [body], and the foot with [footNote]. */
-private fun drawCard(context: Context, style: CardStyle, footNote: String, title: StaticLayout?, body: StaticLayout?, from: Int, to: Int, center: Boolean, ai: List<IntRange> = emptyList()): Bitmap {
+private fun drawCard(context: Context, options: CardOptions, footNote: String, title: StaticLayout?, body: StaticLayout?, from: Int, to: Int, center: Boolean, ai: List<IntRange> = emptyList(), photo: CardPhoto? = null): Bitmap {
+    val style = options.style
+    val CARD_H = options.size.h
+    val CARD_BOTTOM = options.textBottom()
+    // The foot's hairline, the same on every style: paper (dots, grid, ruled lines, the margin rule) stops above it.
+    // With no foot, the paper runs to the edge.
+    val FOOT_LINE = if (options.foot) CARD_H - 112f else CARD_H.toFloat()
     val bmp = Bitmap.createBitmap(CARD_W, CARD_H, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     fun font(id: Int) = ResourcesCompat.getFont(context, id)
@@ -171,6 +256,9 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
     style.bg2?.let { bg.shader = LinearGradient(0f, 0f, CARD_W.toFloat(), CARD_H.toFloat(), style.bg.toInt(), it.toInt(), Shader.TileMode.CLAMP) }
         ?: run { bg.color = style.bg.toInt() }
     c.drawRect(0f, 0f, CARD_W.toFloat(), CARD_H.toFloat(), bg)
+    // Paper patterns stay above the foot, so every style's foot is the same clean band.
+    c.save()
+    c.clipRect(0f, 0f, CARD_W.toFloat(), FOOT_LINE - 1f)
     style.dots?.let { d ->
         val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = d.toInt() }
         var dy = 27f
@@ -183,13 +271,16 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
         at = 0f
         while (at < CARD_H) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += 54f }
     }
+    c.restore()
 
     val left = 150f
     // The margin rule down the left, as on the app icon.
     val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.rule.toInt(); strokeWidth = 8f; strokeCap = Paint.Cap.ROUND }
-    c.drawLine(100f, 0f.takeIf { style.lines != null } ?: 110f, 100f, if (style.lines != null) CARD_H.toFloat() else CARD_H - 122f, rule)
+    // Ruled paper runs it from the top edge, like a real pad; it always ends just above the foot.
+    c.drawLine(100f, if (style.lines != null) 0f else 110f, 100f, if (options.foot) FOOT_LINE - 10f else if (style.lines != null) FOOT_LINE else CARD_H - 110f, rule)
 
-    val titleH = title?.let { it.height + 48f } ?: 0f
+    val picH = photo?.let { it.height + PHOTO_GAP.toFloat() } ?: 0f
+    val titleH = (title?.let { it.height + 48f } ?: 0f) + picH
     val slice = if (body != null && to > from) (body.getLineBottom(to - 1) - body.getLineTop(from)).toFloat() else 0f
     var y = CARD_TOP + if (center) ((CARD_BOTTOM - CARD_TOP - titleH - slice) / 2).coerceAtLeast(0f) else 0f
     val bodyTop = y + titleH
@@ -201,10 +292,26 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
                 (if (b.lineCount > 1) (b.getLineBaseline(1) - b.getLineBaseline(0)).toFloat() else b.paint.fontSpacing * 1.4f)
         } ?: ((bodyTop + 40f) to 70f)
         var at = first
-        while (at - pitch > y + (title?.height ?: 0)) at -= pitch
-        while (at < CARD_H - 118f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
+        while (at - pitch > y + picH + (title?.height ?: 0)) at -= pitch
+        // The last line keeps clear of the foot's hairline rather than doubling it.
+        while (at < FOOT_LINE - 24f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
     }
-    title?.let { c.save(); c.translate(left, y); it.draw(c); c.restore() }
+    // The photo, cropped to fill its box, with rounded corners and a hairline edge.
+    photo?.let { ph ->
+        com.margin.app.data.decodeImage(ph.file, 1600)?.let { bm ->
+            val box = RectF(left, y, CARD_W - 96f, y + ph.height)
+            val scale = maxOf(box.width() / bm.width, box.height() / bm.height)
+            val sw = box.width() / scale; val sh = box.height() / scale
+            val src = android.graphics.Rect(((bm.width - sw) / 2).toInt(), ((bm.height - sh) / 2).toInt(), ((bm.width + sw) / 2).toInt(), ((bm.height + sh) / 2).toInt())
+            c.save()
+            c.clipPath(android.graphics.Path().apply { addRoundRect(box, 28f, 28f, android.graphics.Path.Direction.CW) })
+            c.drawBitmap(bm, src, box, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+            c.restore()
+            c.drawRoundRect(box, 28f, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.hair.toInt(); this.style = Paint.Style.STROKE; strokeWidth = 2f })
+            bm.recycle()
+        }
+    }
+    title?.let { c.save(); c.translate(left, y + picH); it.draw(c); c.restore() }
     if (body != null && to > from) {
         c.save()
         c.clipRect(0f, bodyTop, CARD_W.toFloat(), bodyTop + slice)
@@ -224,13 +331,14 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
         c.restore()
     }
 
+    if (!options.foot) return bmp
     // Foot: a hairline, then the mark and the name.
     val hair = Paint().apply { color = style.hair.toInt(); strokeWidth = 2f }
-    if (style.lines == null) c.drawLine(96f, CARD_H - 112f, CARD_W - 96f, CARD_H - 112f, hair)
+    c.drawLine(96f, FOOT_LINE, CARD_W - 96f, FOOT_LINE, hair)
     val mark = 64f
-    val mx = if (style.lines != null) 150f else 96f
+    val mx = 96f
     val my = CARD_H - 92f
-    drawMark(c, mx, my, mark, edge = style == CardStyle.NIGHT)
+    drawMark(c, mx, my, mark, edge = style.isDark)
     val name = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = ink; textSize = 38f; typeface = font(R.font.inter_semibold) }
     c.drawText("Margin", mx + mark + 22f, my + mark / 2 + 13f, name)
     val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = muted; textSize = 30f; typeface = font(R.font.inter_regular); textAlign = Paint.Align.RIGHT }
@@ -256,12 +364,29 @@ private fun drawMark(c: Canvas, x: Float, y: Float, s: Float, edge: Boolean) {
 
 /** Share as image: the card as it will look, a row of styles to try, and Share. */
 @androidx.compose.runtime.Composable
-fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onShare: (CardStyle) -> Unit) {
+fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, onDismiss: () -> Unit, onSave: (CardOptions) -> Unit, onShare: (CardOptions) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var style by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(CardStyle.PAPER) }
+    // Opens on the style used last time.
+    val prefs = androidx.compose.runtime.remember { context.getSharedPreferences(CARD_PREFS, Context.MODE_PRIVATE) }
+    var style by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf(runCatching { CardStyle.valueOf(prefs.getString(LAST_STYLE, null)!!) }.getOrDefault(CardStyle.PAPER))
+    }
+    var size by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf(runCatching { CardSize.valueOf(prefs.getString(LAST_SIZE, null)!!) }.getOrDefault(CardSize.PORTRAIT))
+    }
+    var font by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf(runCatching { CardFont.valueOf(prefs.getString(LAST_FONT, null)!!) }.getOrDefault(CardFont.SANS))
+    }
+    var foot by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(prefs.getBoolean(SHOW_FOOT, true)) }
+    var withPhoto by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(prefs.getBoolean(SHOW_PHOTO, true)) }
+    val options = CardOptions(style, size, font, foot, withPhoto)
+    // Saved when the cards go out, so the next note opens the same way.
+    fun remembered(o: CardOptions) = o.also {
+        prefs.edit().putString(LAST_STYLE, it.style.name).putString(LAST_SIZE, it.size.name).putString(LAST_FONT, it.font.name).putBoolean(SHOW_FOOT, it.foot).putBoolean(SHOW_PHOTO, it.photo).apply()
+    }
     var pages by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<() -> Bitmap>>(emptyList()) }
-    androidx.compose.runtime.LaunchedEffect(style) {
-        pages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { noteCards(context, blocks, date, style) }
+    androidx.compose.runtime.LaunchedEffect(options) {
+        pages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { noteCards(context, blocks, date, options, photo) }
     }
     val pager = androidx.compose.foundation.pager.rememberPagerState { pages.size }
     androidx.compose.ui.window.Dialog(onDismiss, androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
@@ -277,21 +402,36 @@ fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onShare
                 val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, pages, i) {
                     value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { pages.getOrNull(i)?.invoke()?.asImageBitmap() }
                 }
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // As large as fits, whichever way the card is shaped.
+                    val r = size.ratio
+                    val fitsWidth = maxWidth / maxHeight < r
                     image?.let {
                         androidx.compose.foundation.Image(
-                            it, "Preview of the ${style.label} card, ${i + 1} of ${pages.size}", Modifier.aspectRatio(CARD_W / CARD_H.toFloat())
-                                .shadow(JElevation.sheet, JShape.md).clip(JShape.md),
+                            it, "Preview of the ${style.label} card, ${i + 1} of ${pages.size}",
+                            Modifier.aspectRatio(r, matchHeightConstraintsFirst = !fitsWidth).shadow(JElevation.sheet, JShape.md).clip(JShape.md),
                         )
                     }
                 }
             }
             if (pages.size > 1) Text("${pager.currentPage + 1} of ${pages.size} · swipe to see them all", style = JType.small, color = jc.muted)
+            // Swatches in sections (Paper, Colour, Dark), scrolled so the chosen one shows on opening.
+            val scroll = rememberScrollState()
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val before = CARD_GROUPS.flatMap { it.second }.indexOf(style) + CARD_GROUPS.indexOfFirst { style in it.second }
+                scroll.scrollTo(with(density) { (before * 58).dp.roundToPx() } - with(density) { 80.dp.roundToPx() })
+            }
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().horizontalScroll(scroll).padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                CardStyle.entries.forEach { s ->
+                CARD_GROUPS.forEachIndexed { gi, (group, styles) ->
+                if (gi > 0) Box(Modifier.padding(top = 22.dp).size(1.dp, 40.dp).background(jc.line))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(group.uppercase(), style = JType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = jc.muted, maxLines = 1)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                styles.forEach { s ->
                     val on = s == style
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(
@@ -305,8 +445,26 @@ fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onShare
                         Text(s.label, style = JType.small, maxLines = 1, color = if (on) jc.ink else jc.muted)
                     }
                 }
+                }
+                }
+                }
             }
-            PrimaryButton(if (pages.size > 1) "Share ${pages.size} images" else "Share", { onShare(style) }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp))
+            // Shape, lettering, and whether the date and Margin mark show.
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CardSize.entries.forEach { z -> Pill(z.label, z == size, { size = z }) }
+                Box(Modifier.size(1.dp, 24.dp).background(jc.line))
+                CardFont.entries.forEach { f -> Pill(f.label, f == font, { font = f }) }
+                Box(Modifier.size(1.dp, 24.dp).background(jc.line))
+                Pill("Date & Margin", foot, { foot = !foot })
+                if (photo != null) Pill("Photo", withPhoto, { withPhoto = !withPhoto })
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SecondaryButton(if (pages.size > 1) "Save ${pages.size}" else "Save", { onSave(remembered(options)) }, Modifier.weight(1f))
+                PrimaryButton(if (pages.size > 1) "Share ${pages.size} images" else "Share", { onShare(remembered(options)) }, Modifier.weight(2f))
+            }
         }
     }
 }

@@ -347,6 +347,17 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
     ) { Text(text, style = JType.rowTitle, color = if (enabled) jc.bg else jc.muted) }
 }
 
+/** The quieter partner of [PrimaryButton]: ink text on a card fill. */
+@Composable
+fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        modifier.height(52.dp).pressScale(press).clip(JShape.md).background(jc.surface)
+            .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick)).padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, style = JType.rowTitle, color = if (enabled) jc.ink else jc.muted, maxLines = 1) }
+}
+
 /**
  * The Margin mark: an amber margin rule beside three lines on a rounded square (the app icon, from a 1024 master),
  * with a hairline edge on dark pages so it stands off them.
