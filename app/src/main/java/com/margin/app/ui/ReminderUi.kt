@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -38,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -45,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.margin.app.data.reminderChoices
+import com.margin.app.data.CalendarEvents
+import kotlinx.coroutines.launch
 import com.margin.app.data.Repeat
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -91,9 +95,12 @@ private const val DAY_MS = 24 * 60 * 60 * 1000L
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReminderDialog(
-    current: Long?, currentRepeat: Repeat, onTime: Boolean, onPick: (Long, Repeat) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit,
+    current: Long?, currentRepeat: Repeat, onTime: Boolean, onPick: (Long, Repeat, Boolean) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit,
+    calendarFor: String? = null,
 ) {
     val context = LocalContext.current
+    // On when this reminder is already on the calendar, else as last time.
+    var toCalendar by remember { mutableStateOf(calendarFor != null && (CalendarEvents.has(context, calendarFor) || calendarPref(context))) }
     var custom by remember { mutableStateOf(false) }
     var pickedDate by remember { mutableStateOf<LocalDate?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -114,12 +121,15 @@ fun ReminderDialog(
                 if (!custom) Text("Set for ${reminderLabel(context, it, currentRepeat)}", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
             }
             if (!custom) RepeatChips(repeat) { repeat = it }
+            if (!custom && calendarFor != null) Box(Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
+                CalendarSwitch(toCalendar) { toCalendar = it }
+            }
             when {
                 !custom -> {
                     Column(Modifier.padding(top = 4.dp)) {
                         // Only the repeat changed: keep the time already set.
                         if (current != null && repeat != currentRepeat && current > System.currentTimeMillis()) {
-                            ChoiceRow(Ico.CHECK, "Keep this time", reminderLabel(context, current)) { onPick(current, repeat) }
+                            ChoiceRow(Ico.CHECK, "Keep this time", reminderLabel(context, current)) { onPick(current, repeat, toCalendar) }
                         }
                         reminderChoices(now).forEach { (label, at) ->
                             val icon = when (label) {
@@ -128,7 +138,7 @@ fun ReminderDialog(
                                 "Next week" -> Ico.CALENDAR
                                 else -> Ico.CLOCK
                             }
-                            ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli(), repeat) }
+                            ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli(), repeat, toCalendar) }
                         }
                         ChoiceRow(Ico.CALENDAR_PICK, "Pick date & time…", null) { custom = true }
                         if (current != null) ChoiceRow(Ico.TRASH, "Remove reminder", null, danger = true, onClick = onRemove)
@@ -185,7 +195,7 @@ fun ReminderDialog(
                         TextAction("Set reminder", {
                             val at = ZonedDateTime.of(pickedDate, LocalTime.of(state.hour, state.minute), ZoneId.systemDefault()).toInstant().toEpochMilli()
                             if (at <= System.currentTimeMillis()) error = "That time has passed. Pick a later one."
-                            else onPick(at, repeat)
+                            else onPick(at, repeat, toCalendar)
                         }, bold = true)
                     }
                 }
@@ -227,18 +237,43 @@ private fun ChoiceRow(icon: String, label: String, detail: String?, danger: Bool
     }
 }
 
+/** One line on the Reminders list: a note's reminder, or the daily journal reminder ([note] null). */
+private data class ReminderEntry(val note: NoteEntity?, val at: Long, val repeat: Repeat)
+
 /**
- * The Reminders list: notes with a reminder set on this phone, soonest first, grouped into Today, Tomorrow,
- * This week and Later. A reminder that has rung is gone (it was the notification), so only upcoming ones show.
+ * The Reminders list: notes with a reminder set on this phone, soonest first, grouped into Missed, Today,
+ * Tomorrow, This week and Later, with the daily journal reminder among them. Each note's reminder can be
+ * changed or removed right here with its clock button.
  */
 @Composable
-fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repeats: Map<String, Repeat>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit, backLabel: String = "Folders") {
+fun RemindersScreen(
+    notes: List<NoteEntity>, reminders: Map<String, Long>, repeats: Map<String, Repeat>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit,
+    backLabel: String = "Folders", onTime: Boolean = true, onJournal: () -> Unit = {},
+    onSet: (NoteEntity, Long, Repeat) -> Unit = { _, _, _ -> }, onRemove: (NoteEntity) -> Unit = {},
+    /** Makes the note for a new reminder and returns its id. */
+    onCreate: (title: String, details: String, at: Long, repeat: Repeat) -> String = { _, _, _, _ -> "" },
+) {
     val context = LocalContext.current
-    val rows = remember(notes, reminders) {
-        notes.mapNotNull { n -> reminders[n.id]?.let { n to it } }.sortedBy { it.second }
+    var editing by remember { mutableStateOf<ReminderEntry?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Ticks each minute so countdowns and the Missed group stay right while the screen is open.
+    val now by androidx.compose.runtime.produceState(System.currentTimeMillis()) {
+        while (true) { kotlinx.coroutines.delay(60_000L - value % 60_000L); value = System.currentTimeMillis() }
+    }
+    val rows = remember(notes, reminders, repeats) {
+        val byId = notes.associateBy { it.id }
+        reminders.mapNotNull { (id, at) ->
+            val repeat = repeats[id] ?: Repeat.NEVER
+            when {
+                id == JOURNAL_REMINDER -> ReminderEntry(null, at, repeat)
+                else -> byId[id]?.let { ReminderEntry(it, at, repeat) }
+            }
+        }.sortedBy { it.at }
     }
     val today = LocalDate.now()
     fun group(at: Long): String {
+        if (at < now) return "Missed"
         val day = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).toLocalDate()
         return when {
             !day.isAfter(today) -> "Today"
@@ -247,63 +282,255 @@ fun RemindersScreen(notes: List<NoteEntity>, reminders: Map<String, Long>, repea
             else -> "Later"
         }
     }
-    Scaffold(containerColor = jc.page, topBar = { NavBar(backLabel, onBack, color = jc.page) }) { padding ->
+    fun open(e: ReminderEntry) { e.note?.let(onOpen) ?: onJournal() }
+    Scaffold(
+        containerColor = jc.page,
+        topBar = { NavBar(backLabel, onBack, color = jc.page) },
+        floatingActionButton = { if (rows.isNotEmpty()) FloatingAction(Ico.PLUS, "New reminder") { creating = true } },
+    ) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             item { PageTitle("Reminders") }
+            if (!onTime && rows.isNotEmpty()) item {
+                // Without the exact-alarm permission Android batches alarms, so say so where it matters.
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.md).background(jc.card)
+                        .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    IconTile(Ico.CLOCK, jc.danger)
+                    Text("Reminders may arrive a few minutes late.", Modifier.weight(1f), style = JType.small, color = jc.ink)
+                    TextAction("Allow", {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) runCatching {
+                            context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
+                        }
+                    }, bold = true)
+                }
+            }
             if (rows.isEmpty()) {
-                item { BigEmpty(Ico.ALARM, "No reminders", "Open a note and tap the alarm clock at the top to be reminded about it.") }
+                item {
+                    BigEmpty(
+                        Ico.ALARM, "No reminders", "Make one here, or open a note and tap the alarm clock at the top to be reminded about it.",
+                        button = "New reminder", onButton = { creating = true },
+                    )
+                }
                 return@LazyColumn
             }
             item {
-                // The next one up, large, with how many are waiting today and in all.
-                val (next, at) = rows.first()
-                val todayCount = rows.count { group(it.second) == "Today" }
+                // The next one still to come, large, with how long until it rings and a few counts.
+                val next = rows.firstOrNull { it.at >= now } ?: rows.first()
+                val todayCount = rows.count { it.at >= now && group(it.at) == "Today" }
                 Column(
                     Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).background(jc.card)
-                        .clickable { onOpen(next) }.padding(18.dp),
+                        .clickable { open(next) }.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         IconTile(Ico.ALARM, size = 48.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Next up", style = JType.caption, color = jc.muted)
-                            Text(next.displayTitle, style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(reminderLabel(context, at, repeats[next.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)
+                            Text(if (next.at >= now) "Next up · " + countdown(next.at, now) else "Missed", style = JType.caption, color = if (next.at >= now) jc.muted else jc.danger)
+                            Text(next.note?.displayTitle ?: "Write in your journal", style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(reminderLabel(context, next.at, next.repeat), style = JType.secondary, color = jc.accent, maxLines = 1)
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         StatTile("$todayCount", "Today", Modifier.weight(1f))
-                        StatTile("${rows.size}", "Coming up", Modifier.weight(1f))
-                        StatTile("${rows.count { (repeats[it.first.id] ?: Repeat.NEVER) != Repeat.NEVER }}", "Repeating", Modifier.weight(1f))
+                        StatTile("${rows.count { it.at >= now }}", "Coming up", Modifier.weight(1f))
+                        StatTile("${rows.count { it.repeat != Repeat.NEVER }}", "Repeating", Modifier.weight(1f))
                     }
                 }
             }
-            rows.groupBy { group(it.second) }.forEach { (label, items) ->
+            rows.groupBy { group(it.at) }.forEach { (label, items) ->
                 item(key = "g:$label") {
                     Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
                         SectionLabel(label)
-                        DividedCard(items, 60.dp) { (note, at) ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { onOpen(note) }.padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                IconTile(Ico.ALARM)
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(reminderLabel(context, at, repeats[note.id] ?: Repeat.NEVER), style = JType.secondary, color = jc.accent, maxLines = 1)
-                                    if (!note.isLocked) note.snippet.takeIf { it.isNotBlank() }?.let {
-                                        Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                        }
+                        DividedCard(items, 60.dp) { e -> ReminderRow(e, missed = label == "Missed", onOpen = { open(e) }, onEdit = { editing = e }) }
                     }
                 }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+    if (creating) NewReminderDialog(
+        onTime = onTime, onDismiss = { creating = false },
+        onSave = { title, details, at, repeat, calendar ->
+            creating = false
+            val id = onCreate(title, details, at, repeat)
+            reminderToCalendar(context, scope, id, title, details, at, repeat, calendar)
+        },
+    )
+    editing?.let { e ->
+        val note = e.note ?: return@let
+        ReminderDialog(
+            current = e.at, currentRepeat = e.repeat, onTime = onTime, calendarFor = note.id,
+            onPick = { time, repeat, calendar ->
+                editing = null
+                onSet(note, time, repeat)
+                reminderToCalendar(context, scope, note.id, note.displayTitle, note.snippet.takeIf { !note.isLocked }, time, repeat, calendar)
+            },
+            onRemove = {
+                editing = null
+                onRemove(note)
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) { CalendarEvents.remove(context, note.id) }
+            },
+            onDismiss = { editing = null },
+        )
+    }
 }
+
+@Composable
+private fun ReminderRow(e: ReminderEntry, missed: Boolean, onOpen: () -> Unit, onEdit: () -> Unit) {
+    val context = LocalContext.current
+    val note = e.note
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        IconTile(if (note == null) Ico.CALENDAR else Ico.ALARM, if (missed) jc.danger else jc.accent)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(note?.displayTitle ?: "Journal", style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(reminderLabel(context, e.at, e.repeat), style = JType.secondary, color = if (missed) jc.danger else jc.accent, maxLines = 1)
+            val sub = when {
+                note == null -> "Daily reminder to write today's entry"
+                isHabit(note) -> "Habit"
+                note.isLocked -> null
+                else -> note.snippet.takeIf { it.isNotBlank() }
+            }
+            sub?.let { Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+        // Habits and the journal set their reminder on their own screens, so only notes get the button.
+        if (note != null && !isHabit(note)) IconAction(Ico.CLOCK, "Change reminder", onEdit, size = 20.dp)
+        else Spacer(Modifier.width(12.dp))
+    }
+}
+
+/**
+ * A new reminder from the Reminders screen: a title (it becomes a note in Notes, so there's somewhere to tap
+ * through to), optional details, and when. "Add to phone calendar" also puts it on the phone's default calendar
+ * as an event; the switch is remembered for next time.
+ */
+@Composable
+private fun NewReminderDialog(onTime: Boolean, onDismiss: () -> Unit, onSave: (String, String, Long, Repeat, Boolean) -> Unit) {
+    val context = LocalContext.current
+    var toCalendar by remember { mutableStateOf(calendarPref(context)) }
+    var title by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var details by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var at by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(reminderChoices(ZonedDateTime.now()).first().second.toInstant().toEpochMilli())
+    }
+    var repeat by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(Repeat.NEVER) }
+    var picking by remember { mutableStateOf(false) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New reminder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    title, { title = it }, Modifier.fillMaxWidth().focusRequester(focus), singleLine = true, shape = JShape.sm,
+                    label = { Text("Remind me to…") }, colors = passwordColors(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    details, { details = it }, Modifier.fillMaxWidth(), minLines = 2, maxLines = 4, shape = JShape.sm,
+                    label = { Text("Details (optional)") }, colors = passwordColors(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                )
+                Row(
+                    Modifier.fillMaxWidth().clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) { picking = true }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    JIcon(Ico.CLOCK, jc.accent, size = 20.dp)
+                    Column(Modifier.weight(1f)) {
+                        Text("When", style = JType.small, color = jc.muted)
+                        Text(reminderLabel(context, at, repeat), style = JType.item, color = jc.ink)
+                    }
+                    Text("Change", style = JType.small, color = jc.accent)
+                }
+                CalendarSwitch(toCalendar) { toCalendar = it }
+            }
+        },
+        confirmButton = {
+            TextAction("Save", {
+                if (at <= System.currentTimeMillis()) picking = true else onSave(title.trim(), details.trim(), at, repeat, toCalendar)
+            }, bold = true, enabled = title.isNotBlank())
+        },
+        dismissButton = { TextAction("Cancel", onDismiss) },
+    )
+    if (picking) ReminderDialog(
+        current = null, currentRepeat = repeat, onTime = onTime,
+        onPick = { time, r, _ -> at = time; repeat = r; picking = false },
+        onRemove = {}, onDismiss = { picking = false },
+    )
+}
+
+private const val FORM_PREFS = "reminder_form"
+private const val KEY_CALENDAR = "add_to_calendar"
+
+/** Whether "Add to phone calendar" was on last time. */
+private fun calendarPref(context: Context) = context.getSharedPreferences(FORM_PREFS, Context.MODE_PRIVATE).getBoolean(KEY_CALENDAR, false)
+
+/**
+ * "Add to phone calendar" with its switch. Turning it on asks for calendar access the first time; the choice
+ * is remembered for the next reminder.
+ */
+@Composable
+private fun CalendarSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    var allowed by remember { mutableStateOf(CalendarEvents.allowed(context)) }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { allowed = CalendarEvents.allowed(context) }
+    fun set(value: Boolean) {
+        onChange(value)
+        context.getSharedPreferences(FORM_PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_CALENDAR, value).apply()
+        if (value && !allowed) ask.launch(CalendarEvents.PERMISSIONS)
+    }
+    Row(
+        Modifier.fillMaxWidth().clip(JShape.sm).clickable(role = Role.Switch) { set(!on) }.padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        JIcon(Ico.CALENDAR, jc.accent, size = 20.dp)
+        Column(Modifier.weight(1f)) {
+            Text("Add to phone calendar", style = JType.item, color = jc.ink)
+            Text(
+                if (!on || allowed) "Also saves it as an event in your default calendar."
+                else "Calendar access is off, so your calendar app will open to save it.",
+                style = JType.small, color = jc.muted,
+            )
+        }
+        JSwitch(on, ::set)
+    }
+}
+
+/**
+ * After a reminder is set: with [toCalendar], puts it on the phone's calendar too (moving the note's event if it
+ * has one), else takes any event it had off. Says what happened in a toast; when Margin can't write to the
+ * calendar, the calendar app opens with the event filled in.
+ */
+internal fun reminderToCalendar(
+    context: Context, scope: kotlinx.coroutines.CoroutineScope, noteId: String, title: String, details: String?, at: Long, repeat: Repeat, toCalendar: Boolean,
+) {
+    val said = "You'll be reminded " + reminderLabel(context, at, repeat).replaceFirstChar { it.lowercaseChar() }
+    fun toast(text: String, long: Boolean = false) = android.widget.Toast.makeText(context, text, if (long) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT).show()
+    scope.launch {
+        if (!toCalendar) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CalendarEvents.remove(context, noteId) }
+            toast("$said.")
+            return@launch
+        }
+        val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CalendarEvents.add(context, noteId, title, details, at, repeat) }
+        if (name != null) toast("$said, and it's in your calendar ($name).", long = true)
+        else {
+            toast("$said.")
+            runCatching { context.startActivity(CalendarEvents.insertIntent(title, details, at, repeat)) }
+        }
+    }
+}
+
+/** "in 45 minutes", "in 3 hours", "in 2 days": how long until [at]. */
+private fun countdown(at: Long, now: Long): String = DateUtils.getRelativeTimeSpanString(at, now, DateUtils.MINUTE_IN_MILLIS).toString().replaceFirstChar { it.lowercaseChar() }
 
 /** The time picker in Margin's colours rather than Material's default purple and pink. */
 @OptIn(ExperimentalMaterial3Api::class)

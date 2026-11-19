@@ -88,7 +88,7 @@ internal fun SettingsLabel(text: String) {
 
 @Composable
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () -> Unit, onFeatures: () -> Unit = {}) {
     val status by vm.status.collectAsState()
     val pending by vm.pending.collectAsState()
     val online by vm.online.collectAsState()
@@ -369,6 +369,12 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                             if (unlocked) newPassword = true else askCurrent = { newPassword = true }
                         })
                         fingerprintRow()
+                    }
+                }
+                SettingsLabel("About")
+                Card {
+                    CardRow("What Margin can do", icon = Ico.SPARKLE, sub = "Every feature, in one list.", onClick = onFeatures) {
+                        JIcon(Ico.CHEVRON, jc.muted, size = 18.dp)
                     }
                 }
                 // Who and which version, quietly at the end.

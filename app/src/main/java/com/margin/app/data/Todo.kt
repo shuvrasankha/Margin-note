@@ -9,6 +9,18 @@ data class TodoCount(val done: Int, val total: Int) {
     val complete get() = total > 0 && done == total
 }
 
+/**
+ * [blocks] with a new unchecked task [text]: after the last checklist line, or at the end (in place of an
+ * empty last line) when there's none yet.
+ */
+fun withTask(blocks: List<Block>, text: String): List<Block> {
+    val task = Block(type = BlockType.CHECK, text = text)
+    val last = blocks.indexOfLast { it.type == BlockType.CHECK }
+    if (last >= 0) return blocks.toMutableList().apply { add(last + 1, task) }
+    val trimmed = if (blocks.size > 1 && blocks.last().text.isBlank() && blocks.last().attachment == null && blocks.last().type == BlockType.BODY) blocks.dropLast(1) else blocks
+    return trimmed + task
+}
+
 /** Counts the checklist lines in [blocks]. */
 fun todoCount(blocks: List<Block>): TodoCount {
     val tasks = blocks.filter { it.type == BlockType.CHECK && it.attachment == null }

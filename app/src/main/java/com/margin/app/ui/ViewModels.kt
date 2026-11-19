@@ -137,6 +137,8 @@ sealed interface Screen {
     data class Tracker(val id: String) : Screen
     /** Saved passwords, behind the notes passcode. */
     data object Passwords : Screen
+    /** Everything Margin can do, from Settings. */
+    data object Features : Screen
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
@@ -206,6 +208,21 @@ class FoldersViewModel @Inject constructor(
 
     fun clearJournalReminder() = alarms.clear(JOURNAL_REMINDER)
 
+    /** For the Reminders list: change or remove a note's reminder without opening it. */
+    fun setReminder(noteId: String, time: Long, repeat: com.margin.app.data.Repeat) = alarms.set(noteId, time, repeat)
+    fun clearReminder(noteId: String) = alarms.clear(noteId)
+    /** A reminder made on the Reminders screen: a new note in Notes titled [title], with [details] below, ringing at [at]. */
+    fun newReminder(title: String, details: String, at: Long, repeat: com.margin.app.data.Repeat): String {
+        val id = newId()
+        viewModelScope.launch {
+            repo.saveNote(id, DEFAULT_FOLDER_ID, com.margin.app.data.sharedNoteBlocks(title, details, null))
+            alarms.set(id, at, repeat)
+        }
+        return id
+    }
+    /** False when Android may deliver reminders late (no exact-alarm permission). */
+    val remindersOnTime get() = alarms.canRingOnTime()
+
     /** Offline with changes waiting, or the last sync failed. Null when there's nothing to say. */
     val syncBanner: StateFlow<SyncBanner?> = combine(syncPrefs.status, connectivity.online, repo.pendingCount()) { s, online, pending ->
         syncBanner(s.signedIn, online, pending, s.lastError)
@@ -255,6 +272,26 @@ class FoldersViewModel @Inject constructor(
         if (name.isNotBlank()) repo.saveNote(prefix + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
     }
     /** Ticks [day] off for the habit [note], or unticks it: the body is rewritten as one line per day, newest first. */
+    /** To-dos: ticks or unticks the checklist line [blockId] in [note], without opening it. */
+    fun toggleTask(note: NoteEntity, blockId: String) = viewModelScope.launch {
+        val fresh = repo.getNote(note.id)?.takeIf { it.trashedAt == null && !it.deleted && it.cipher == null } ?: return@launch
+        repo.saveNote(fresh.id, fresh.folderId, fresh.blocks.map { if (it.id == blockId && it.type == BlockType.CHECK) it.copy(checked = !it.checked) else it })
+    }
+
+    /** To-dos: adds [text] as a new task in [note], after its last checklist line (or at the end). */
+    fun addTask(note: NoteEntity, text: String) = viewModelScope.launch {
+        if (text.isBlank()) return@launch
+        val fresh = repo.getNote(note.id)?.takeIf { it.trashedAt == null && !it.deleted && it.cipher == null } ?: return@launch
+        repo.saveNote(fresh.id, fresh.folderId, com.margin.app.data.withTask(fresh.blocks, text.trim()))
+    }
+
+    /** To-dos: a new list titled [title] holding [tasks], in the default folder. */
+    fun newTodoList(title: String, tasks: List<String>) = viewModelScope.launch {
+        val items = tasks.map { it.trim() }.filter { it.isNotEmpty() }
+        if (title.isBlank() || items.isEmpty()) return@launch
+        repo.saveNote(newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = title.trim())) + items.map { Block(type = BlockType.CHECK, text = it) })
+    }
+
     fun toggleHabit(note: NoteEntity, day: java.time.LocalDate) = viewModelScope.launch {
         val days = habitDays(note).let { if (day in it) it - day else it + day }.sortedDescending()
         repo.saveNote(note.id, note.folderId, listOf(note.blocks.first()) + days.map { Block(text = it.toString()) })
@@ -708,7 +745,8 @@ class EditorViewModel @Inject constructor(
         }
     }
 
-    private var noteId = ""
+    var noteId = ""
+        private set
     var folderId by mutableStateOf(""); private set
     /** When the open note was last edited; null for a new note. */
     var editedAt by mutableStateOf<Long?>(null); private set
@@ -1244,6 +1282,44 @@ class EditorViewModel @Inject constructor(
         lastChangeAt = 0 // its own undo step
         doc = EditorDoc.fromBlocks(listOf(title) + lines.map { com.margin.app.data.Block(text = it) })
         value = TextFieldValue(doc.text, TextRange(0))
+        changed()
+    }
+
+    /**
+     * AI on a selection: puts [text] where [range] was (offsets in the doc's text), as one undo step, and
+     * selects it. A selection inside the title stays on one line.
+     */
+    fun replaceSelection(range: TextRange, text: String) {
+        if (readOnly || needsUnlock || text.isBlank()) return
+        val start = range.min.coerceIn(0, doc.text.length)
+        val end = range.max.coerceIn(start, doc.text.length)
+        val inTitle = doc.lineAt(start) == 0
+        val with = text.trim().let { if (inTitle) it.lines().filter { l -> l.isNotBlank() }.joinToString(" ") else it }
+        val next = doc.applyEdit(doc.text.replaceRange(start, end, with), start + with.length)
+        if (next == doc) return
+        lastChangeAt = 0 // its own undo step
+        doc = next
+        value = TextFieldValue(next.text, TextRange(start, (start + with.length).coerceAtMost(next.text.length)))
+        changed()
+    }
+
+    /** Puts [text] in as the note's title (one line), as one undo step. */
+    fun setTitle(text: String) {
+        val line = text.lines().firstOrNull { it.isNotBlank() }?.trim() ?: return
+        replaceSelection(TextRange(0, doc.text.indexOf('\n').let { if (it < 0) doc.text.length else it }), line)
+    }
+
+    /** Adds [items] as unchecked checklist lines at the end of the note, as one undo step. */
+    fun addChecklist(items: List<String>) {
+        if (readOnly || needsUnlock || items.isEmpty()) return
+        val blocks = doc.toBlocks().toMutableList()
+        // Not after an empty last line: fill it instead.
+        if (blocks.size > 1 && blocks.last().text.isBlank() && blocks.last().attachment == null) blocks.removeAt(blocks.lastIndex)
+        blocks += items.map { Block(type = BlockType.CHECK, text = it) }
+        blocks += Block()
+        lastChangeAt = 0
+        doc = EditorDoc.fromBlocks(blocks)
+        value = TextFieldValue(doc.text, TextRange(doc.text.length))
         changed()
     }
 
