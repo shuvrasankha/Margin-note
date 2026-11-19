@@ -1,0 +1,150 @@
+# Publishing Margin on Google Play
+
+Everything Play Console asks for, in the order you meet it. The listing text and graphics are in [listing.md](listing.md).
+
+## App facts
+
+| | |
+|---|---|
+| Package name | `com.margin.app` (it can't change after the first upload) |
+| Version | 1.0.0 (versionCode 1) |
+| Min / target SDK | 26 (Android 8.0) / 37 |
+| Upload file | `app/build/outputs/bundle/release/app-release.aab` (`./gradlew bundleRelease`) |
+| Upload key | `margin-release.jks` (with `keystore.properties`). Back up both somewhere safe, outside the repo. Losing them means asking Google for an upload key reset. |
+| Upload key SHA-1 | `DB:0C:6E:B7:0E:7F:1D:61:D9:35:83:7A:06:D1:8F:97:C3:5D:1C:5B` |
+| Upload key SHA-256 | `7A:56:58:BD:8F:AC:5A:AB:0C:16:E8:CD:78:23:85:34:E4:EE:44:83:86:C3:AE:70:A0:16:B9:14:7E:E9:8A:E5` |
+
+For every later release, raise `versionCode` (and `versionName`) in `app/build.gradle.kts`.
+
+## 1. Create the app
+
+Play Console → Create app:
+- App name: `Margin: Notes & Checklists`
+- Default language: English (United States)
+- App or game: **App**
+- Free or paid: **Free** (a free app can never become paid later)
+- Accept the declarations.
+
+## 2. Store settings
+
+- App category: **Productivity**
+- Tags: Notes, Productivity, To-do list (choose from Play's list)
+- Contact email: `shuvrasankha1@gmail.com`
+- Website: `https://shuvrasankha.github.io/Margin-note/`
+- Phone: leave it empty
+
+## 3. App content (Policy → App content)
+
+### Privacy policy
+`https://shuvrasankha.github.io/Margin-note/privacy.html`
+
+### App access
+**All functionality is available without special access.** There's no login. Google sign-in is only needed for the optional Drive backup, and Ask AI needs the user's own key. Reviewers can test everything else without them.
+
+### Ads
+**No, my app does not contain ads.**
+
+### Content rating (IARC questionnaire)
+- Email: `shuvrasankha1@gmail.com`
+- Category: **All other app types** (a utility or productivity app, not a game, social or communication app)
+- Violence, sexuality, language, controlled substances, gambling and crude humour: **No** to all
+- Can users interact with or exchange content with other users? **No**. Sharing a note hands it to another app chosen by the user, and nothing is shared inside Margin.
+- Does the app share the user's current physical location with other users? **No**
+- Does the app allow users to buy digital goods? **No**
+- Is the app a web browser or search engine? **No**. Web link previews only load the page the user pasted.
+- Expected result: Everyone / PEGI 3 / USK 0.
+
+### Target audience and content
+- Age groups: **13–15, 16–17 and 18 and over**. Don't choose under 13: the privacy policy says the app isn't for children, and choosing under 13 brings in the Families policy.
+- Could the app unintentionally appeal to children? **No**
+
+### News app: **No**
+### COVID-19 contact tracing or status app: **No**
+### Government app: **No**
+### Financial features: **My app doesn't provide any financial features**
+### Health apps: **My app does not have any health features**. Habits are general tick-offs, not health tracking.
+
+### Data safety
+Choose these answers. They match the privacy policy, and Play checks the two against each other.
+
+**Overview**
+- Does your app collect or share any of the required user data types? **Yes**
+- Is all of the user data collected by your app encrypted in transit? **Yes**. Drive, WebDAV over HTTPS, AI providers and LanguageTool all use HTTPS.
+- Which of the following methods of account creation does your app support? **My app does not allow users to create an account**
+- Do you provide a way for users to request that their data is deleted? **Yes**. Data is deleted in the app or by uninstalling it, and Drive data from Drive's "Manage apps". Data deletion URL (if asked): the privacy policy URL.
+
+**Data types.** Mark each as *Collected*, *Not shared*, *Optional* (users can choose), with the purpose **App functionality**, and *not processed ephemerally* unless it says so below.
+
+| Category → type | Why |
+|---|---|
+| App activity → **Other user-generated content** | Note text goes to the AI provider the user picks (Ask AI), to LanguageTool if cloud grammar is on, and to the user's own Drive or backup place. Processed ephemerally: No. |
+| Personal info → **Email address** | Received from Google sign-in for Drive backup and shown on the phone. Purpose: App functionality and **Account management**. |
+| Personal info → **Name** | Same as email. |
+| Photos and videos → **Photos** | Photos in notes are copied to the user's Drive or backup place. |
+| Audio → **Voice or sound recordings** | Voice notes are copied to the user's Drive or backup place. |
+| Files and docs → **Files and docs** | Attached files and PDFs are copied to the user's Drive or backup place. |
+| Calendar → **Calendar events** | Only if the user turns on "Add to phone calendar". The event is written to the phone's calendar, which may sync it to the user's account. |
+
+**Not collected:** location, contacts, financial info, health, messages, web history, app info and performance, device or other IDs.
+
+Why "Not shared": Google counts transfers that the user starts and expects (sending a note to the AI provider they chose, or a backup to their own Drive) as not sharing. If you'd rather be stricter, also tick **Shared** for "Other user-generated content" for Ask AI. That's also accurate.
+
+### Advertising ID
+**No**. The app doesn't use the advertising ID. If Play warns about `AD_ID`, check the merged manifest of the AAB. No dependency should add it, but if one does, add `<uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>`.
+
+## 4. Permission declarations
+
+Play Console shows these forms once the AAB is uploaded (App content → Sensitive permissions, or on the release page).
+
+### Foreground service: `FOREGROUND_SERVICE_MICROPHONE`
+- Feature: **Media → Voice recording** (user-initiated recording of a voice note)
+- Description: "The user taps record in a note to make a voice note. Recording runs in a foreground service with a visible notification and a stop button, so it continues if the user switches apps or the screen turns off. It stops when the user taps stop."
+- Impact if deferred or interrupted: the recording would be cut off and lost.
+- **Video link (required):** record a 30-second screen video on a phone. Open a note, tap the mic, start recording, go to the home screen to show the recording notification, come back and stop. Upload it to YouTube as *Unlisted* and paste the link.
+
+### Full-screen intent: `USE_FULL_SCREEN_INTENT`
+- Use case: **Alarms set by the user**. Reminders can be set to ring as an alarm, and the full-screen alert shows them when the phone is locked.
+- Play grants this by default only to calling and alarm-clock apps. If Google turns the declaration down, it's still safe: the app checks `canUseFullScreenIntent()`, falls back to a normal heads-up notification, and offers a button that opens the system setting. In that case, remove nothing and answer that it's not core functionality.
+
+### Exact alarms: `SCHEDULE_EXACT_ALARM`
+No form needed. It's the user-granted version (not `USE_EXACT_ALARM`). The app asks the user to allow it and still works without it, with reminders that may arrive a few minutes late.
+
+### Calendar: `READ_CALENDAR`, `WRITE_CALENDAR`
+No declaration form. It's covered by the Data safety answers and the privacy policy, and it's only requested when the user turns on "Add to phone calendar".
+
+## 5. Google sign-in (Drive backup) set-up. Do this before release.
+
+Play re-signs the app with its own **app signing key**, so Google sign-in from a Play install fails until Google Cloud knows that key.
+
+1. After the first upload: Play Console → Test and release → **App integrity** → App signing. Copy the **App signing key certificate SHA-1**.
+2. Google Cloud Console (the project that has the Drive API): APIs & Services → Credentials → **Create credentials → OAuth client ID → Android**. Package `com.margin.app`, with that SHA-1. Keep the existing client for the upload key (SHA-1 above) and the debug one too.
+3. APIs & Services → **OAuth consent screen**:
+   - App name Margin, support email, logo `store/icon-512.png`;
+   - Home page `https://shuvrasankha.github.io/Margin-note/`;
+   - Privacy `…/privacy.html`, Terms `…/terms.html`;
+   - Authorised domain `shuvrasankha.github.io`;
+   - Scope `…/auth/drive.appdata`.
+4. Publishing status: **Push to production**. While it's in "Testing", only listed test users can sign in, and their tokens expire after 7 days. Google may ask to verify the brand (home page, privacy link, domain ownership via Search Console). `drive.appdata` doesn't need the paid security assessment.
+
+## 6. Testing and release
+
+- **New personal developer account?** Accounts made after 13 Nov 2023 must run a **closed test with at least 12 testers, opted in for 14 days in a row**, before they can apply for production. Start this first, since it's the longest wait.
+  - Test and release → Testing → Closed testing → Create track.
+  - Upload the AAB, add testers by email list or Google Group, and share the opt-in link.
+- Internal testing (up to 100 testers, no review wait) is the quickest way to check the Play-signed build on your own phone. Check Drive sign-in there after step 5.
+- Countries: all, or choose your own.
+- Production: after the closed test, Dashboard → Apply for production. Answer the questions about the test, then create the production release with the same AAB (or a newer versionCode) and the release notes from listing.md.
+- The first review usually takes a few days to a week.
+
+## 7. Before you press send: check list
+
+- [ ] Install the release AAB on a real phone (internal testing) and try:
+  - [ ] write a note;
+  - [ ] a reminder with an alarm and with calendar;
+  - [ ] a voice note;
+  - [ ] the app lock;
+  - [ ] Drive sign-in.
+- [ ] Back up `margin-release.jks` and `keystore.properties` off this computer.
+- [ ] Record the microphone video for the declaration.
+- [ ] Play app-signing SHA-1 added to Google Cloud. OAuth consent screen in production.
+- [ ] Privacy policy URL opens (it's live on GitHub Pages).

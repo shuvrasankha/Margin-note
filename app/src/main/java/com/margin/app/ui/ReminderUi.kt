@@ -512,7 +512,9 @@ private fun CalendarSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
 internal fun reminderToCalendar(
     context: Context, scope: kotlinx.coroutines.CoroutineScope, noteId: String, title: String, details: String?, at: Long, repeat: Repeat, toCalendar: Boolean,
 ) {
-    val said = "You'll be reminded " + reminderLabel(context, at, repeat).replaceFirstChar { it.lowercaseChar() }
+    // "today, 6:00 PM" and "tomorrow, …" read as words; a weekday keeps its capital ("Mon, Nov 23").
+    val label = reminderLabel(context, at, repeat)
+    val said = "You'll be reminded " + if (label.startsWith("Today") || label.startsWith("Tomorrow")) label.replaceFirstChar { it.lowercaseChar() } else "on $label"
     fun toast(text: String, long: Boolean = false) = android.widget.Toast.makeText(context, text, if (long) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT).show()
     scope.launch {
         if (!toCalendar) {
