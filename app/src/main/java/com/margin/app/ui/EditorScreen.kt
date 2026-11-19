@@ -245,6 +245,12 @@ fun EditorScreen(
             runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)) }
         }
     }
+    // Android 9 and older need storage permission to save a card to Photos.
+    var pendingSave by remember { mutableStateOf<(suspend () -> Unit)?>(null) }
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val save = pendingSave; pendingSave = null
+        if (granted && save != null) scope.launch { save() } else if (!granted) toast("Margin needs storage access to save to Photos.")
+    }
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) toast("Reminder set, but notifications are off for Margin, so it won't show. Turn them on in the phone's settings.")
         else askForExactAlarms()
@@ -389,10 +395,16 @@ fun EditorScreen(
                     if (carding) {
                         val blocks = remember { vm.doc.toBlocks() }
                         val date = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(java.util.Date(vm.editedAt ?: System.currentTimeMillis())) }
-                        CardDialog(blocks, date, onDismiss = { carding = false }) { style ->
+                        val title = remember { blocks.first().text.trim().ifEmpty { "Note" } }
+                        CardDialog(blocks, date, onDismiss = { carding = false }, onSave = { style ->
+                            carding = false
+                            if (android.os.Build.VERSION.SDK_INT < 29 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) { pendingSave = { saveCards(context, blocks, date, style, title, ::toast) }; storagePermission.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                            else scope.launch { saveCards(context, blocks, date, style, title, ::toast) }
+                        }) { style ->
                             carding = false
                             scope.launch {
-                                val title = blocks.first().text.trim().ifEmpty { "Note" }
                                 val files = withContext(Dispatchers.IO) {
                                     runCatching {
                                         val pages = noteCards(context, blocks, date, style)
@@ -1392,3 +1404,36 @@ fun Tint.swatch(): Color = when (this) {
     Tint.GREEN -> Color(0xFF34A853)
     Tint.GREY -> Color(0xFF8E8E93)
 }.copy(alpha = 0.35f)
+
+
+/** Saves the note's cards to the phone's Pictures/Margin, then says how many went in. */
+internal suspend fun saveCards(context: android.content.Context, blocks: List<com.margin.app.data.Block>, date: String, style: CardStyle, title: String, toast: (String) -> Unit) {
+    val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching {
+            val pages = noteCards(context, blocks, date, style)
+            pages.forEachIndexed { i, draw ->
+                val bmp = draw()
+                val name = safeFileName(title) + (if (pages.size > 1) " ${i + 1}" else "") + ".png"
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, name)
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_PICTURES + "/Margin")
+                        put(android.provider.MediaStore.Images.Media.IS_PENDING, 1)
+                    } else {
+                        val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "Margin").apply { mkdirs() }
+                        @Suppress("DEPRECATION") put(android.provider.MediaStore.Images.Media.DATA, java.io.File(dir, name).path)
+                    }
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: error("no uri")
+                try {
+                    resolver.openOutputStream(uri)!!.use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                } catch (e: Exception) { resolver.delete(uri, null, null); throw e } finally { bmp.recycle() }
+                if (android.os.Build.VERSION.SDK_INT >= 29) resolver.update(uri, android.content.ContentValues().apply { put(android.provider.MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+            }
+            pages.size
+        }.getOrNull()
+    }
+    toast(when (saved) { null -> "Couldn't save the image."; 1 -> "Saved to Photos"; else -> "Saved $saved images to Photos" })
+}

@@ -71,7 +71,28 @@ enum class CardStyle(
     AMBER("Amber", 0xFFFFCC66, 0xFFFF9500, ink = 0xFF1A1205, body = 0xFF3B2A0A, muted = 0xFF6B4A12, rule = 0xFF1A1205, hair = 0x33000000),
     OCEAN("Ocean", 0xFF0A4FB5, 0xFF36B5E8, ink = 0xFFFFFFFF, body = 0xFFE6F2FF, muted = 0xFFBFDDF7, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
     ROSE("Rose", 0xFFFFD1DC, 0xFFB794F6, ink = 0xFF2A1033, body = 0xFF47284F, muted = 0xFF7A5A82, rule = 0xFF2A1033, hair = 0x33000000),
+    KRAFT("Kraft", 0xFFD9B98C, ink = 0xFF2B1D0E, body = 0xFF3D2A15, muted = 0xFF6E5233, rule = 0xFF8A3B12, hair = 0x33000000, dots = 0x1A2B1D0E),
+    BLUEPRINT("Blueprint", 0xFF1D4E89, ink = 0xFFFFFFFF, body = 0xFFDCE9F7, muted = 0xFF9DBBDD, rule = 0xFFFFFFFF, hair = 0x40FFFFFF, grid = 0x26FFFFFF),
+    CHALK("Chalkboard", 0xFF23332B, ink = 0xFFF4F1E8, body = 0xFFD9D5C9, muted = 0xFF9BA399, rule = 0xFFF2C14E, hair = 0x33FFFFFF),
+    SAGE("Sage", 0xFFE4EBDD, ink = 0xFF1C2A1C, body = 0xFF34442F, muted = 0xFF6B7A63, rule = 0xFF5B7F4E, hair = 0x1F000000, lines = 0xFFC3D2B8),
+    MINT("Mint", 0xFFB8F2D9, 0xFF5AC8C8, ink = 0xFF0B2A26, body = 0xFF173F39, muted = 0xFF3F6B64, rule = 0xFF0B2A26, hair = 0x33000000),
+    SUNSET("Sunset", 0xFFFF7E5F, 0xFFC9406A, ink = 0xFFFFFFFF, body = 0xFFFFEDE6, muted = 0xFFFFD0C2, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
+    MIDNIGHT("Midnight", 0xFF141E30, 0xFF35577D, ink = 0xFFF5F7FA, body = 0xFFD3DCE8, muted = 0xFF93A4BA, rule = 0xFFFFB340, hair = 0x33FFFFFF, dots = 0x1FFFFFFF),
+    MONO("Mono", 0xFF000000, ink = 0xFFFFFFFF, body = 0xFFE5E5E5, muted = 0xFF8E8E93, rule = 0xFFFFFFFF, hair = 0x33FFFFFF),
 }
+
+/** The style row's sections, in order. */
+private val CARD_GROUPS = listOf(
+    "Paper" to listOf(CardStyle.PAPER, CardStyle.RULED, CardStyle.LEGAL, CardStyle.GRID, CardStyle.DOTS, CardStyle.KRAFT, CardStyle.SAGE),
+    "Colour" to listOf(CardStyle.AMBER, CardStyle.OCEAN, CardStyle.ROSE, CardStyle.MINT, CardStyle.SUNSET),
+    "Dark" to listOf(CardStyle.NIGHT, CardStyle.BLUEPRINT, CardStyle.CHALK, CardStyle.MIDNIGHT, CardStyle.MONO),
+).let { g -> g + listOfNotNull(("More" to CardStyle.entries.filter { s -> g.none { s in it.second } }).takeIf { it.second.isNotEmpty() }) }
+
+private const val CARD_PREFS = "share_card"
+private const val LAST_STYLE = "style"
+
+/** A dark card: the Margin mark gets a hairline edge so it doesn't melt into the background. */
+private val CardStyle.isDark get() = androidx.core.graphics.ColorUtils.calculateLuminance(bg.toInt()) < 0.2
 
 /**
  * The note as pictures for social media: on a warm paper card with the app's amber margin rule, the title,
@@ -159,6 +180,8 @@ internal fun cardPages(count: Int, top: (Int) -> Int, bottom: (Int) -> Int, firs
 
 private const val CARD_TOP = 120f
 private const val CARD_BOTTOM = CARD_H - 130f
+/** The foot's hairline. The same on every style: paper (dots, grid, ruled lines, the margin rule) stops above it. */
+private const val FOOT_LINE = CARD_H - 112f
 
 /** One card: the paper, the [title] (if any) and lines [from] until [to] of [body], and the foot with [footNote]. */
 private fun drawCard(context: Context, style: CardStyle, footNote: String, title: StaticLayout?, body: StaticLayout?, from: Int, to: Int, center: Boolean, ai: List<IntRange> = emptyList()): Bitmap {
@@ -171,6 +194,9 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
     style.bg2?.let { bg.shader = LinearGradient(0f, 0f, CARD_W.toFloat(), CARD_H.toFloat(), style.bg.toInt(), it.toInt(), Shader.TileMode.CLAMP) }
         ?: run { bg.color = style.bg.toInt() }
     c.drawRect(0f, 0f, CARD_W.toFloat(), CARD_H.toFloat(), bg)
+    // Paper patterns stay above the foot, so every style's foot is the same clean band.
+    c.save()
+    c.clipRect(0f, 0f, CARD_W.toFloat(), FOOT_LINE - 1f)
     style.dots?.let { d ->
         val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = d.toInt() }
         var dy = 27f
@@ -183,11 +209,13 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
         at = 0f
         while (at < CARD_H) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += 54f }
     }
+    c.restore()
 
     val left = 150f
     // The margin rule down the left, as on the app icon.
     val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.rule.toInt(); strokeWidth = 8f; strokeCap = Paint.Cap.ROUND }
-    c.drawLine(100f, 0f.takeIf { style.lines != null } ?: 110f, 100f, if (style.lines != null) CARD_H.toFloat() else CARD_H - 122f, rule)
+    // Ruled paper runs it from the top edge, like a real pad; it always ends just above the foot.
+    c.drawLine(100f, if (style.lines != null) 0f else 110f, 100f, FOOT_LINE - 10f, rule)
 
     val titleH = title?.let { it.height + 48f } ?: 0f
     val slice = if (body != null && to > from) (body.getLineBottom(to - 1) - body.getLineTop(from)).toFloat() else 0f
@@ -202,7 +230,8 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
         } ?: ((bodyTop + 40f) to 70f)
         var at = first
         while (at - pitch > y + (title?.height ?: 0)) at -= pitch
-        while (at < CARD_H - 118f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
+        // The last line keeps clear of the foot's hairline rather than doubling it.
+        while (at < FOOT_LINE - 24f) { c.drawLine(0f, at, CARD_W.toFloat(), at, p); at += pitch }
     }
     title?.let { c.save(); c.translate(left, y); it.draw(c); c.restore() }
     if (body != null && to > from) {
@@ -226,11 +255,11 @@ private fun drawCard(context: Context, style: CardStyle, footNote: String, title
 
     // Foot: a hairline, then the mark and the name.
     val hair = Paint().apply { color = style.hair.toInt(); strokeWidth = 2f }
-    if (style.lines == null) c.drawLine(96f, CARD_H - 112f, CARD_W - 96f, CARD_H - 112f, hair)
+    c.drawLine(96f, FOOT_LINE, CARD_W - 96f, FOOT_LINE, hair)
     val mark = 64f
-    val mx = if (style.lines != null) 150f else 96f
+    val mx = 96f
     val my = CARD_H - 92f
-    drawMark(c, mx, my, mark, edge = style == CardStyle.NIGHT)
+    drawMark(c, mx, my, mark, edge = style.isDark)
     val name = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = ink; textSize = 38f; typeface = font(R.font.inter_semibold) }
     c.drawText("Margin", mx + mark + 22f, my + mark / 2 + 13f, name)
     val small = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = muted; textSize = 30f; typeface = font(R.font.inter_regular); textAlign = Paint.Align.RIGHT }
@@ -256,9 +285,14 @@ private fun drawMark(c: Canvas, x: Float, y: Float, s: Float, edge: Boolean) {
 
 /** Share as image: the card as it will look, a row of styles to try, and Share. */
 @androidx.compose.runtime.Composable
-fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onShare: (CardStyle) -> Unit) {
+fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onSave: (CardStyle) -> Unit, onShare: (CardStyle) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var style by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(CardStyle.PAPER) }
+    // Opens on the style used last time.
+    val prefs = androidx.compose.runtime.remember { context.getSharedPreferences(CARD_PREFS, Context.MODE_PRIVATE) }
+    var style by androidx.compose.runtime.saveable.rememberSaveable {
+        androidx.compose.runtime.mutableStateOf(runCatching { CardStyle.valueOf(prefs.getString(LAST_STYLE, null)!!) }.getOrDefault(CardStyle.PAPER))
+    }
+    fun remembered(s: CardStyle) = s.also { prefs.edit().putString(LAST_STYLE, it.name).apply() }
     var pages by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<() -> Bitmap>>(emptyList()) }
     androidx.compose.runtime.LaunchedEffect(style) {
         pages = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { noteCards(context, blocks, date, style) }
@@ -287,11 +321,23 @@ fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onShare
                 }
             }
             if (pages.size > 1) Text("${pager.currentPage + 1} of ${pages.size} · swipe to see them all", style = JType.small, color = jc.muted)
+            // Swatches in sections (Paper, Colour, Dark), scrolled so the chosen one shows on opening.
+            val scroll = rememberScrollState()
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                val before = CARD_GROUPS.flatMap { it.second }.indexOf(style) + CARD_GROUPS.indexOfFirst { style in it.second }
+                scroll.scrollTo(with(density) { (before * 58).dp.roundToPx() } - with(density) { 80.dp.roundToPx() })
+            }
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().horizontalScroll(scroll).padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                CardStyle.entries.forEach { s ->
+                CARD_GROUPS.forEachIndexed { gi, (group, styles) ->
+                if (gi > 0) Box(Modifier.padding(top = 22.dp).size(1.dp, 40.dp).background(jc.line))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(group.uppercase(), style = JType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = jc.muted, maxLines = 1)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                styles.forEach { s ->
                     val on = s == style
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(
@@ -305,8 +351,14 @@ fun CardDialog(blocks: List<Block>, date: String, onDismiss: () -> Unit, onShare
                         Text(s.label, style = JType.small, maxLines = 1, color = if (on) jc.ink else jc.muted)
                     }
                 }
+                }
+                }
+                }
             }
-            PrimaryButton(if (pages.size > 1) "Share ${pages.size} images" else "Share", { onShare(style) }, Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SecondaryButton(if (pages.size > 1) "Save ${pages.size}" else "Save", { onSave(remembered(style)) }, Modifier.weight(1f))
+                PrimaryButton(if (pages.size > 1) "Share ${pages.size} images" else "Share", { onShare(remembered(style)) }, Modifier.weight(2f))
+            }
         }
     }
 }
