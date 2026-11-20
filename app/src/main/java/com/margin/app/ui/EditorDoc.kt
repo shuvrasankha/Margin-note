@@ -28,6 +28,7 @@ data class LineMeta(
     val table: NoteTable? = null,
     val ai: Boolean = false,
     val folded: Boolean = false,
+    val due: Long? = null,
 ) {
     /** A line that is one card (attachment or table) rather than text. */
     val isObject get() = attachment != null || table != null
@@ -55,7 +56,7 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
                 s.copy(start = maxOf(s.start, start) - start, end = minOf(s.end, end) - start).takeIf { it.start < it.end }
             }
             start = end + 1
-            Block(m.id, m.type, t, m.checked, lineMarks, m.attachment, m.quote, m.indent, m.table, m.ai, m.folded)
+            Block(m.id, m.type, t, m.checked, lineMarks, m.attachment, m.quote, m.indent, m.table, m.ai, m.folded, m.due)
         }
     }
 
@@ -106,6 +107,7 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
                 m.type != BlockType.CHECK && m.checked -> m.copy(checked = false)
                 else -> m
             }.let { if (it.indent in 0..MAX_INDENT) it else it.copy(indent = it.indent.coerceIn(0, MAX_INDENT)) }
+                .let { if (it.due != null && it.type != BlockType.CHECK) it.copy(due = null) else it } // only tasks have due dates
         },
     )
 
@@ -270,7 +272,7 @@ data class EditorDoc(val text: String, val lines: List<LineMeta>, val marks: Lis
             }
             return EditorDoc(
                 list.joinToString("\n") { it.text.replace('\n', ' ') },
-                list.map { LineMeta(it.id, it.type, it.checked, it.attachment, it.quote, it.indent, it.table, it.ai, it.folded) },
+                list.map { LineMeta(it.id, it.type, it.checked, it.attachment, it.quote, it.indent, it.table, it.ai, it.folded, it.due) },
                 marks,
             ).normalized()
         }

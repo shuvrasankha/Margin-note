@@ -156,6 +156,8 @@ fun EditorScreen(
     var attaching by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf(false) }
+    var sortingList by remember { mutableStateOf(false) }
+    var dueFor by remember { mutableStateOf<Int?>(null) }
     var history by remember { mutableStateOf(false) }
     var linked by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
@@ -422,7 +424,13 @@ fun EditorScreen(
                             item("Move to folder…", Ico.MOVE, gap = first) { moving = true }
                             if (vm.canRemind) item(if (reminderAt != null || placeReminder != null) "Change reminder…" else "Remind me…", Ico.ALARM) { reminding = true }
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
+                            if (vm.canSortAisles && todoCount(vm.doc.toBlocks()).total > 1) item("Sort list…", Ico.SORT) { sortingList = true }
                             if (vm.canSortAisles && todoCount(vm.doc.toBlocks()).total > 1) item("Sort by aisle…", ICON_AISLE) { sortingAisles = true }
+                            if (vm.canSortAisles && vm.tickedTasks > 0) item("Clear ticked items", Ico.CHECK) {
+                                val n = vm.tickedTasks
+                                vm.clearTicked()
+                                toast(if (n == 1) "Removed 1 ticked item. Undo brings it back." else "Removed $n ticked items. Undo brings them back.")
+                            }
                             if (vm.canCopyTasks && todoCount(vm.doc.toBlocks()).total > 0) item(if (vm.canMoveTasks) "Move items…" else "Copy items…", Ico.MOVE) { movingTasks = true }
                             if (inShade) item("Unpin from notifications", Ico.PIN) { vm.unpinFromShade(); toast("Unpinned from notifications") }
                             else if (vm.canRemind) item("Pin to notifications", Ico.PIN) {
@@ -602,6 +610,7 @@ fun EditorScreen(
                         },
                     )
                     val showCount by vm.writing.showCount.collectAsState()
+                    if (!formatting && !attaching && !sharing) TaskBar(vm) { dueFor = it }
                     if (showCount && !formatting && !attaching && !sharing) WordCountBar(vm) { stats = true }
                     EditorToolbar(
                         vm, formatting, attaching,
@@ -693,6 +702,10 @@ fun EditorScreen(
     }
     if (info) NoteInfoDialog(vm, folderName) { info = false }
     if (stats) WritingStatsDialog(vm) { stats = false }
+    if (sortingList) SortListDialog(vm.anyDue, onPick = { sortingList = false; vm.sortTasks(it); toast("Sorted ${it.label.lowercase()}. Undo puts it back.") }) { sortingList = false }
+    dueFor?.let { line ->
+        DueDateDialog(vm.doc.lines.getOrNull(line)?.due, onPick = { vm.setDue(line, it); dueFor = null }) { dueFor = null }
+    }
     if (history) VersionHistory(vm) { history = false }
     peek?.let { n -> LinkedNotePreview(n, onOpen = { peek = null; onOpenNote(n) }, onDismiss = { peek = null }) }
     if (asking) {

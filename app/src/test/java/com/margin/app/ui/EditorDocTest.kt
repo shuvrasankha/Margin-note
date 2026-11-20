@@ -202,4 +202,9 @@ class EditorDocTableTest {
         val folded = EditorDoc.fromBlocks(listOf(Block(type = BlockType.TITLE, text = "T"), Block(ai = true, folded = true), Block(text = "x", ai = true)))
         assertEquals(listOf(false, true, false), folded.toBlocks().map { it.folded })
     }
+
+    @Test fun dueDatesSurviveTheEditorAndLeaveNonTasks() {
+        val doc = EditorDoc.fromBlocks(listOf(Block(type = BlockType.TITLE, text = "T"), Block(type = BlockType.CHECK, text = "a", due = 9), Block(text = "b", due = 3)))
+        assertEquals(listOf(null, 9L, null), doc.toBlocks().map { it.due })
+    }
 }

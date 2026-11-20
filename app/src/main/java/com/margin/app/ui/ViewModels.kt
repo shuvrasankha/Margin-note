@@ -97,6 +97,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -697,12 +698,7 @@ class EditorViewModel @Inject constructor(
                 fresh.displayTitle to r.added
             }
             val (name, gained) = result
-            if (!copy && doc.toBlocks() == blocks) {
-                lastChangeAt = 0 // its own undo step
-                doc = EditorDoc.fromBlocks(com.margin.app.data.withoutLines(blocks, lines))
-                value = TextFieldValue(doc.text, TextRange(0))
-                changed()
-            }
+            if (!copy && doc.toBlocks() == blocks) replaceBlocks(com.margin.app.data.withoutLines(blocks, lines))
             onDone(name, gained)
         }
     }
@@ -715,11 +711,84 @@ class EditorViewModel @Inject constructor(
     /** Groups the list's tasks under aisle headings in shop order, as one edit that Undo takes back. */
     fun sortByAisle() {
         if (!canSortAisles) return
-        val sorted = com.margin.app.data.byAisle(doc.toBlocks(), aisles.all())
-        if (sorted == doc.toBlocks()) return
+        replaceBlocks(com.margin.app.data.byAisle(doc.toBlocks(), aisles.all()))
+    }
+
+    /** The whole note replaced by [blocks] (a sort, a clear-out) as its own undo step; nothing if it's the same. */
+    private fun replaceBlocks(blocks: List<Block>) {
+        if (blocks == doc.toBlocks()) return
+        dropPendingSort() // its line numbers are about the old order
         lastChangeAt = 0
-        doc = EditorDoc.fromBlocks(sorted)
+        doc = EditorDoc.fromBlocks(blocks)
         value = TextFieldValue(doc.text, TextRange(0))
+        changed()
+    }
+
+    /** Ticked tasks in the list, which Clear ticked items would take out. */
+    val tickedTasks get() = com.margin.app.data.tickedCount(doc.toBlocks())
+
+    /** Takes out every ticked task (and aisle headings left empty), as one edit Undo brings back. */
+    fun clearTicked() { if (canSortAisles) replaceBlocks(com.margin.app.data.withoutTicked(doc.toBlocks())) }
+
+    /** Sorts the tasks within each run of them, as one edit. */
+    fun sortTasks(sort: com.margin.app.data.ListSort) { if (canSortAisles) replaceBlocks(com.margin.app.data.sortedTasks(doc.toBlocks(), sort)) }
+
+    /** Whether any task has a due date, so sorting by it means something. */
+    val anyDue get() = doc.lines.any { it.type == BlockType.CHECK && it.due != null }
+
+    /** The task the cursor is on while editing, or null: the bar for its due date, quantity and suggestions. */
+    val taskAtCursor: Int?
+        get() = cursorLine.takeIf { focused && canSortAisles && !locked && doc.lines.getOrNull(it)?.let { m -> m.type == BlockType.CHECK && !m.isObject } == true }
+
+    /** Items from your other lists, most used first; worked out when the notes change, not on every key. */
+    // Lazy: linkTargets is set up further down.
+    val pastItems: StateFlow<List<com.margin.app.data.PastItem>> by lazy {
+        combine(linkTargets, openId) { notes, id -> com.margin.app.data.pastItems(notes, id) }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    /** Past items that finish the task being typed at the cursor; not ones already on this list. */
+    fun itemSuggestions(items: List<com.margin.app.data.PastItem>): List<com.margin.app.data.PastItem> {
+        val line = taskAtCursor ?: return emptyList()
+        if (!value.selection.collapsed) return emptyList()
+        val texts = doc.texts
+        val have = texts.filterIndexed { i, _ -> i != line && doc.lines[i].type == BlockType.CHECK }.map { com.margin.app.data.itemName(it) }.toSet()
+        return com.margin.app.data.suggestItems(items, com.margin.app.data.splitQty(texts[line]).first, have)
+    }
+
+    /** Puts [item] on the cursor's task in place of what was typed, keeping its quantity. */
+    fun completeItem(item: String) {
+        val line = taskAtCursor ?: return
+        val qty = com.margin.app.data.splitQty(doc.texts[line]).second
+        setLineText(line, com.margin.app.data.withQty(item, qty))
+    }
+
+    /** The cursor's task with [delta] more (or fewer) of it; one is shown as no quantity. */
+    fun stepQty(delta: Int) {
+        val line = taskAtCursor ?: return
+        val (name, n) = com.margin.app.data.splitQty(doc.texts[line])
+        if (name.isBlank()) return
+        setLineText(line, com.margin.app.data.withQty(name, (n + delta).coerceIn(1, 9999)))
+    }
+
+    /** Replaces line [line]'s text through the normal edit path (so styles and undo work), cursor at its end. */
+    private fun setLineText(line: Int, text: String) {
+        val starts = doc.texts.runningFold(0) { acc, t -> acc + t.length + 1 }
+        val start = starts[line]
+        val old = doc.texts[line]
+        if (old == text) return
+        lastChangeAt = 0
+        onValueChange(TextFieldValue(value.text.substring(0, start) + text + value.text.substring(start + old.length), TextRange(start + text.length)))
+    }
+
+    /** Sets (or with null, clears) the due date of the task on [line], as an epoch day. */
+    fun setDue(line: Int, day: Long?) {
+        val m = doc.lines.getOrNull(line)?.takeIf { it.type == BlockType.CHECK } ?: return
+        if (m.due == day || !canSortAisles) return
+        dropPendingSort()
+        lastChangeAt = 0
+        doc = doc.copy(lines = doc.lines.toMutableList().apply { this[line] = m.copy(due = day) })
         changed()
     }
 

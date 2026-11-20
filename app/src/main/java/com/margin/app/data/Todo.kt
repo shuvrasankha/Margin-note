@@ -104,7 +104,7 @@ fun withTicksFrom(blocks: List<Block>, stored: List<Block>): List<Block> {
     }
 }
 
-private fun taskKey(text: String) = text.trim().lowercase().replace(Regex("\\s+"), " ")
+private fun taskKey(text: String) = itemName(text)
 
 /** [tasks] added to another list's [blocks], and how many it didn't have yet. */
 data class TasksAdded(val blocks: List<Block>, val added: Int)

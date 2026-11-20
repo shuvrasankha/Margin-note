@@ -74,7 +74,7 @@ fun aisleOf(text: String, mine: Map<String, Aisle> = emptyMap()): Aisle {
     return Aisle.OTHER
 }
 
-private val AISLE_LABELS = Aisle.entries.map { it.label.lowercase() }.toSet() + "done"
+internal val AISLE_LABELS = Aisle.entries.map { it.label.lowercase() }.toSet() + "done"
 
 /**
  * A list's tasks grouped under aisle headings in shop order, tasks still to do first; ticked ones go last under

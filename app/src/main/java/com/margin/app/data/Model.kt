@@ -97,6 +97,8 @@ data class Block(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val ai: Boolean = false,
     /** On the first line of an AI card: the card is folded down to its badge. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val folded: Boolean = false,
+    /** A task's due date, as an epoch day. Older versions don't know it and keep the task as is. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val due: Long? = null,
 )
 
 /** True for a line that is one card (attachment or table) rather than text. */

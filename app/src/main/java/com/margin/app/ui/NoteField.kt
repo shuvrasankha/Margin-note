@@ -265,6 +265,9 @@ internal fun NoteField(
     val monoBackground = jc.surface
     val quoteBar = jc.muted.copy(alpha = 0.5f)
     val aiTint = jc.accent
+    val danger = jc.danger
+    val todayDay = java.time.LocalDate.now().toEpochDay()
+    val dueMeasurer = rememberTextMeasurer()
     val aiMeasurer = rememberTextMeasurer()
     val aiLabel = remember(aiMeasurer, aiTint) { aiMeasurer.measure("✦ AI", JType.caption.copy(color = aiTint, fontWeight = FontWeight.SemiBold)) }
     val aiHiddenLabel = remember(aiMeasurer, muted) { aiMeasurer.measure("Hidden", JType.caption.copy(color = muted)) }
@@ -377,9 +380,10 @@ internal fun NoteField(
                 }
                 addStyle(ParagraphStyle(lineHeight = height, textIndent = TextIndent(firstIndent, indent), lineHeightStyle = heightStyle), start, paragraphEnd)
                 val checked = meta.type == BlockType.CHECK && meta.checked
+                val late = !checked && meta.type == BlockType.CHECK && (meta.due ?: Long.MAX_VALUE) < todayDay
                 addStyle(
                     style.toSpanStyle().copy(
-                        color = if (checked) muted else style.color,
+                        color = if (checked) muted else if (late) danger else style.color,
                         // The line ticked a moment ago gets its strike drawn on as it animates (see the drawing below).
                         textDecoration = if (checked && meta.id != vm.justChecked) TextDecoration.LineThrough else null,
                     ),
@@ -846,6 +850,22 @@ internal fun NoteField(
                             .padding(start = with(density) { leadOf(meta).sp.toDp() }, top = LINK_CARD_GAP, bottom = LINK_CARD_GAP),
                     )
                     return@forEachLineBounds
+                }
+                if (meta.type == BlockType.CHECK) meta.due?.let { due ->
+                    // The due date at the end of the task's last row, where there's room for it.
+                    val label = com.margin.app.data.dueLabel(due)
+                    val color = when { meta.checked -> muted; due < todayDay -> danger; due == todayDay -> aiTint; else -> muted }
+                    val measured = dueMeasurer.measure(label, JType.caption)
+                    val row = l.getLineForOffset(lineStarts[i] + doc.texts[i].length)
+                    val gap = with(density) { 10.dp.toPx() }
+                    if (l.getLineRight(row) + gap + measured.size.width <= l.size.width) {
+                        val y = (l.getLineTop(row) + l.getLineBottom(row)) / 2 - measured.size.height / 2
+                        Text(
+                            label, Modifier.offset { IntOffset(l.size.width - measured.size.width, y.toInt()) }
+                                .semantics { contentDescription = "Due $label" },
+                            style = JType.caption, color = color, maxLines = 1,
+                        )
+                    }
                 }
                 if (meta.type !in MARKER_TYPES) return@forEachLineBounds
                 val style = styles.getValue(meta.type)
