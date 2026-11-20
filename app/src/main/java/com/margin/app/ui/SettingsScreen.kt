@@ -1,5 +1,7 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -123,11 +125,12 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
         vm.consentIntent?.let { consentLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
     }
 
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
-        topBar = { Box(Modifier.background(jc.page)) { NavBar(null, {}, color = jc.page) { TextAction("Done", onBack, bold = true) } } },
+        topBar = { Box(if (glass == null) Modifier.background(jc.page) else Modifier) { NavBar(null, {}, color = jc.page, glass = glass) { TextAction("Done", onBack, bold = true) } } },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.glassBody(glass, padding).fillMaxSize().verticalScroll(rememberScrollState()).glassInner(glass, padding)) {
             PageTitle("Settings")
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 48.dp)) {
                 // Account and sync, compact: status with a sync button, then Restore and Sign out side by side.
@@ -223,6 +226,20 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                         Spacer(Modifier.height(6.dp))
                         choices(Ico.LINES, "Preview lines in lists", listOf(0 to "None", 1 to "1 line", 2 to "2 lines"), appearance.previewLines) {
                             vm.setAppearance(appearance.copy(previewLines = it))
+                        }
+                        // Only where the phone can blur (Android 12+); older phones keep solid bars and never see this.
+                        if (glassSupported()) {
+                            Spacer(Modifier.height(6.dp))
+                            Row(
+                                Modifier.fillMaxWidth().clickable(role = Role.Switch) { vm.setAppearance(appearance.copy(glass = !appearance.glass)) },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    IconTitle(ICON_GLASS, "Frosted glass")
+                                    Text("See-through cards on a soft colour wash, and bars that blur what scrolls under them.", Modifier.padding(start = 42.dp), style = JType.small, color = jc.muted)
+                                }
+                                JSwitch(appearance.glass, { vm.setAppearance(appearance.copy(glass = it)) })
+                            }
                         }
                     }
                 }

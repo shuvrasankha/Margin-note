@@ -664,7 +664,7 @@ fun DrawingScreen(
     val paper = jc.bg
     val gridLine = jc.line
     val paperInk = paperColors()
-    val pageDesk = jc.page
+    val pageDesk = jc.well
     // Ink drawn past the page grows it, so nothing is cut off in the note.
     val finish = { onDone(if (changed) canvas?.copy(strokes = strokes)?.let { if (background != null) it else it.grownToFit(INLINE_PAD) } else null) }
     // Handwriting to text: the strokes being read (the lasso's, or all of them).

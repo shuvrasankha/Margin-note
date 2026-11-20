@@ -133,7 +133,7 @@ internal fun PdfTextEditor(file: File, sizes: List<Pair<Int, Int>>, startPage: I
 
     Dialog(onDismissRequest = cancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(Ico.CLOSE, "Cancel", cancel)
                 Column(Modifier.weight(1f)) {

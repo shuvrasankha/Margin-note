@@ -86,7 +86,7 @@ fun TodayCards(g: TodayGlance, modifier: Modifier = Modifier) {
 private fun PasswordsGlance(count: Int, onClick: () -> Unit, modifier: Modifier) {
     val press = remember { MutableInteractionSource() }
     Row(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp).pressScale(press).clip(JShape.lg).background(jc.card)
+        modifier.fillMaxWidth().padding(horizontal = 16.dp).pressScale(press).clip(JShape.lg).glassFill(jc.card, JShape.lg)
             .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .semantics(mergeDescendants = true) {},
@@ -111,7 +111,7 @@ private fun TodayRow(g: TodayGlance) {
             else -> "None" to "Reminders"
         }
         GlanceCard(Ico.ALARM, value, label, g.onReminders, Modifier.weight(1f), accent = g.remindersToday > 0)
-        GlanceCard(ICON_JOURNAL, if (g.journaled) "Done" else "Write", "Journal", g.onJournal, Modifier.weight(1f), accent = !g.journaled)
+        GlanceCard(ICON_JOURNAL, if (g.journaled) "Done" else "Write", "Journal", g.onJournal, Modifier.weight(1f))
     }
 }
 
@@ -126,7 +126,7 @@ private fun dayShort(day: LocalDate, today: LocalDate): String = when {
 private fun GlanceCard(icon: String, value: String, label: String, onClick: () -> Unit, modifier: Modifier, accent: Boolean = false) {
     val press = remember { MutableInteractionSource() }
     Column(
-        modifier.pressScale(press).clip(JShape.lg).background(jc.card)
+        modifier.pressScale(press).clip(JShape.lg).glassFill(jc.card, JShape.lg)
             .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .semantics(mergeDescendants = true) {},

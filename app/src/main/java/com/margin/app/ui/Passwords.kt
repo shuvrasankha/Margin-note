@@ -297,11 +297,12 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = 
             when (filter) { VaultFilter.ALL -> true; VaultFilter.REUSED -> e.id in reused; VaultFilter.WEAK -> e.id in weak }
         }.filter { e -> q.isEmpty() || listOf(e.title, e.login.username, e.login.url, e.login.notes).any { q in it.lowercase() } }
     }
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar(backLabel, onBack, color = jc.page) },
+        topBar = { NavBar(backLabel, onBack, color = jc.page, glass = glass) },
         bottomBar = {
-            if (list.isNotEmpty()) BottomBar(Modifier.background(jc.page)) {
+            if (list.isNotEmpty()) BottomBar(glass = glass) {
                 Spacer(Modifier.size(44.dp))
                 Text(
                     if (query.isBlank() && filter == VaultFilter.ALL) plural(list.size, "Password") else plural(shown.size, "Result"),
@@ -311,7 +312,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = 
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
             item { PageTitle("Passwords") }
             when {
                 entries == null -> item {

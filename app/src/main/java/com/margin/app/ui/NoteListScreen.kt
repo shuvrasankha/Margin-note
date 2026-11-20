@@ -72,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -193,6 +194,9 @@ fun NoteListScreen(
     // The floating New note button, wherever notes can be made; the lists leave room under it.
     val showNew = canCreate && !selecting
     val listEnd = if (showNew) 96.dp else 24.dp
+    // Frosted glass: the list runs under the bottom bar, which blurs it. The top bar stays solid: the date, cards
+    // and search sit still under it, so there'd be nothing to blur.
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
         snackbarHost = {
@@ -203,7 +207,7 @@ fun NoteListScreen(
             }
         },
         floatingActionButton = {
-            if (showNew) FloatingAction(Ico.COMPOSE, "New note", onNew)
+            if (showNew) FloatingAction(Ico.COMPOSE, "New note", glass, onNew)
         },
         topBar = {
             if (selecting) NavBar(null, {}, color = jc.page) { TextAction("Done", vm::clearSelection, bold = true) }
@@ -212,7 +216,7 @@ fun NoteListScreen(
                 leading = if (backLabel != null) null else ({
                     // A soft pill, matching the round buttons on the right.
                     Row(
-                        Modifier.padding(start = 6.dp).height(40.dp).clip(JShape.pill).background(jc.card)
+                        Modifier.padding(start = 6.dp).height(40.dp).clip(JShape.pill).glassFill(jc.card, JShape.pill)
                             .clickable(role = Role.Button, onClick = onFolders).padding(start = 12.dp, end = 16.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -236,13 +240,13 @@ fun NoteListScreen(
         },
         bottomBar = {
             when {
-                selecting && isTrash -> BottomBar {
+                selecting && isTrash -> BottomBar(glass = glass) {
                     val n = vm.selected.size
                     TextAction("Recover $n", vm::recoverSelected)
                     Text("$n selected", style = JType.small, color = jc.muted)
                     TextAction("Delete $n", { confirmDelete = true }, color = jc.danger)
                 }
-                selecting -> BottomBar {
+                selecting -> BottomBar(glass = glass) {
                     val allPinned = notes.filter { it.id in vm.selected }.all { it.isPinned }
                     Row {
                         IconAction(Ico.PIN, if (allPinned) "Unpin" else "Pin", vm::pinSelected, fill = allPinned)
@@ -255,12 +259,12 @@ fun NoteListScreen(
                         IconAction(Ico.TRASH, "Delete", vm::trashSelected, color = jc.danger)
                     }
                 }
-                isTrash -> if (notes.isNotEmpty()) BottomBar {
+                isTrash -> if (notes.isNotEmpty()) BottomBar(glass = glass) {
                     Spacer(Modifier.width(44.dp))
                     CountText(notes.size, JType.small, jc.muted) { plural(it, "Note") }
                     TextAction("Delete all", { confirmEmpty = true }, color = jc.danger)
                 }
-                else -> BottomBar {
+                else -> BottomBar(glass = glass) {
                     Spacer(Modifier.size(44.dp))
                     CountText(notes.size, JType.small, jc.muted) { if (query.isBlank()) plural(it, "Note") else plural(it, "Result") }
                     // New note is the floating button; this keeps the count centred.
@@ -269,7 +273,12 @@ fun NoteListScreen(
             }
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        // With glass the list's bottom padding makes room for the bar instead of the Column stopping above it.
+        val underBar = if (glass != null) padding.calculateBottomPadding() else 0.dp
+        Column(
+            if (glass == null) Modifier.padding(padding).fillMaxSize()
+            else Modifier.fillMaxSize().glassSource(glass).padding(top = padding.calculateTopPadding()),
+        ) {
             // Home shows today's date in place of "All Notes".
             if (glance != null) DateHeading(remember { java.time.LocalDate.now() }) else PageTitle(folderName)
             // Out of the way while searching or picking notes.
@@ -313,10 +322,10 @@ fun NoteListScreen(
                 )
                 notes.isEmpty() -> EmptyState("No notes yet", "Notes show up here when they match.")
                 // Search results and Recently Deleted keep rows: their extra details (match, days left) need the width.
-                grid && !isTrash && query.isBlank() -> NoteGrid(entries, folder?.sortBy ?: NoteSort.EDITED, vm, onOpen, listEnd)
+                grid && !isTrash && query.isBlank() -> NoteGrid(entries, folder?.sortBy ?: NoteSort.EDITED, vm, onOpen, listEnd + underBar)
                 else -> NoteList(
                     entries, folder?.sortBy ?: NoteSort.EDITED, isTrash, previewLines, keepDays, query.trim(),
-                    folders.associate { it.folder.id to it.folder.name }, vm, onOpen, onMove = { moving = setOf(it.id) }, bottom = listEnd,
+                    folders.associate { it.folder.id to it.folder.name }, vm, onOpen, onMove = { moving = setOf(it.id) }, bottom = listEnd + underBar,
                 )
             }
         }
@@ -388,7 +397,8 @@ internal fun NoteList(
         }) { entry ->
             val group = if (entry is ListEntry.Header) Modifier
             else Modifier.padding(horizontal = 16.dp).padding(top = if (entry in starts) 6.dp else 0.dp)
-                .clip(JShape.group(entry in starts, entry in ends)).background(jc.card)
+                .clip(JShape.group(entry in starts, entry in ends))
+                .glassFill(jc.card, JShape.group(entry in starts, entry in ends), openTop = entry !in starts, openBottom = entry !in ends)
             Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).then(group)) {
             when (entry) {
                 is ListEntry.Header -> SectionHeader(entry.text, entry.collapsed, vm::togglePinnedCollapsed)
@@ -429,7 +439,7 @@ internal fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fol
         Modifier.fillMaxWidth().clickable { onOpen(entry.note) }.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.page), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp, 52.dp).clip(JShape.xs).background(jc.inset), contentAlignment = Alignment.Center) {
             val a = entry.attachment
             JIcon(if (a.isAudio) Ico.MIC else if (a.isImage) Ico.CAMERA else if (a.isPdf) ICON_PDF else Ico.FILE, jc.muted, size = 22.dp)
         }
@@ -449,7 +459,7 @@ internal fun AttachmentHitRow(entry: ListEntry.AttachmentRow, query: String, fol
 @Composable
 internal fun SyncBannerRow(banner: com.margin.app.sync.SyncBanner, onRetry: () -> Unit) {
     Row(
-        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).background(jc.card)
+        Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(JShape.sm).glassFill(jc.card, JShape.sm)
             .let { if (banner.retry) it.clickable(role = Role.Button, onClick = onRetry) else it }.padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -553,7 +563,7 @@ internal fun TemplatePicker(current: String?, saved: List<NoteEntity>, onDismiss
     // A saved template that was deleted reads as Blank.
     val on = current?.takeIf { k -> options.any { it.first == k } }
     MarginDialog(
-        onDismissRequest = onDismiss, containerColor = jc.card,
+        onDismissRequest = onDismiss, containerColor = jc.solidCard,
         title = { Text("New notes start from", style = JType.rowTitle, color = jc.ink) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
@@ -644,7 +654,7 @@ internal fun NoteCard(note: NoteEntity, time: Long, vm: NotesViewModel, onOpen: 
     val edge by animateColorAsState(if (isSelected) jc.accent else Color.Transparent, JMotion.standard(), label = "cardEdge")
     val press = remember { MutableInteractionSource() }
     Column(
-        Modifier.fillMaxWidth().pressScale(press).clip(JShape.lg).background(fill)
+        Modifier.fillMaxWidth().pressScale(press).clip(JShape.lg).glassFill(fill, JShape.lg)
             .border(2.dp, edge, JShape.lg)
             .combinedClickable(
                 interactionSource = press, indication = androidx.compose.material3.ripple(),
@@ -750,7 +760,11 @@ internal fun NoteRow(
     val deleteArmed = offset < -width * 0.6f
     LaunchedEffect(pinArmed, deleteArmed) { if (pinArmed || deleteArmed) view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK) }
     val armScale by animateFloatAsState(if (pinArmed || deleteArmed) 1.2f else 1f, JMotion.bounce(), label = "armed")
-    val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else jc.card, JMotion.standard(), label = "rowFill")
+    // With frosted glass the group under the row is the pane; the row adds none of its own (a second layer would
+    // turn it milky), except while it slides, so the swipe actions don't show through it.
+    val glassy = LocalGlass.current
+    val restFill = if (glassy && offset == 0f) jc.card.copy(alpha = 0f) else if (glassy) jc.solidCard else jc.card
+    val rowFill by animateColorAsState(if (isSelected || note.id == vm.openId) jc.selected else restFill, JMotion.standard(), label = "rowFill")
     val content = @Composable {
         Row(
             Modifier.fillMaxWidth()
@@ -812,6 +826,8 @@ internal fun NoteRow(
         content()
     } else {
         val pinLabel = if (note.isPinned) "Unpin" else "Pin"
+        val glassy = LocalGlass.current
+        val dark = LocalDark.current
         Box(
             Modifier.fillMaxWidth().onSizeChanged { width = it.width }.semantics {
                 // The swipe actions for screen readers.
@@ -824,17 +840,25 @@ internal fun NoteRow(
         ) {
             @Composable
             fun action(label: String, icon: String, color: Color, modifier: Modifier, scale: Float = 1f, onClick: () -> Unit) = Column(
-                modifier.fillMaxHeight().background(color).clickable(onClick = onClick),
+                // With frosted glass each action is a tinted pane of glass, not a flat slab.
+                modifier.fillMaxHeight().then(if (glassy) Modifier.glassFill(color.copy(alpha = if (dark) 0.62f else 0.82f), RectangleShape) else Modifier.background(color))
+                    .clickable(onClick = onClick),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
             ) {
                 JIcon(icon, Color.White, size = 20.dp, modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale })
                 Text(label, style = JType.small, color = Color.White)
             }
             if (offset > 0f) {
-                Row(Modifier.matchParentSize().background(jc.ink).padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                // With frosted glass, pinning is an amber-tinted pane; the pin itself in amber.
+                val pinOn = if (glassy) jc.ink else jc.bg
+                Row(
+                    Modifier.matchParentSize().then(if (glassy) Modifier.glassFill(jc.accent.copy(alpha = if (dark) 0.22f else 0.28f), RectangleShape) else Modifier.background(jc.ink))
+                        .padding(horizontal = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        JIcon(Ico.PIN, jc.bg, size = 20.dp, modifier = Modifier.graphicsLayer { scaleX = armScale; scaleY = armScale })
-                        Text(pinLabel, style = JType.small, color = jc.bg)
+                        JIcon(Ico.PIN, if (glassy) jc.accent else pinOn, size = 20.dp, modifier = Modifier.graphicsLayer { scaleX = armScale; scaleY = armScale })
+                        Text(pinLabel, style = JType.small, color = pinOn)
                     }
                 }
             } else if (offset < 0f) {

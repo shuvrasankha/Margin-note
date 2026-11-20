@@ -46,6 +46,12 @@ data class MarginColors(
     /** Tint behind a selected choice. */
     val selected: Color,
     val switchOff: Color,
+    /** [page] as a solid colour, for small fills (thumbnails, day cells, tiles) that must not turn see-through. */
+    val well: Color = page,
+    /** [card] as a solid colour, for menus and sheets that sit over other content. */
+    val solidCard: Color = card,
+    /** Small fills set into a card (thumbnails, day cells, chips): [page], or a faint shade of the glass under frosted glass. */
+    val inset: Color = page,
 )
 
 private val Light = MarginColors(
@@ -136,7 +142,16 @@ fun isDark(theme: ThemeMode) = when (theme) {
 @Composable
 fun MarginTheme(appearance: Appearance = Appearance(), content: @Composable () -> Unit) {
     val dark = isDark(appearance.theme)
-    val c = if (dark) Dark else Light
+    val glass = appearance.glass && glassSupported()
+    // Frosted glass: pages go clear to show the backdrop (see [backdrop]) and cards turn to frosted panes over it.
+    val c = (if (dark) Dark else Light).let {
+        if (!glass) it else it.copy(
+            page = Color.Transparent, card = Color.White.copy(alpha = if (dark) 0.09f else 0.5f),
+            // Dividers etched into the glass rather than drawn on it.
+            line = if (dark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.07f),
+            inset = if (dark) Color.Black.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.05f),
+        )
+    }
     val base = if (dark) darkColorScheme() else lightColorScheme()
     val scheme = base.copy(
         primary = c.accent, onPrimary = c.bg, secondary = c.accent,
@@ -168,7 +183,7 @@ fun MarginTheme(appearance: Appearance = Appearance(), content: @Composable () -
     val density = LocalDensity.current
     // Text size scales every sp in the app on top of the system font size.
     val scaled = Density(density.density, density.fontScale * appearance.textSize.scale)
-    CompositionLocalProvider(LocalMarginColors provides c, LocalDensity provides scaled) {
+    CompositionLocalProvider(LocalMarginColors provides c, LocalDensity provides scaled, LocalGlass provides glass, LocalDark provides dark) {
         MaterialTheme(colorScheme = scheme, typography = typography, content = content)
     }
 }

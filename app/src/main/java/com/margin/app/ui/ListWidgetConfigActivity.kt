@@ -54,7 +54,7 @@ class ListWidgetConfigActivity : ComponentActivity() {
             val notes by repo.liveNotes().collectAsState(emptyList())
             val lists = ListWidgetData.lists(notes)
             MarginTheme(appearance) {
-                Column(Modifier.fillMaxSize().background(jc.page).safeDrawingPadding()) {
+                Column(Modifier.fillMaxSize().backdrop(jc.page).safeDrawingPadding()) {
                     Row(Modifier.padding(horizontal = 8.dp).heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
                         TextAction("Cancel", ::finish)
                     }

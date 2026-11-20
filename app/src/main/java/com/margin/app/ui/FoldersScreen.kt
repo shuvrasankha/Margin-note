@@ -98,17 +98,18 @@ fun FoldersScreen(
     val regular = rows.filter { !it.folder.isSmart }
     val smart = rows.filter { it.folder.isSmart }
 
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar("All Notes", onBack, color = jc.page) { TextAction("Edit", onEdit); IconAction(Ico.GEAR, "Settings", onSettings) } },
+        topBar = { NavBar("All Notes", onBack, color = jc.page, glass = glass) { TextAction("Edit", onEdit); IconAction(Ico.GEAR, "Settings", onSettings) } },
         bottomBar = {
-            BottomBar {
+            BottomBar(glass = glass) {
                 IconAction(Ico.NEW_FOLDER, "New folder", { creatingIn = "" }, size = 24.dp)
                 IconAction(Ico.COMPOSE, "New note", onNew, size = 24.dp)
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
             item { PageTitle("Folders") }
             item {
                 // Opens All Notes with its search field focused.
@@ -381,17 +382,18 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
     }
     fun commit(order: List<Int>) = vm.reorder(order.map { rows[it].folder.id })
 
+    val glass = rememberGlass()
     Scaffold(
-        topBar = { NavBar("Folders", onBack) { TextAction("Done", onBack, bold = true) } },
+        topBar = { NavBar("Folders", onBack, glass = glass) { TextAction("Done", onBack, bold = true) } },
         bottomBar = {
-            BottomBar {
+            BottomBar(glass = glass) {
                 TextAction("New Folder", { creating = true })
                 CountText(rows.count { !it.folder.isSmart }, JType.small, jc.muted) { plural(it, "folder") }
                 Spacer(Modifier.width(44.dp))
             }
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState(), enabled = dragged == null)) {
+        Column(Modifier.glassBody(glass, padding).fillMaxSize().verticalScroll(rememberScrollState(), enabled = dragged == null).glassInner(glass, padding)) {
             PageTitle("Folders")
             Text("Drag to reorder. Tap a name to rename.", Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), style = JType.secondary, color = jc.muted)
             Column {
@@ -494,7 +496,7 @@ internal data class LibraryItem(val icon: String, val name: String, val count: I
 internal fun LibraryTile(item: LibraryItem, modifier: Modifier = Modifier) {
     val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Column(
-        modifier.pressScale(press).clip(JShape.lg).background(jc.card)
+        modifier.pressScale(press).clip(JShape.lg).glassFill(jc.card, JShape.lg)
             .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = item.onClick)
             .padding(14.dp)
             .semantics(mergeDescendants = true) {},
@@ -521,7 +523,7 @@ internal fun FolderListRow(
 ) {
     val shape = JShape.group(first, last)
     val start = 16.dp + 22.dp * depth
-    Column(Modifier.padding(horizontal = 16.dp).clip(shape).background(jc.card)) {
+    Column(Modifier.padding(horizontal = 16.dp).clip(shape).glassFill(jc.card, shape, openTop = !first, openBottom = !last)) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = if (sub == null) 52.dp else 64.dp)
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)

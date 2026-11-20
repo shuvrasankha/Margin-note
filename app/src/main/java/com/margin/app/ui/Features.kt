@@ -103,11 +103,12 @@ fun FeaturesScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
                 .takeIf { it.isNotEmpty() }?.let { name to it }
         }
     }
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar("Settings", onBack, color = jc.page) },
+        topBar = { NavBar("Settings", onBack, color = jc.page, glass = glass) },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
             item {
                 PageTitle("What Margin can do")
                 Text(

@@ -351,9 +351,14 @@ fun EditorScreen(
     }
     val folderName = folders.firstOrNull { it.folder.id == vm.folderId }?.folder?.name
 
+    // Frosted glass: the note scrolls up under a frosted top bar; the toolbar is frosted over the page's colour wash.
+    val glass = rememberGlass()
+    // Menus open as frosted panes over the note, blurring it.
+    MenuHost(glass) {
     Scaffold(
-        topBar = { Column(Modifier.background(jc.bg)) {
-            NavBar(backLabel, onBack) {
+        containerColor = if (glass != null) Color.Transparent else jc.bg,
+        topBar = { Column(Modifier.glassBackground(glass, jc.bg)) {
+            NavBar(backLabel, onBack, color = if (glass != null) Color.Transparent else jc.bg) {
                 if (vm.trashed) {
                     TextAction("Recover", { vm.recover(onBack) })
                     TextAction("Delete", { vm.deleteForever(onBack) }, color = jc.danger)
@@ -375,11 +380,7 @@ fun EditorScreen(
                     if (!vm.needsUnlock) IconAction(Ico.SHARE, "Share", { sharing = !sharing; formatting = false; attaching = false })
                     Box {
                         IconAction(Ico.MORE, "More", { menu = true }, fill = true)
-                        DropdownMenu(
-                            expanded = menu, onDismissRequest = { menu = false },
-                            modifier = Modifier.width(262.dp), shape = JShape.md, containerColor = jc.bg,
-                            border = BorderStroke(1.dp, jc.line), shadowElevation = 12.dp,
-                        ) {
+                        GlassMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             val lockTile: (() -> Unit)? = when {
                                 !vm.locked -> {
                                     {
@@ -409,7 +410,7 @@ fun EditorScreen(
                             }
                             @Composable
                             fun item(label: String, icon: String, gap: Boolean = false, danger: Boolean = false, onClick: () -> Unit) {
-                                Box(Modifier.fillMaxWidth().height(if (gap) 6.dp else 1.dp).background(if (gap) jc.surface else jc.line))
+                                Box(Modifier.fillMaxWidth().height(if (gap) 6.dp else 1.dp).background(if (gap && !LocalGlass.current) jc.surface else jc.line))
                                 Row(
                                     Modifier.fillMaxWidth().height(44.dp).clickable(role = Role.Button) { menu = false; onClick() }.padding(horizontal = 16.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -475,7 +476,7 @@ fun EditorScreen(
         bottomBar = {
             if (!vm.readOnly && vm.loaded && !vm.needsUnlock && find == null) {
                 val known by vm.otherTags.collectAsState()
-                Column(Modifier.background(jc.bg).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
+                Column(Modifier.glassBackground(glass, jc.bg).windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
                     LinkSuggestions(vm.linkSuggestions(targets), vm.linkTyped(), folders, vm::completeLink)
                     TagSuggestions(vm.tagSuggestions(known), vm::completeTag)
                     if (formatting) FormatSheet(vm, onClose = { formatting = false })
@@ -627,7 +628,13 @@ fun EditorScreen(
     ) { padding ->
         if (!vm.loaded) return@Scaffold
         // No imePadding here: the bottom bar already sits above the keyboard and Scaffold's padding includes it.
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(scroll).padding(horizontal = 24.dp, vertical = 12.dp)) {
+        // With glass only the top runs under its bar: the toolbar stays clear of the text so the cursor never hides behind it.
+        val body = if (glass == null) Modifier.padding(padding) else Modifier.padding(bottom = padding.calculateBottomPadding()).glassSource(glass)
+        Column(
+            body.fillMaxSize().verticalScroll(scroll)
+                .then(if (glass == null) Modifier else Modifier.padding(top = padding.calculateTopPadding()))
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+        ) {
             if (vm.needsUnlock) {
                 LockedNote(vm, fingerprint, listOfNotNull(vm.editedAt?.let { "Edited " + fullTime(context, it) }, folderName).joinToString(" · "))
             } else {
@@ -699,6 +706,7 @@ fun EditorScreen(
                 }
             }
         }
+    }
     }
     if (info) NoteInfoDialog(vm, folderName) { info = false }
     if (stats) WritingStatsDialog(vm) { stats = false }
@@ -1046,10 +1054,8 @@ internal fun ToolbarMore(vm: EditorViewModel, canFormat: Boolean, onFont: () -> 
     var open by remember { mutableStateOf(false) }
     Box {
         IconAction(Ico.MORE, "More tools", { open = true }, fill = true, size = 20.dp)
-        DropdownMenu(
-            expanded = open, onDismissRequest = { open = false }, containerColor = jc.card,
-            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
-        ) {
+        // Opens without taking focus from the note, so the keyboard stays up.
+        GlassMenu(expanded = open, onDismissRequest = { open = false }, width = 240.dp, focusable = false) {
             @Composable
             fun tool(text: String, icon: @Composable () -> Unit, enabled: Boolean = true, onClick: () -> Unit) = DropdownMenuItem(
                 text = { Text(text, style = JType.row, color = if (enabled) jc.ink else jc.muted) },
@@ -1066,8 +1072,9 @@ internal fun ToolbarMore(vm: EditorViewModel, canFormat: Boolean, onFont: () -> 
 @Composable
 internal fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(JShape.sheet).background(jc.bg)
-            .border(1.dp, jc.line, JShape.sheet)
+        Modifier.fillMaxWidth().clip(JShape.sheet)
+            // With frosted glass the sheet is a pane over the frosted toolbar, lit along its top edge.
+            .then(if (LocalGlass.current) Modifier.glassFill(jc.card, JShape.sheet) else Modifier.background(jc.bg).border(1.dp, jc.line, JShape.sheet))
             .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -1219,7 +1226,7 @@ internal fun AttachSheet(
                             val note = if (savedGroup) saved.getOrNull(r * 3 + c) else null
                             Box(Modifier.weight(1f)) {
                                 Column(
-                                    Modifier.fillMaxWidth().height(92.dp).clip(JShape.md).background(jc.surface)
+                                    Modifier.fillMaxWidth().height(92.dp).clip(JShape.md).then(if (LocalGlass.current) Modifier.glassFill(jc.card, JShape.md) else Modifier.background(jc.surface))
                                         .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = note?.let { n -> { menuFor = n.id } })
                                         .padding(horizontal = 4.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),

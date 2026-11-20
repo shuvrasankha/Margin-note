@@ -111,8 +111,9 @@ fun HabitsScreen(
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
-    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+    val glass = rememberGlass()
+    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page, glass = glass) }) { padding ->
+        Column(Modifier.glassBody(glass, padding).fillMaxSize().verticalScroll(rememberScrollState()).glassInner(glass, padding)) {
             PageTitle("Habits")
             if (habits.isEmpty()) BigEmpty(
                 ICON_HABITS, "Little things, every day", "Add a habit, tick it off each day and watch the streak grow.",
@@ -144,7 +145,7 @@ private fun HabitsSummary(habits: List<NoteEntity>, today: LocalDate, modifier: 
     val best = all.maxOfOrNull { habitStreak(it, today) } ?: 0
     // Ticks in the last 7 days out of every habit-day in them.
     val week = all.sumOf { d -> (0..6).count { today.minusDays(it.toLong()) in d } }
-    Column(modifier.fillMaxWidth().clip(JShape.lg).background(jc.card).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(modifier.fillMaxWidth().clip(JShape.lg).glassFill(jc.card, JShape.lg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             ProgressRing(done.toFloat() / habits.size, Modifier.size(84.dp)) {
                 Text("$done/${habits.size}", style = JType.subheading, color = jc.ink)
@@ -176,7 +177,7 @@ private fun HabitCard(
 ) {
     val streak = habitStreak(days, today)
     val locale = Locale.getDefault()
-    Column(modifier.fillMaxWidth().clip(JShape.lg).background(jc.card).animateContentSize(JMotion.standard())) {
+    Column(modifier.fillMaxWidth().clip(JShape.lg).glassFill(jc.card, JShape.lg).animateContentSize(JMotion.standard())) {
         Column(
             Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = if (expanded) "Close" else "Open", onClick = onExpand).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -213,7 +214,7 @@ private fun HabitCard(
                             color = if (k == 0) jc.ink else jc.muted,
                         )
                         Box(
-                            Modifier.size(26.dp).clip(CircleShape).background(if (on) jc.accent else jc.page)
+                            Modifier.size(26.dp).clip(CircleShape).background(if (on) jc.accent else jc.inset)
                                 .then(if (k == 0 && !on) Modifier.border(1.5.dp, jc.accent, CircleShape) else Modifier),
                             contentAlignment = Alignment.Center,
                         ) { if (on) JIcon(Ico.CHECK, jc.bg, size = 14.dp, stroke = 3f) }
@@ -275,7 +276,7 @@ private fun HabitMonth(days: Set<LocalDate>, today: LocalDate, onToggle: (LocalD
         val first = shown.atDay(1).minusDays(blanks.toLong())
         for (w in 0 until (blanks + shown.lengthOfMonth() + 6) / 7) {
             val week = (0 until 7).map { first.plusDays(w * 7L + it) }
-            Row(Modifier.padding(vertical = 2.dp).clip(JShape.sm).then(if (today in week) Modifier.background(jc.page) else Modifier)) {
+            Row(Modifier.padding(vertical = 2.dp).clip(JShape.sm).then(if (today in week) Modifier.background(jc.inset) else Modifier)) {
                 week.forEach { day ->
                     Box(Modifier.weight(1f).height(46.dp), contentAlignment = Alignment.Center) {
                         DayCell(day, day == today, day > today, YearMonth.from(day) != shown, day in days) { onToggle(day) }

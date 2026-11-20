@@ -291,17 +291,18 @@ fun RemindersScreen(
         }
     }
     fun open(e: ReminderEntry) { e.note?.let(onOpen) ?: onJournal() }
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar(backLabel, onBack, color = jc.page) },
-        floatingActionButton = { if (rows.isNotEmpty()) FloatingAction(Ico.PLUS, "New reminder") { creating = true } },
+        topBar = { NavBar(backLabel, onBack, color = jc.page, glass = glass) },
+        floatingActionButton = { if (rows.isNotEmpty()) FloatingAction(Ico.PLUS, "New reminder", glass) { creating = true } },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
             item { PageTitle("Reminders") }
             if (!onTime && rows.isNotEmpty()) item {
                 // Without the exact-alarm permission Android batches alarms, so say so where it matters.
                 Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.md).background(jc.card)
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.md).glassFill(jc.card, JShape.md)
                         .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -329,7 +330,7 @@ fun RemindersScreen(
                 val next = rows.firstOrNull { it.at >= now } ?: rows.first()
                 val todayCount = rows.count { it.at >= now && group(it.at) == "Today" }
                 Column(
-                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).background(jc.card)
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).glassFill(jc.card, JShape.lg)
                         .clickable { open(next) }.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {

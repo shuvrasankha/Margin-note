@@ -70,6 +70,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
             textSize = enumOr(prefs.getString(K_TEXT_SIZE, null), TextSize.DEFAULT),
             previewLines = prefs.getInt(K_PREVIEW_LINES, 1).coerceIn(0, 2),
             gridView = prefs.getBoolean(K_GRID_VIEW, false),
+            glass = prefs.getBoolean(K_GLASS, false),
         ),
     )
     val appearance: StateFlow<Appearance> = _appearance
@@ -77,7 +78,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     fun setAppearance(a: Appearance) {
         prefs.edit().putString(K_THEME, a.theme.name)
             .putString(K_TEXT_SIZE, a.textSize.name).putInt(K_PREVIEW_LINES, a.previewLines)
-            .putBoolean(K_GRID_VIEW, a.gridView).apply()
+            .putBoolean(K_GRID_VIEW, a.gridView).putBoolean(K_GLASS, a.glass).apply()
         _appearance.value = a
     }
 
@@ -128,6 +129,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         const val K_TEXT_SIZE = "textSize"
         const val K_PREVIEW_LINES = "previewLines"
         const val K_GRID_VIEW = "gridView"
+        const val K_GLASS = "frostedGlass"
         const val K_WELCOME = "welcomeDone"
         const val K_FINGERPRINT = "fingerprintPassword"
         const val K_APP_LOCK = "appLockSample"
@@ -173,4 +175,6 @@ data class Appearance(
     val previewLines: Int = 1,
     /** Note lists as a two-column grid of cards instead of rows. */
     val gridView: Boolean = false,
+    /** Bars as frosted glass over what scrolls under them. Only takes effect on Android 12+ (see glassSupported). */
+    val glass: Boolean = false,
 )

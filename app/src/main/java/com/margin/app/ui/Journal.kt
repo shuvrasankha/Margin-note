@@ -161,8 +161,9 @@ fun JournalScreen(
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
+    val glass = rememberGlass()
     Scaffold(containerColor = jc.page, topBar = {
-        NavBar(backLabel, onBack, color = jc.page) {
+        NavBar(backLabel, onBack, color = jc.page, glass = glass) {
             if (shown != thisMonth) TextAction("Today", { month = thisMonth.toString() })
             IconAction(
                 Ico.ALARM, reminderAt?.let { "Daily reminder at ${timeLabel(context, it)}. Change it" } ?: "Remind me to write",
@@ -172,7 +173,7 @@ fun JournalScreen(
             IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() }, enabled = canGoOn)
         }
     }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+        Column(Modifier.glassBody(glass, padding).fillMaxSize().verticalScroll(rememberScrollState()).glassInner(glass, padding)) {
             Text("Journal", Modifier.padding(start = 20.dp), style = JType.rowTitle, color = jc.accent)
             Text(
                 buildAnnotatedString {
@@ -189,7 +190,7 @@ fun JournalScreen(
                 StatTile("${written.size}", "In all", Modifier.weight(1f), fill = jc.card)
             }
             Column(
-                Modifier.padding(horizontal = 16.dp).clip(JShape.lg).background(jc.card).padding(horizontal = 6.dp, vertical = 10.dp)
+                Modifier.padding(horizontal = 16.dp).clip(JShape.lg).glassFill(jc.card, JShape.lg).padding(horizontal = 6.dp, vertical = 10.dp)
                     // Swipe left for the next month, right for the one before.
                     .pointerInput(canGoOn) {
                         detectHorizontalDragGestures(
@@ -217,7 +218,7 @@ fun JournalScreen(
                     val week = (0 until 7).map { first.plusDays(w * 7L + it) }
                     Row(
                         Modifier.padding(vertical = 2.dp).clip(JShape.sm)
-                            .then(if (today in week) Modifier.background(jc.page) else Modifier),
+                            .then(if (today in week) Modifier.background(jc.inset) else Modifier),
                     ) {
                         week.forEach { day ->
                             Box(Modifier.weight(1f).height(50.dp), contentAlignment = Alignment.Center) {
@@ -244,7 +245,7 @@ fun JournalScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(
-                            Modifier.size(48.dp).clip(JShape.sm).background(if (day == today) jc.accent else jc.page),
+                            Modifier.size(48.dp).clip(JShape.sm).background(if (day == today) jc.accent else jc.inset),
                             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                         ) {
                             Text("${day.dayOfMonth}", style = JType.subheading, color = if (day == today) jc.bg else jc.ink)

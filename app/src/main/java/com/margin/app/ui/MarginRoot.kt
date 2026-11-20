@@ -385,7 +385,7 @@ fun MarginRoot(
             }.apply { targetContentZIndex = to.depth.toFloat() }
         },
     ) { shown ->
-    Box(Modifier.fillMaxSize().background(if (shown.screen == Screen.Settings || shown.screen == Screen.Features) jc.page else jc.bg)) {
+    Box(Modifier.fillMaxSize().backdrop(if (shown.screen == Screen.Settings || shown.screen == Screen.Features) jc.page else jc.bg)) {
         when {
             shown.split -> Row(Modifier.fillMaxSize()) {
                 Box(Modifier.width(listWidth).fillMaxHeight()) { Content(shown) }

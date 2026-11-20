@@ -1,5 +1,10 @@
 package com.margin.app.ui
 
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeEffect
+
 import androidx.compose.animation.togetherWith
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.animateColorAsState
@@ -226,24 +231,38 @@ fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.
     val press = remember { MutableInteractionSource() }
     Box(
         // [soft]: on a filled circle, as on the home screen's top bar; the tap target stays 44dp.
-        Modifier.size(44.dp).pressScale(press, 0.88f).then(if (soft) Modifier.padding(2.dp).clip(CircleShape).background(jc.card) else Modifier).clip(CircleShape)
+        Modifier.size(44.dp).pressScale(press, 0.88f).then(if (soft) Modifier.padding(2.dp).clip(CircleShape).glassFill(jc.card, CircleShape) else Modifier).clip(CircleShape)
             .clickable(press, androidx.compose.material3.ripple(), enabled = enabled, role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { JIcon(d, if (enabled) color else jc.muted.copy(alpha = 0.4f), size = size, fill = fill) }
 }
 
-/** A 56dp round button in the accent colour, floating over a list (the home screen's New note). */
+/**
+ * A 56dp round button floating over a list (the home screen's New note): a soft circle with an accent icon, like
+ * the round buttons in the top bar. With frosted glass it blurs the list under it ([glass], the screen's).
+ */
 @Composable
-fun FloatingAction(d: String, label: String, onClick: () -> Unit) {
+fun FloatingAction(d: String, label: String, glass: HazeState? = null, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
+    val dark = LocalDark.current
+    val fill = when {
+        glass != null -> Modifier.shadow(8.dp, CircleShape).clip(CircleShape)
+            .hazeEffect(glass, HazeStyle(
+                backgroundColor = jc.well,
+                tint = HazeTint(if (dark) Color(0xFF2C2C30).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.6f)),
+                blurRadius = 20.dp, noiseFactor = 0.08f,
+            ))
+            .glassFill(Color.Transparent, CircleShape)
+        LocalGlass.current -> Modifier.shadow(8.dp, CircleShape).clip(CircleShape).glassFill(jc.solidCard, CircleShape)
+        else -> Modifier.shadow(6.dp, CircleShape).clip(CircleShape).background(jc.card)
+    }
     Box(
-        Modifier.size(56.dp).pressScale(press, 0.9f)
-            .shadow(6.dp, CircleShape).clip(CircleShape).background(jc.accent)
+        Modifier.size(56.dp).pressScale(press, 0.9f).then(fill)
             .clickable(press, androidx.compose.material3.ripple(), role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
-    ) { JIcon(d, jc.bg, size = 26.dp, stroke = 2.2f) }
+    ) { JIcon(d, jc.accent, size = 26.dp, stroke = 2.2f) }
 }
 
 /** Plain text button in the accent colour (or [color]). */
@@ -265,10 +284,12 @@ fun TextAction(text: String, onClick: () -> Unit, color: Color = jc.accent, bold
 @Composable
 fun NavBar(
     backLabel: String?, onBack: () -> Unit, color: Color = jc.bg, leading: (@Composable RowScope.() -> Unit)? = null,
+    /** The screen's glass (from [rememberGlass]): the bar frosts what scrolls under it. Null: a solid bar. */
+    glass: dev.chrisbanes.haze.HazeState? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
-        Modifier.fillMaxWidth().background(color).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().glassBackground(glass, color).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (backLabel != null) {
@@ -308,7 +329,7 @@ fun SearchField(
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).background(fill).padding(horizontal = 12.dp),
+        modifier.fillMaxWidth().height(40.dp).clip(JShape.sm).glassFill(fill, JShape.sm).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -338,8 +359,8 @@ fun SearchField(
 
 /** Bar along the bottom of a page, above the navigation bar, with a hairline on top. */
 @Composable
-fun BottomBar(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
-    Column(modifier.background(jc.bg)) {
+fun BottomBar(modifier: Modifier = Modifier, glass: dev.chrisbanes.haze.HazeState? = null, content: @Composable RowScope.() -> Unit) {
+    Column(modifier.glassBackground(glass, jc.bg)) {
         HorizontalDivider(color = jc.line)
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().height(56.dp).padding(horizontal = 12.dp),
@@ -398,13 +419,15 @@ fun MarginMark(size: Dp, modifier: Modifier = Modifier) {
 /** One choice in a row of pills; the selected one is filled. */
 @Composable
 fun Pill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val fill by animateColorAsState(if (selected) jc.ink else jc.ink.copy(alpha = 0f), JMotion.standard(), label = "pillFill")
-    val edge by animateColorAsState(if (selected) jc.ink else jc.line, JMotion.standard(), label = "pillEdge")
+    // With frosted glass an unselected pill is a small pane of glass (its rim drawn by glassFill), not an outline.
+    val glassy = LocalGlass.current
+    val fill by animateColorAsState(if (selected) jc.ink else if (glassy) jc.card else jc.ink.copy(alpha = 0f), JMotion.standard(), label = "pillFill")
+    val edge by animateColorAsState(if (selected) jc.ink else if (glassy) jc.line.copy(alpha = 0f) else jc.line, JMotion.standard(), label = "pillEdge")
     val text by animateColorAsState(if (selected) jc.bg else jc.ink, JMotion.standard(), label = "pillText")
     val press = remember { MutableInteractionSource() }
     Box(
         modifier.height(32.dp).pressScale(press, 0.94f).clip(JShape.pill)
-            .background(fill)
+            .then(if (glassy && !selected) Modifier.glassFill(fill, JShape.pill) else Modifier.background(fill))
             .border(1.dp, edge, JShape.pill)
             .clickable(press, androidx.compose.material3.ripple(), role = Role.RadioButton, onClick = tapped(onClick)).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
@@ -463,7 +486,7 @@ fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boole
 /** A rounded group on a grouped page (Settings). Rows inside are separated by inset hairlines. */
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxWidth().clip(JShape.md).background(jc.card), content = content)
+    Column(modifier.fillMaxWidth().clip(JShape.md).glassFill(jc.card, JShape.md), content = content)
 }
 
 /** [items] as rows of a [Card], with a hairline between rows starting [inset] in (past the rows' icon). */
@@ -511,7 +534,7 @@ fun ProgressRing(
 
 /** A small number with its label, for the stat rows on summary cards. */
 @Composable
-fun StatTile(value: String, label: String, modifier: Modifier = Modifier, color: Color = jc.ink, fill: Color = jc.page) {
+fun StatTile(value: String, label: String, modifier: Modifier = Modifier, color: Color = jc.ink, fill: Color = jc.inset) {
     Column(modifier.clip(JShape.sm).background(fill).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(value, style = JType.subheading, color = color, maxLines = 1)
         Text(label, style = JType.caption, color = jc.muted, maxLines = 1)

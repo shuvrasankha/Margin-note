@@ -234,7 +234,7 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconAction(Ico.BACK, "Close", onClose)
                 Column(
@@ -497,7 +497,7 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
     }
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextAction("Cancel", onCancel)
                 Text("Edit pages", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
@@ -556,7 +556,7 @@ private fun PageJump(file: File, sizes: List<Pair<Int, Int>>, at: Int, onDismiss
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState(initialFirstVisibleItemIndex = (at - 3).coerceAtLeast(0))
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextAction("Cancel", onDismiss)
                 Text("Go to page", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)

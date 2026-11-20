@@ -128,7 +128,7 @@ fun TodoHeader(
     val tint = if (status == TodoStatus.OVERDUE) jc.danger else jc.accent
     // One compact card: a progress ring and the count, then small chips for the target date and repeat.
     Column(
-        Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(JShape.lg).background(jc.card).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(JShape.lg).glassFill(jc.card, JShape.lg).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -171,7 +171,7 @@ fun TodoHeader(
 @Composable
 private fun HeaderChip(icon: String, label: String, set: Boolean, tint: androidx.compose.ui.graphics.Color, editable: Boolean, onClick: () -> Unit, description: String) {
     Row(
-        Modifier.height(32.dp).clip(JShape.pill).background(jc.page).clickable(enabled = editable, role = Role.Button, onClick = onClick)
+        Modifier.height(32.dp).clip(JShape.pill).background(jc.inset).clickable(enabled = editable, role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp).semantics { contentDescription = description },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -289,10 +289,11 @@ fun TodosScreen(
     var expanded by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(listOf<String>()) }
     var creating by remember { androidx.compose.runtime.mutableStateOf(false) }
     if (creating) NewListDialog(onDismiss = { creating = false }) { title, tasks -> creating = false; onNewList(title, tasks) }
+    val glass = rememberGlass()
     Scaffold(containerColor = jc.page, topBar = {
-        NavBar(backLabel, onBack, color = jc.page) { IconAction(Ico.COMPOSE, "New to-do list", { creating = true }) }
+        NavBar(backLabel, onBack, color = jc.page, glass = glass) { IconAction(Ico.COMPOSE, "New to-do list", { creating = true }) }
     }) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
             item { PageTitle("To-dos") }
             if (report.lists.isEmpty()) {
                 item {
@@ -341,7 +342,7 @@ fun TodosScreen(
 @Composable
 private fun Summary(report: com.margin.app.data.TodoReport, today: Long) {
     Column(
-        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).background(jc.card).padding(18.dp),
+        Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).glassFill(jc.card, JShape.lg).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {

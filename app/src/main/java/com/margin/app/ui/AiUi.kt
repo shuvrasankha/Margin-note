@@ -363,7 +363,7 @@ fun AiSheet(
                         asks.forEach { a -> Chip(a.label, { ask(a.label, a.request, a.kind) }) }
                         Box {
                             Chip("Translate", { translating = true }, trailing = "▾")
-                            DropdownMenu(translating, { translating = false }, containerColor = jc.card) {
+                            DropdownMenu(translating, { translating = false }, containerColor = jc.solidCard) {
                                 TRANSLATE_TO.forEach { lang ->
                                     DropdownMenuItem({ Text(lang, color = jc.ink) }, {
                                         translating = false

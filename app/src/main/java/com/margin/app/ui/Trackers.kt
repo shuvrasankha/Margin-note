@@ -155,8 +155,9 @@ fun TrackersScreen(
     if (naming) NameDialog("New tracker", "", onDismiss = { naming = false }, label = "Like Movies watched") { naming = false; onAdd(it) }
     editing?.let { EntryEditor(trackers, it, photos, onSave) { editing = null } }
 
-    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+    val glass = rememberGlass()
+    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page, glass = glass) }) { padding ->
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding, PaddingValues(bottom = 40.dp))) {
             item { PageTitle("Trackers") }
             if (trackers.isEmpty()) item { EmptyHero() }
             else item {
@@ -196,7 +197,7 @@ private fun EmptyHero() {
         Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
             listOf(TrackerKind.MOVIE, TrackerKind.BOOK, TrackerKind.PLACE).forEachIndexed { i, kind ->
                 Box(
-                    Modifier.padding(top = if (i == 1) 0.dp else 10.dp).size(64.dp).clip(CircleShape).background(jc.selected).border(3.dp, jc.page, CircleShape),
+                    Modifier.padding(top = if (i == 1) 0.dp else 10.dp).size(64.dp).clip(CircleShape).background(jc.selected).border(3.dp, jc.well, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) { JIcon(kindIcon(kind), jc.accent, size = 30.dp) }
             }
@@ -215,7 +216,7 @@ private fun EmptyHero() {
 private fun StarterChip(icon: String?, label: String, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
-        Modifier.height(40.dp).pressScale(press, 0.94f).clip(JShape.pill).background(jc.card).border(1.dp, jc.line, JShape.pill)
+        Modifier.height(40.dp).pressScale(press, 0.94f).clip(JShape.pill).glassFill(jc.card, JShape.pill).border(1.dp, jc.line, JShape.pill)
             .clickable(press, ripple(), role = Role.Button, onClick = tapped(onClick)).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -230,7 +231,7 @@ private fun TrackerCard(note: NoteEntity, entries: List<TrackerEntry>, today: Lo
     val latest = entries.firstOrNull { it.date != null } ?: entries.firstOrNull()
     val press = remember { MutableInteractionSource() }
     Column(
-        modifier.fillMaxWidth().pressScale(press, 0.98f).clip(JShape.lg).background(jc.card)
+        modifier.fillMaxWidth().pressScale(press, 0.98f).clip(JShape.lg).glassFill(jc.card, JShape.lg)
             .clickable(press, ripple(), role = Role.Button, onClick = tapped(onOpen)).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -405,13 +406,14 @@ fun TrackerScreen(
     val undated = entries.count { it.date == null }
     val years = entries.years(today.year) + if (undated > 0) listOf(NO_YEAR) else emptyList()
     val shown = entries.filter { if (year == NO_YEAR) it.date == null else it.date?.year == year }
+    val glass = rememberGlass()
     Scaffold(
         containerColor = jc.page,
         topBar = {
-            NavBar(backLabel, onBack, color = jc.page) {
+            NavBar(backLabel, onBack, color = jc.page, glass = glass) {
                 Box {
                     IconAction(Ico.MORE, "More", { menu = true })
-                    DropdownMenu(menu, { menu = false }, containerColor = jc.card) {
+                    DropdownMenu(menu, { menu = false }, containerColor = jc.solidCard) {
                         DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; renaming = true })
                         DropdownMenuItem(text = { Text("Delete", color = jc.danger) }, onClick = { menu = false; deleting = true })
                     }
@@ -419,12 +421,12 @@ fun TrackerScreen(
             }
         },
         bottomBar = {
-            Box(Modifier.fillMaxWidth().background(jc.page).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Box(Modifier.fillMaxWidth().glassBackground(glass, jc.page).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
                 PrimaryButton("Add to ${note.title}", { editing = EntryEdit(note.id, null) }, Modifier.fillMaxWidth())
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding, PaddingValues(bottom = 24.dp))) {
             item {
                 Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     KindTile(note.title, 56.dp)
@@ -513,7 +515,7 @@ private fun EntryRow(entry: TrackerEntry, photos: TrackerPhotos, onClick: () -> 
         DateBadge(entry.date)
         Text(entry.title.ifBlank { "Untitled" }, Modifier.weight(1f), style = JType.item, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         entry.rating?.let { Stars(it) }
-        entry.photo?.let { PhotoThumb(photos.file(it), Modifier.size(40.dp, 52.dp).clip(JShape.xs).background(jc.page)) }
+        entry.photo?.let { PhotoThumb(photos.file(it), Modifier.size(40.dp, 52.dp).clip(JShape.xs).background(jc.inset)) }
     }
 }
 
@@ -534,7 +536,7 @@ private fun PhotoThumb(file: File, modifier: Modifier) {
 @Composable
 private fun DateBadge(day: LocalDate?) {
     Column(
-        Modifier.size(48.dp).clip(JShape.sm).background(jc.page),
+        Modifier.size(48.dp).clip(JShape.sm).background(jc.inset),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         if (day == null) Text("–", style = JType.rowTitle, color = jc.muted)
@@ -639,7 +641,7 @@ private fun EntryDialog(title: String, initial: TrackerEntry?, photos: TrackerPh
                     Modifier.fillMaxWidth().clip(JShape.sm).background(jc.surface).padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Box(Modifier.size(52.dp, 68.dp).clip(JShape.xs).background(jc.page), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(52.dp, 68.dp).clip(JShape.xs).background(jc.inset), contentAlignment = Alignment.Center) {
                         val p = photo
                         when {
                             busy -> CircularProgressIndicator(Modifier.size(22.dp), color = jc.accent, strokeWidth = 2.dp)

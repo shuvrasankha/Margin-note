@@ -13,7 +13,7 @@ Everything Play Console asks for, in the order you meet it. The listing text and
 | Upload key | `margin-release.jks` (with `keystore.properties`). Back up both somewhere safe, outside the repo. Losing them means asking Google for an upload key reset. |
 | Upload key SHA-1 | `DB:0C:6E:B7:0E:7F:1D:61:D9:35:83:7A:06:D1:8F:97:C3:5D:1C:5B` |
 | Upload key SHA-256 | `7A:56:58:BD:8F:AC:5A:AB:0C:16:E8:CD:78:23:85:34:E4:EE:44:83:86:C3:AE:70:A0:16:B9:14:7E:E9:8A:E5` |
-| Play app signing key SHA-1 | `59:17:DF:0E:94:E2:0B:E3:51:27:1C:2C:0C:A0:FE:9C:B3:8E:1F:72` (classical key; the beta post-quantum key is `8A:59:81:CF:78:66:F2:C5:C6:A1:05:36:D0:21:18:40:FD:DF:D7:42`) |
+| Play app signing key SHA-1 | `B3:72:C8:43:93:57:5A:36:86:A4:6D:FD:7A:C9:C1:28:9F:68:4E:96`, read from the Play-installed APK with `apksigner verify --print-certs`. Don't trust the copy buttons in Play Console's App signing page: they gave `59:17:…:1F:72`, which matches no key Play signs with. |
 | Play app signing key SHA-256 | `65:03:A1:EE:75:E3:7B:3E:40:9E:50:FF:27:16:C2:51:6F:6E:18:39:4D:5F:11:29:E5:E2:B6:46:4E:C4:AC:00` |
 
 For every later release, raise `versionCode` (and `versionName`) in `app/build.gradle.kts`.
@@ -120,7 +120,8 @@ Already done on 19 Nov 2026 in the Google Cloud project "My First Project" (`mid
 - Android client **Margin debug (com.margin.note.debug)**, with the debug key's SHA-1 `D1:C2:97:5A:08:DD:0A:C1:E1:7B:A4:B0:ED:E9:41:21:DA:52:9B:81`.
 - `drive.appdata` is declared under Data access. Google treats it as a non-sensitive scope.
 - Branding (name, home page, privacy and terms links, `shuvrasankha.github.io`) is filled in, and the publishing status is **In production**.
-- Android client **Margin Play signing (com.margin.note)**, with the Play app signing SHA-1 `59:17:DF:…:1F:72`, added after the first upload.
+- Android client **Margin Play signing (com.margin.note)**, with the Play app signing SHA-1 `B3:72:C8:…:4E:96` (fixed on 19 Nov 2026; it first had a wrong one and sign-in failed).
+- Android client **Margin Play quantum-ready key (com.margin.note)**, with SHA-1 `8A:59:…:D7:42` from the same copy buttons. It's probably not a real key and can be deleted.
 - The old `com.margin.app` clients (Android client 1 and 2) are kept for the builds already installed.
 
 Steps 1 to 4 below are done. Optionally, also submit the branding for verification so the logo and name show on the consent screen. That needs `shuvrasankha.github.io` verified in Google Search Console.

@@ -105,6 +105,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.haze) // frosted glass bars, Android 12+
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
