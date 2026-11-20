@@ -16,6 +16,10 @@
     <!-- Note reminders: ring on the minute ("Alarms & reminders"), and come back after a restart. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Place reminders: where you are when picking "here", and arriving at or leaving the place while Margin is closed. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- A ringing reminder fills the screen when the phone is locked or asleep. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
@@ -179,6 +183,14 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <!-- Place reminders: Play services sends crossed geofences here; also when location comes back on. -->
+        <receiver
+            android:name=".ui.PlaceReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.location.PROVIDERS_CHANGED" />
             </intent-filter>
         </receiver>
         <!-- Autofill: fills and saves passwords in other apps and browsers, once the vault is unlocked. -->

@@ -218,7 +218,11 @@ fun EditorScreen(
     // Reminders: set from More, shown under the date line, rung as a notification.
     val reminderAt by vm.reminderAt.collectAsState()
     val reminderRepeat by vm.reminderRepeat.collectAsState()
+    val placeReminder by vm.placeReminder.collectAsState()
     var reminding by remember { mutableStateOf(false) }
+    var placing by remember { mutableStateOf(false) }
+    val placeAccess = rememberPlaceAccess()
+    placeAccess.Dialogs()
     /** The to-do target date picker is open. */
     var pickingTarget by remember { mutableStateOf(false) }
     var pickingPaper by remember { mutableStateOf(false) }
@@ -280,8 +284,25 @@ fun EditorScreen(
                 reminderScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.margin.app.data.CalendarEvents.remove(context, id) }
             },
             onDismiss = { reminding = false },
+            place = placeReminder, onPlace = { reminding = false; placing = true },
         )
     }
+    if (placing) PlaceReminderDialog(
+        current = placeReminder, recent = remember { vm.recentPlaces() },
+        onPick = { place ->
+            placing = false
+            vm.setPlace(place)
+            // Then location in the background, said why first; the place is kept either way.
+            placeAccess.ensure(background = true) { ok ->
+                if (ok) vm.watchPlaces() else placeNotWatched(context)
+                if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
+        onRemove = { placing = false; vm.clearPlace() },
+        onDismiss = { placing = false },
+    )
     drawing?.let { (line, d) ->
         val onError = { msg: String -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
         DrawingScreen(
@@ -309,8 +330,9 @@ fun EditorScreen(
                     if (vm.focused && !vm.viewOnly) TextAction("Done", { focusManager.clearFocus() }, bold = true)
                     // Reminder: amber while one is set.
                     if (vm.canRemind) IconAction(
-                        Ico.ALARM, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" } ?: "Remind me",
-                        { reminding = true }, fill = reminderAt != null,
+                        Ico.ALARM, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" }
+                            ?: placeReminder?.let { "Reminder, ${it.phrase}. Change it" } ?: "Remind me",
+                        { reminding = true }, fill = reminderAt != null || placeReminder != null,
                     )
                     if (!vm.needsUnlock) IconAction(Ico.SHARE, "Share", { sharing = !sharing; formatting = false; attaching = false })
                     Box {
@@ -362,7 +384,7 @@ fun EditorScreen(
                             var first = true
                             if (!vm.needsUnlock) { item("Find in note", Ico.SEARCH, gap = true) { find = ""; findAt = 0; focusManager.clearFocus() }; first = false }
                             item("Move to folder…", Ico.MOVE, gap = first) { moving = true }
-                            if (vm.canRemind) item(if (reminderAt != null) "Change reminder…" else "Remind me…", Ico.ALARM) { reminding = true }
+                            if (vm.canRemind) item(if (reminderAt != null || placeReminder != null) "Change reminder…" else "Remind me…", Ico.ALARM) { reminding = true }
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
                             if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
@@ -569,6 +591,7 @@ fun EditorScreen(
                         Text(reminderLabel(context, at, reminderRepeat), style = JType.small, color = jc.accent)
                     }
                 }
+                placeReminder?.takeIf { !vm.readOnly }?.let { PlaceChip(it) { placing = true } }
                 // To-do progress: shown once the note has checklist lines or a target date.
                 val todo = remember(vm.doc) { todoCount(vm.doc.toBlocks()) }
                 if (todo.total > 0 || vm.targetDate != null) {

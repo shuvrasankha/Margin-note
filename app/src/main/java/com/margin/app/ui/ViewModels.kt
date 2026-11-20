@@ -197,7 +197,11 @@ class FoldersViewModel @Inject constructor(
     private val scheduler: SyncScheduler,
     private val alarms: com.margin.app.data.Reminders,
     private val openedPdfs: com.margin.app.data.OpenedPdfs,
+    private val placeReminders: com.margin.app.data.PlaceReminders,
 ) : ViewModel() {
+    /** Note id → the place its reminder rings at. */
+    val places: StateFlow<Map<String, com.margin.app.data.Place>> = placeReminders.all
+    fun clearPlace(noteId: String) = placeReminders.clear(noteId)
     /** Note id → when its reminder rings, for the Reminders list. */
     val reminders: StateFlow<Map<String, Long>> = alarms.all
     val reminderRepeats: StateFlow<Map<String, com.margin.app.data.Repeat>> = alarms.repeats
@@ -630,6 +634,7 @@ class EditorViewModel @Inject constructor(
     private val session: LockSession,
     val files: AttachmentFiles,
     private val reminders: com.margin.app.data.Reminders,
+    private val places: com.margin.app.data.PlaceReminders,
     val ai: com.margin.app.data.AiKeys,
     private val appLock: com.margin.app.data.AppLock,
 ) : ViewModel() {
@@ -650,6 +655,16 @@ class EditorViewModel @Inject constructor(
     /** How this note's reminder repeats. */
     val reminderRepeat: StateFlow<com.margin.app.data.Repeat> = combine(reminders.repeats, openId) { all, id -> all[id] ?: com.margin.app.data.Repeat.NEVER }
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.margin.app.data.Repeat.NEVER)
+
+    /** Where this note's place reminder rings, or null. */
+    val placeReminder: StateFlow<com.margin.app.data.Place?> = combine(places.all, openId) { all, id -> all[id] }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** Sets the place reminder (a new note is saved first). */
+    fun setPlace(place: com.margin.app.data.Place) { if (noteId.isNotEmpty() && !trashed) afterSave { places.set(it, place) } }
+    fun clearPlace() { if (noteId.isNotEmpty()) places.clear(noteId) }
+    fun recentPlaces() = places.recent()
+    /** Once location access is given: watch the places set before it. */
+    fun watchPlaces() = places.registerAll()
 
     /** A reminder can be set: the note is stored, or has text that will be saved first. */
     val canRemind get() = !trashed && !needsUnlock && (exists || doc.text.isNotBlank())

@@ -32,13 +32,18 @@ import javax.inject.Inject
 class ReminderReceiver : BroadcastReceiver() {
     @Inject lateinit var reminders: Reminders
     @Inject lateinit var repo: NoteRepository
+    @Inject lateinit var places: com.margin.app.data.PlaceReminders
 
     override fun onReceive(context: Context, intent: Intent) {
         val noteId = intent.getStringExtra(EXTRA_NOTE)
         when (intent.action) {
             // Also when "Alarms & reminders" is turned on: alarms set before then were inexact, so set them again.
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
-            android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> reminders.rescheduleAll()
+            android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> {
+                reminders.rescheduleAll()
+                // Geofences are dropped on a restart or an update too.
+                if (intent.action != android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) places.registerAll()
+            }
             // The nudge rings once a day, so skipping is just putting it away until tomorrow's.
             ACTION_SKIP_JOURNAL -> NotificationManagerCompat.from(context).cancel(JOURNAL_REMINDER, NOTIFICATION_ID)
             ACTION_SNOOZE -> if (noteId != null) {

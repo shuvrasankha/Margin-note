@@ -90,6 +90,10 @@ object Ico {
     const val MOVE = "M3 6h7l2 2h9v11H3zM10 13h6M13 10l3 3-3 3"
     const val TRASH = "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
     const val PIN = "M9 3h6M10 3v5.5L7 12h10l-3-3.5V3M12 12v9"
+    /** A map pin, for place reminders. */
+    val PLACE = "M12 21s-6.5-5.7-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.3 12 21 12 21z" + circle(12f, 9.8f, 2.3f)
+    /** Where I am now: a crosshair. */
+    val LOCATE = circle(12f, 12f, 6.5f) + "M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" + circle(12f, 12f, 1.6f)
     const val SHARE = "M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1"
     const val LINK = "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
     const val ATTACH = "M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"

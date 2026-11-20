@@ -140,7 +140,8 @@ fun FoldersScreen(
                 val openTodos = remember(notes) {
                     todoReport(notes, todayEpochDay(), java.time.ZoneId.systemDefault()).lists.count { it.status != TodoStatus.DONE }
                 }
-                val reminderCount = remember(notes, reminders) { notes.count { it.id in reminders } }
+                val places by vm.places.collectAsState()
+                val reminderCount = remember(notes, reminders, places) { notes.count { it.id in reminders || it.id in places } }
                 val tiles = listOf(
                     LibraryItem(Ico.FILE, "All Notes", allCount) { onOpen(ALL_ID) },
                     LibraryItem(Ico.PIN, "Pinned", pinnedCount) { onOpen(PINNED_ID) },

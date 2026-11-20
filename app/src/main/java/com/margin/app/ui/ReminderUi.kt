@@ -97,6 +97,8 @@ private const val DAY_MS = 24 * 60 * 60 * 1000L
 fun ReminderDialog(
     current: Long?, currentRepeat: Repeat, onTime: Boolean, onPick: (Long, Repeat, Boolean) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit,
     calendarFor: String? = null,
+    /** The note's place reminder, and opening the place picker; null where place reminders aren't offered. */
+    place: com.margin.app.data.Place? = null, onPlace: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     // On when this reminder is already on the calendar, else as last time.
@@ -141,6 +143,7 @@ fun ReminderDialog(
                             ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli(), repeat, toCalendar) }
                         }
                         ChoiceRow(Ico.CALENDAR_PICK, "Pick date & time…", null) { custom = true }
+                        onPlace?.let { ChoiceRow(Ico.PLACE, if (place == null) "At a place…" else "Change place…", place?.label, onClick = it) }
                         if (current != null) ChoiceRow(Ico.TRASH, "Remove reminder", null, danger = true, onClick = onRemove)
                     }
                     if (!onTime) {
@@ -252,6 +255,7 @@ fun RemindersScreen(
     onSet: (NoteEntity, Long, Repeat) -> Unit = { _, _, _ -> }, onRemove: (NoteEntity) -> Unit = {},
     /** Makes the note for a new reminder and returns its id. */
     onCreate: (title: String, details: String, at: Long, repeat: Repeat) -> String = { _, _, _, _ -> "" },
+    places: Map<String, com.margin.app.data.Place> = emptyMap(), onRemovePlace: (NoteEntity) -> Unit = {},
 ) {
     val context = LocalContext.current
     var editing by remember { mutableStateOf<ReminderEntry?>(null) }
@@ -270,6 +274,10 @@ fun RemindersScreen(
                 else -> byId[id]?.let { ReminderEntry(it, at, repeat) }
             }
         }.sortedBy { it.at }
+    }
+    val placeRows = remember(notes, places) {
+        val byId = notes.associateBy { it.id }
+        places.mapNotNull { (id, p) -> byId[id]?.let { it to p } }.sortedBy { it.first.displayTitle.lowercase() }
     }
     val today = LocalDate.now()
     fun group(at: Long): String {
@@ -306,7 +314,7 @@ fun RemindersScreen(
                     }, bold = true)
                 }
             }
-            if (rows.isEmpty()) {
+            if (rows.isEmpty() && placeRows.isEmpty()) {
                 item {
                     BigEmpty(
                         Ico.ALARM, "No reminders", "Make one here, or open a note and tap the alarm clock at the top to be reminded about it.",
@@ -315,7 +323,7 @@ fun RemindersScreen(
                 }
                 return@LazyColumn
             }
-            item {
+            if (rows.isNotEmpty()) item {
                 // The next one still to come, large, with how long until it rings and a few counts.
                 val next = rows.firstOrNull { it.at >= now } ?: rows.first()
                 val todayCount = rows.count { it.at >= now && group(it.at) == "Today" }
@@ -344,6 +352,24 @@ fun RemindersScreen(
                     Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
                         SectionLabel(label)
                         DividedCard(items, 60.dp) { e -> ReminderRow(e, missed = label == "Missed", onOpen = { open(e) }, onEdit = { editing = e }) }
+                    }
+                }
+            }
+            if (placeRows.isNotEmpty()) item(key = "g:places") {
+                Column {
+                    SectionLabel("At a place")
+                    DividedCard(placeRows, 60.dp) { (note, place) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpen(note) }.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            IconTile(Ico.PLACE)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(place.phrase, style = JType.secondary, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            IconAction(Ico.CLOSE, "Remove place reminder", { onRemovePlace(note) }, size = 20.dp)
+                        }
                     }
                 }
             }

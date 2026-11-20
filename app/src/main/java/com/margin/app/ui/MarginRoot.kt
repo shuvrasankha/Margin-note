@@ -241,11 +241,13 @@ fun MarginRoot(
                 val all by folders.liveNotes.collectAsState()
                 val reminders by folders.reminders.collectAsState()
                 val repeats by folders.reminderRepeats.collectAsState()
+                val places by folders.places.collectAsState()
                 RemindersScreen(
                     all, reminders, repeats, onOpen = { if (isHabit(it)) nav.push(Screen.Habits) else openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below),
                     onTime = folders.remindersOnTime, onJournal = { nav.push(Screen.Journal) },
                     onSet = { note, time, repeat -> folders.setReminder(note.id, time, repeat) }, onRemove = { folders.clearReminder(it.id) },
                     onCreate = folders::newReminder,
+                    places = places, onRemovePlace = { folders.clearPlace(it.id) },
                 )
             }
             Screen.Journal -> {

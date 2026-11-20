@@ -19,6 +19,7 @@ class MarginApp : Application() {
     @Inject lateinit var attachmentFiles: AttachmentFiles
     @Inject lateinit var attachmentIndex: com.margin.app.data.AttachmentIndex
     @Inject lateinit var backupPrefs: com.margin.app.sync.BackupPrefs
+    @Inject lateinit var placeReminders: com.margin.app.data.PlaceReminders
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -36,6 +37,8 @@ class MarginApp : Application() {
                 com.margin.app.ui.ListWidget.push(this@MarginApp, it)
             }
         }
+        // Place reminders: Android or Play services may have dropped the geofences (restart, update, data cleared).
+        placeReminders.registerAll()
         // Reads text in photos and PDFs so search finds it.
         appScope.launch { attachmentIndex.run() }
         scheduler.onAppStart() // sync on app start (when signed in) + 6 h periodic job
