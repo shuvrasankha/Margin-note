@@ -8,5 +8,7 @@
     <string name="shortcut_new_note">New note</string>
     <string name="shortcut_scan">Scan document</string>
     <string name="shortcut_voice">Voice note</string>
+    <string name="shortcut_passwords">Passwords</string>
+    <string name="autofill_unlock">Autofill with Margin</string>
     <string name="tile_new_note">New note</string>
 </resources>

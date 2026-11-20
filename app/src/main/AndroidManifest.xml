@@ -19,6 +19,20 @@
     <!-- A ringing reminder fills the screen when the phone is locked or asleep. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
+    <!-- Autofill: which app is a browser (only a browser's web address is trusted), and the names and icons of
+         apps a password is saved from. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <!-- Backup is handled by Margin's own Google Drive sync, not Android Auto Backup. -->
     <application
         android:name=".MarginApp"
@@ -110,6 +124,25 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+        <!-- Autofill: fills and saves passwords in other apps and browsers, once the vault is unlocked. -->
+        <service
+            android:name=".autofill.MarginAutofillService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+            <meta-data android:name="android.autofill" android:resource="@xml/autofill_service" />
+        </service>
+        <!-- Autofill's unlock, pick and save screen, over the app being signed in to. -->
+        <activity
+            android:name=".autofill.AutofillActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Margin.Popup"
+            android:windowSoftInputMode="adjustResize" />
         <!-- Lets other apps open an attachment when the user taps it (read-only, per tap). -->
         <provider
             android:name="androidx.core.content.FileProvider"

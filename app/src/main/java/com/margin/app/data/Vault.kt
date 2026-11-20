@@ -20,7 +20,28 @@ data class Login(
     val passwordChangedAt: Long = 0,
     /** Passwords this login used before, newest first, at most [HISTORY_LIMIT]. */
     val history: List<PastPassword> = emptyList(),
+    /** What it's for: a [VaultKind] name. Older entries are all logins. */
+    val kind: String = VaultKind.LOGIN.name,
+    /** Android apps (package names) this login fills, linked when it was saved or picked from one. */
+    val apps: List<String> = emptyList(),
+    /** The site's or app's icon as a small base64 PNG, captured when it was saved; empty for a monogram. */
+    val icon: String = "",
+    /** Wi-Fi only: a [WifiSecurity] name. */
+    val security: String = "",
 )
+
+/** What a vault entry holds. Only logins are offered for autofill. */
+enum class VaultKind(val label: String) {
+    LOGIN("Login"), WIFI("Wi-Fi"), DEVICE("Device or drive"), OTHER("Other");
+    companion object { fun of(name: String) = entries.firstOrNull { it.name == name } ?: LOGIN }
+}
+
+enum class WifiSecurity(val label: String) {
+    WPA("WPA/WPA2"), WPA3("WPA3"), WEP("WEP"), OPEN("None");
+    companion object { fun of(name: String) = entries.firstOrNull { it.name == name } ?: WPA }
+}
+
+val Login.vaultKind get() = VaultKind.of(kind)
 
 /** A password a login no longer uses, and when it was replaced. */
 @Serializable
@@ -60,6 +81,66 @@ fun loginFrom(body: List<Block>): Login? =
 /** "https://www.github.com/login" → "github.com", for showing and matching sites. */
 fun siteOf(url: String): String =
     url.trim().substringAfter("://").substringBefore('/').substringBefore('?').substringBefore(':').removePrefix("www.").lowercase()
+
+/**
+ * Whether a page on [visited] may use a login saved for [saved]: the same host, or one under it
+ * ("accounts.github.com" for "github.com"). Never a mere substring: "github.com.evil.io" isn't github.com.
+ */
+fun hostMatches(saved: String, visited: String): Boolean {
+    val a = siteOf(saved); val b = siteOf(visited)
+    return a.isNotEmpty() && '.' in a && (b == a || b.endsWith(".$a"))
+}
+
+/**
+ * Whether this login is offered on a form in app [pkg] showing site [domain]. [domain] counts only when the
+ * caller trusts it (it came from a browser): any other app could claim to be any site.
+ */
+fun Login.fills(pkg: String?, domain: String?): Boolean =
+    vaultKind == VaultKind.LOGIN && (
+        (pkg != null && pkg in apps) || (domain != null && url.isNotBlank() && hostMatches(url, domain))
+    )
+
+/** What saving a sign-in seen by autofill does to the vault. */
+sealed interface AutofillSave {
+    /** A new login. */
+    data class Create(val login: Login) : AutofillSave
+    /** [id]'s login with the new password (its old one goes to history when stamped) or a newly linked app. */
+    data class Update(val id: String, val login: Login) : AutofillSave
+    /** Several logins could be the one that changed; the user picks. */
+    data class Choose(val ids: List<String>) : AutofillSave
+    /** Already saved exactly so. */
+    data object Unchanged : AutofillSave
+}
+
+/**
+ * Decides what a sign-in [username]/[password] typed into [pkg] (on [domain], when trusted) does: updates
+ * the matching login when its password changed, links the app to it, or makes a new login named [label].
+ */
+fun planAutofillSave(
+    entries: List<Pair<String, Login>>, pkg: String?, domain: String?, username: String, password: String, label: String,
+): AutofillSave {
+    val user = username.trim()
+    val candidates = entries.filter { (_, l) -> l.fills(pkg, domain) }
+    val same = if (user.isEmpty()) candidates else candidates.filter { (_, l) -> l.username.trim().equals(user, ignoreCase = true) }
+    val target = when {
+        same.size == 1 -> same.single()
+        same.size > 1 -> same.firstOrNull { it.second.password == password } ?: return AutofillSave.Choose(same.map { it.first })
+        else -> null
+    }
+    if (target == null) {
+        val site = domain?.let(::siteOf).orEmpty()
+        return AutofillSave.Create(
+            Login(
+                name = label.ifBlank { site }, username = user, password = password, url = site,
+                apps = listOfNotNull(pkg.takeIf { site.isEmpty() }),
+            ),
+        )
+    }
+    val (id, old) = target
+    val linked = if (pkg != null && domain == null && pkg !in old.apps) old.apps + pkg else old.apps
+    val updated = old.copy(password = password, username = old.username.ifBlank { user }, apps = linked)
+    return if (updated == old) AutofillSave.Unchanged else AutofillSave.Update(id, updated)
+}
 
 enum class Strength(val label: String) { WEAK("Weak"), FAIR("Fair"), GOOD("Good"), STRONG("Strong") }
 

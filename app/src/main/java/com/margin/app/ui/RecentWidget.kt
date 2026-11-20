@@ -44,6 +44,8 @@ class RecentWidget : AppWidgetProvider() {
         /** App shortcuts: a new note that opens the document scanner or starts recording. */
         const val ACTION_SCAN = "com.margin.app.SCAN"
         const val ACTION_VOICE = "com.margin.app.VOICE_NOTE"
+        /** The app shortcut that opens Passwords. */
+        const val ACTION_PASSWORDS = "com.margin.app.PASSWORDS"
         const val EXTRA_NOTE = "note"
         const val EXTRA_FOLDER = "folder"
         private val ROWS = listOf(

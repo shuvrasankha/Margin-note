@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -53,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -68,41 +70,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.margin.app.data.Block
-import com.margin.app.data.BlockType
-import com.margin.app.data.DEFAULT_FOLDER_ID
-import com.margin.app.data.LOGIN_PREFIX
-import com.margin.app.data.LOGIN_TITLE
 import com.margin.app.data.LockSession
 import com.margin.app.data.Login
-import com.margin.app.data.NoteCrypto
 import com.margin.app.data.NoteRepository
+import com.margin.app.data.VaultIcons
+import com.margin.app.data.VaultKind
+import com.margin.app.data.VaultStore
+import com.margin.app.data.WifiSecurity
+import com.margin.app.data.vaultKind
 import com.margin.app.data.PasswordGen
 import com.margin.app.data.Strength
 import com.margin.app.data.isLogin
 import com.margin.app.data.loginBody
 import com.margin.app.data.loginFrom
-import com.margin.app.data.newId
 import com.margin.app.data.normalizeUrl
 import com.margin.app.data.relatedWords
 import com.margin.app.data.siteOf
-import com.margin.app.data.stampPasswordChange
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /** A key and a padlock's shackle: the Passwords list. */
 const val ICON_PASSWORDS = "M7 11V8a5 5 0 0 1 9.6-2M5 11h14v10H5zM12 15v2"
+
+/** Radio waves: a Wi-Fi network. */
+const val ICON_WIFI = "M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.7 16a4.6 4.6 0 0 1 6.6 0M12 19.5v.01"
+/** A screen on a stand: a computer, drive or other device. */
+const val ICON_DEVICE = "M4 5h16v11H4zM9 20h6M12 16v4"
 
 /** A saved login, opened. */
 data class VaultEntry(val id: String, val login: Login) {
@@ -113,8 +115,9 @@ data class VaultEntry(val id: String, val login: Login) {
 class VaultViewModel @Inject constructor(
     private val repo: NoteRepository,
     private val session: LockSession,
+    private val store: VaultStore,
 ) : ViewModel() {
-    /** Every saved login, opened; null while locked (or still opening). */
+    /** Every saved entry, opened; null while locked (or still opening). */
     @OptIn(ExperimentalCoroutinesApi::class)
     val entries: StateFlow<List<VaultEntry>?> = combine(repo.liveNotes(), session.unlocked) { notes, unlocked -> notes to unlocked }
         .mapLatest { (notes, unlocked) ->
@@ -126,22 +129,39 @@ class VaultViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Saves [login] as a new entry ([id] null) or over an existing one. */
+    /**
+     * Saves [login] as a new entry ([id] null) or over an existing one. A login whose website changed (or that
+     * has no icon yet) then gets the site's icon, fetched from the site itself.
+     */
     fun save(id: String?, login: Login) = viewModelScope.launch {
-        // All logins share one salt, so opening the list derives one key, not one per login.
-        val params = repo.liveNotes().first().firstOrNull { isLogin(it) && it.cipher != null }?.cipher?.let(NoteCrypto::paramsOf)
-            ?: NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
-        val key = session.key(params) ?: return@launch
         val old = id?.let { entries.value?.firstOrNull { e -> e.id == it }?.login }
-        val stamped = stampPasswordChange(old, login, System.currentTimeMillis())
-        val body = loginBody(stamped.trimmed())
-        val cipher = withContext(Dispatchers.Default) { NoteCrypto.seal(body, key, params) }
-        repo.saveNote(id ?: (LOGIN_PREFIX + newId()), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = LOGIN_TITLE)) + body, cipher)
+        val siteChanged = siteOf(login.url) != siteOf(old?.url.orEmpty())
+        // A new website's icon replaces the old one; an app's icon stays with the app.
+        val withIcon = if (siteChanged && login.apps.isEmpty()) login.copy(icon = "") else login
+        val saved = store.save(session, id, withIcon) ?: return@launch
+        if (login.vaultKind == VaultKind.LOGIN && login.url.isNotBlank() && withIcon.icon.isEmpty()) {
+            VaultIcons.ofSite(login.url)?.let { store.setIcon(session, saved, it) }
+        }
     }
 
-    fun delete(id: String) = viewModelScope.launch { repo.moveToTrash(id) }
+    fun delete(id: String) = viewModelScope.launch { store.delete(id) }
 
-    private fun Login.trimmed() = copy(name = name.trim(), username = username.trim(), url = url.trim(), notes = notes.trim())
+    /** Entries already tried for a missing icon while this screen lives, so an offline site isn't asked again and again. */
+    private val iconTried = mutableSetOf<String>()
+
+    /**
+     * Logins saved before icons were captured (or whose site was offline then) get theirs: the linked app's
+     * icon, else the site's, fetched from the site itself.
+     */
+    fun fillMissingIcons(context: android.content.Context, list: List<VaultEntry>) = viewModelScope.launch {
+        for (e in list) {
+            val l = e.login
+            if (l.icon.isNotEmpty() || l.vaultKind != VaultKind.LOGIN || !iconTried.add(e.id)) continue
+            val icon = l.apps.firstNotNullOfOrNull { VaultIcons.ofApp(context, it) }
+                ?: l.url.takeIf { it.isNotBlank() }?.let { VaultIcons.ofSite(it) } ?: continue
+            store.setIcon(session, e.id, icon)
+        }
+    }
 }
 
 /**
@@ -169,6 +189,65 @@ fun copySecret(context: Context, label: String, text: String, sensitive: Boolean
     if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, if (sensitive) "$label copied. It clears in a minute." else "$label copied", Toast.LENGTH_SHORT).show()
 }
 
+/**
+ * Adds a saved Wi-Fi network to the phone: Android 11+ asks in its own dialog; earlier, or for WEP (which
+ * Android no longer adds this way), the password is copied and Wi-Fi settings open.
+ */
+private fun connectWifi(context: Context, ssid: String, password: String, security: WifiSecurity) {
+    val added = Build.VERSION.SDK_INT >= 30 && security != WifiSecurity.WEP && runCatching {
+        val b = android.net.wifi.WifiNetworkSuggestion.Builder().setSsid(ssid)
+        when (security) {
+            WifiSecurity.WPA -> b.setWpa2Passphrase(password)
+            WifiSecurity.WPA3 -> b.setWpa3Passphrase(password)
+            else -> {}
+        }
+        context.startActivity(
+            android.content.Intent(android.provider.Settings.ACTION_WIFI_ADD_NETWORKS)
+                .putParcelableArrayListExtra(android.provider.Settings.EXTRA_WIFI_NETWORK_LIST, arrayListOf(b.build())),
+        )
+    }.isSuccess
+    if (!added) {
+        if (password.isNotEmpty()) copySecret(context, "Wi-Fi password", password)
+        runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }
+    }
+}
+
+/** Whether Margin is the phone's autofill service, checked again each time the screen comes back. */
+@Composable
+private fun autofillOn(): Boolean {
+    val context = LocalContext.current
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val state by lifecycle.currentStateFlow.collectAsState()
+    return remember(state) {
+        context.getSystemService(android.view.autofill.AutofillManager::class.java)?.let { runCatching { it.hasEnabledAutofillServices() }.getOrNull() } == true
+    }
+}
+
+/** Asks Android to make Margin the autofill service; falls back to the settings page that lists them. */
+private fun turnOnAutofill(context: Context) {
+    val ask = android.content.Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, android.net.Uri.parse("package:${context.packageName}"))
+    runCatching { context.startActivity(ask) }.onFailure {
+        runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) }
+    }
+}
+
+/** Offers autofill until it's on; then a quiet line says so. */
+@Composable
+private fun AutofillCard() {
+    val context = LocalContext.current
+    val supported = remember { context.getSystemService(android.view.autofill.AutofillManager::class.java)?.isAutofillSupported == true }
+    if (!supported) return
+    if (autofillOn()) Text(
+        "Autofill is on: Margin fills and saves passwords in apps and browsers.",
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), style = JType.small, color = jc.muted,
+    ) else Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        CardRow(
+            "Turn On Autofill", sub = "Fill passwords in apps and browsers, and save new or changed ones",
+            onClick = { turnOnAutofill(context) }, icon = ICON_PASSWORDS,
+        ) { JIcon(Ico.CHEVRON, jc.muted, size = 18.dp, stroke = 2f) }
+    }
+}
+
 /** Keeps the vault out of screenshots and the recent-apps preview while it's on screen. */
 @Composable
 private fun SecureWindow() {
@@ -189,7 +268,7 @@ private fun strengthOf(l: Login) = PasswordGen.strength(l.password, l.relatedWor
 private fun isWeak(l: Login) = l.password.isNotEmpty() && strengthOf(l) == Strength.WEAK
 
 @Composable
-fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
+fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = "Folders") {
     SecureWindow()
     val context = LocalContext.current
     val entries by vm.entries.collectAsState()
@@ -198,6 +277,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     val open = openId?.let { id -> if (id.isEmpty()) NEW_ENTRY else entries?.firstOrNull { it.id == id } }
     val list = entries.orEmpty()
+    androidx.compose.runtime.LaunchedEffect(entries != null) { entries?.let { vm.fillMissingIcons(context.applicationContext, it) } }
     // The same password on more than one login.
     val reused = remember(list) { list.groupBy { it.login.password }.filter { (pw, e) -> pw.isNotEmpty() && e.size > 1 }.values.flatten().map { it.id }.toSet() }
     val weak = remember(list) { list.filter { isWeak(it.login) }.map { it.id }.toSet() }
@@ -217,7 +297,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
     }
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar("Folders", onBack, color = jc.page) },
+        topBar = { NavBar(backLabel, onBack, color = jc.page) },
         bottomBar = {
             if (list.isNotEmpty()) BottomBar(Modifier.background(jc.page)) {
                 Spacer(Modifier.size(44.dp))
@@ -235,11 +315,16 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit) {
                 entries == null -> item {
                     Text("Opening…", Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted)
                 }
-                list.isEmpty() -> item { VaultEmpty(onAdd = { openId = "" }) }
+                list.isEmpty() -> item {
+                    VaultEmpty(onAdd = { openId = "" })
+                    AutofillCard()
+                }
                 else -> {
                     item {
                         SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp), fill = jc.card)
                         HealthCard(list.size, reused.size, weak.size, filter, { filter = if (filter == it) VaultFilter.ALL else it })
+                        Spacer(Modifier.height(8.dp))
+                        AutofillCard()
                     }
                     if (shown.isEmpty()) item {
                         Text(
@@ -324,10 +409,10 @@ private fun LoginRow(e: VaultEntry, reused: Boolean, weak: Boolean, onOpen: () -
         Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable(role = Role.Button, onClick = onOpen).padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Monogram(e.title)
+        EntryIcon(e.login, e.title)
         Column(Modifier.weight(1f)) {
             Text(e.title, style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            e.login.username.takeIf { it.isNotBlank() }?.let {
+            (if (e.login.vaultKind == VaultKind.WIFI) "Wi-Fi · " + WifiSecurity.of(e.login.security).label else e.login.username).takeIf { it.isNotBlank() }?.let {
                 Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -337,6 +422,42 @@ private fun LoginRow(e: VaultEntry, reused: Boolean, weak: Boolean, onOpen: () -
             style = JType.small, color = jc.danger,
         )
         if (e.login.password.isNotEmpty()) IconAction(Ico.COPY, "Copy password for ${e.title}", onCopy, color = jc.muted, size = 20.dp)
+    }
+}
+
+/** A vault entry to pick (autofill's list): its icon, name and username. */
+@Composable
+fun VaultEntryRow(e: VaultEntry, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        EntryIcon(e.login, e.title)
+        Column(Modifier.weight(1f)) {
+            Text(e.title, style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            (e.login.username.ifBlank { siteOf(e.login.url) }).takeIf { it.isNotBlank() }?.let {
+                Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/**
+ * The icon captured for the site or app when it was saved; else a Wi-Fi or device glyph for those kinds,
+ * else the first letter on a tinted tile.
+ */
+@Composable
+private fun EntryIcon(login: Login, title: String, size: androidx.compose.ui.unit.Dp = 40.dp) {
+    val bitmap = remember(login.icon) { VaultIcons.decode(login.icon)?.asImageBitmap() }
+    val glyph = when (login.vaultKind) { VaultKind.WIFI -> ICON_WIFI; VaultKind.DEVICE -> ICON_DEVICE; else -> null }
+    when {
+        bitmap != null -> androidx.compose.foundation.Image(
+            bitmap, null, Modifier.size(size).clip(RoundedCornerShape(size * 0.28f)).background(androidx.compose.ui.graphics.Color.White),
+        )
+        glyph != null -> Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.28f)).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
+            JIcon(glyph, jc.accent, size = size * 0.55f, stroke = 1.8f)
+        }
+        else -> Monogram(title, size)
     }
 }
 
@@ -364,6 +485,9 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
     var password by rememberSaveable { mutableStateOf(entry.login.password) }
     var url by rememberSaveable { mutableStateOf(entry.login.url) }
     var notes by rememberSaveable { mutableStateOf(entry.login.notes) }
+    var kind by rememberSaveable { mutableStateOf(entry.login.vaultKind) }
+    var security by rememberSaveable { mutableStateOf(WifiSecurity.of(entry.login.security)) }
+    var apps by rememberSaveable { mutableStateOf(entry.login.apps) }
     var editing by rememberSaveable { mutableStateOf(isNew) }
     var reveal by rememberSaveable { mutableStateOf(false) }
     var generating by rememberSaveable { mutableStateOf(isNew) }
@@ -376,14 +500,22 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
         if (!editing && entry.login != saved) {
             saved = entry.login
             name = saved.name; username = saved.username; password = saved.password; url = saved.url; notes = saved.notes
+            kind = saved.vaultKind; security = WifiSecurity.of(saved.security); apps = saved.apps
         }
     }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var revealedPast by remember { mutableStateOf<Int?>(null) }
-    val edited = saved.copy(name = name, username = username, password = password, url = url, notes = notes)
+    val wifi = kind == VaultKind.WIFI
+    val edited = saved.copy(
+        name = name, username = if (wifi) "" else username, password = password, url = if (kind == VaultKind.LOGIN) url else "", notes = notes,
+        kind = kind.name, security = if (wifi) security.name else "", apps = if (kind == VaultKind.LOGIN) apps else emptyList(),
+    )
     val changed = edited != saved
     val canSave = name.isNotBlank() || url.isNotBlank() || username.isNotBlank() || password.isNotEmpty()
-    fun reset() { name = saved.name; username = saved.username; password = saved.password; url = saved.url; notes = saved.notes; generating = false; reveal = false }
+    fun reset() {
+        name = saved.name; username = saved.username; password = saved.password; url = saved.url; notes = saved.notes
+        kind = saved.vaultKind; security = WifiSecurity.of(saved.security); apps = saved.apps; generating = false; reveal = false
+    }
     val leaveEdit: () -> Unit = { if (isNew) onDismiss() else { reset(); editing = false } }
     val close: () -> Unit = { if (editing && changed) confirmDiscard = true else if (editing && !isNew) editing = false else onDismiss() }
     val state = rememberModalBottomSheetState(
@@ -414,7 +546,7 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (editing) TextAction("Cancel", close) else TextAction("Done", onDismiss)
                 Text(
-                    when { isNew -> "New Password"; editing -> "Edit Password"; else -> "" },
+                    when { isNew -> "New ${if (kind == VaultKind.LOGIN) "Password" else kind.label}"; editing -> "Edit ${if (kind == VaultKind.LOGIN) "Password" else kind.label}"; else -> "" },
                     Modifier.weight(1f).padding(horizontal = 8.dp),
                     style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -432,24 +564,64 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                 if (editing) {
                     // A live preview of how the login will look in the list.
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Monogram(if (canSave) title else "", 56.dp)
+                        EntryIcon(edited, if (canSave) title else "", 56.dp)
                         Text(
-                            if (canSave) title else "Name it after the site or app", style = JType.small,
+                            if (canSave) title else when (kind) {
+                                VaultKind.LOGIN -> "Name it after the site or app"; VaultKind.WIFI -> "The network's name"
+                                VaultKind.DEVICE -> "The computer, drive or device"; VaultKind.OTHER -> "Name it"
+                            }, style = JType.small,
                             color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    FormLabel("Site")
-                    Card {
-                        InlineField(name, { name = it }, "Name", siteOf(url).ifBlank { "Bank, email, Wi-Fi…" }, capitalize = true, focusFirst = isNew)
-                        CardDivider()
-                        InlineField(url, { url = it }, "Website", "example.com", KeyboardType.Uri)
+                    // What kind of secret it is; set when it's made.
+                    if (isNew) Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    ) { VaultKind.entries.forEach { k -> Pill(k.label, kind == k, { kind = k }) } }
+                    when (kind) {
+                        VaultKind.LOGIN -> {
+                            FormLabel("Site")
+                            Card {
+                                InlineField(name, { name = it }, "Name", siteOf(url).ifBlank { "Bank, email, shop…" }, capitalize = true, focusFirst = isNew)
+                                CardDivider()
+                                InlineField(url, { url = it }, "Website", "example.com", KeyboardType.Uri)
+                            }
+                        }
+                        VaultKind.WIFI -> {
+                            FormLabel("Network")
+                            Card {
+                                InlineField(name, { name = it }, "Name", "Network name (SSID)", focusFirst = isNew)
+                                CardDivider()
+                                Row(
+                                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text("Security", Modifier.width(88.dp), style = JType.item, color = jc.ink)
+                                    WifiSecurity.entries.forEach { w -> Pill(w.label, security == w, { security = w }) }
+                                }
+                            }
+                        }
+                        VaultKind.DEVICE, VaultKind.OTHER -> {
+                            FormLabel(if (kind == VaultKind.DEVICE) "Device" else "Item")
+                            Card {
+                                InlineField(
+                                    name, { name = it }, "Name", if (kind == VaultKind.DEVICE) "Laptop SSD, router, safe…" else "Licence key, door code…",
+                                    capitalize = true, focusFirst = isNew,
+                                )
+                            }
+                        }
                     }
-                    FormLabel("Sign-in")
+                    FormLabel(if (kind == VaultKind.LOGIN) "Sign-in" else "Secret")
                     Card {
-                        InlineField(username, { username = it }, "Username", "Email or username", KeyboardType.Email)
-                        CardDivider()
+                        if (kind != VaultKind.WIFI && kind != VaultKind.OTHER) {
+                            InlineField(
+                                username, { username = it }, if (kind == VaultKind.DEVICE) "Account" else "Username",
+                                if (kind == VaultKind.DEVICE) "User or account, if any" else "Email or username", KeyboardType.Email,
+                            )
+                            CardDivider()
+                        }
                         InlineField(
-                            password, { password = it }, "Password", "Required", KeyboardType.Password, mono = true,
+                            password, { password = it }, "Password", if (kind == VaultKind.DEVICE) "Password, PIN or key" else "Required", KeyboardType.Password, mono = true,
                             transform = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
                         ) {
                             if (password.isNotEmpty()) IconAction(if (reveal) Ico.EYE_OFF else Ico.EYE, if (reveal) "Hide password" else "Show password", { reveal = !reveal }, color = jc.muted, size = 20.dp)
@@ -462,20 +634,46 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                         replacing = password.isNotEmpty(),
                         onUse = { password = it; reveal = true; generating = false },
                     ) else TextAction("Suggest a Strong Password", { generating = true })
+                    if (kind == VaultKind.LOGIN && apps.isNotEmpty()) {
+                        FormLabel("Fills in apps")
+                        Card {
+                            apps.forEachIndexed { i, pkg ->
+                                if (i > 0) CardDivider()
+                                CardRow(VaultIcons.appLabel(context, pkg) ?: pkg, sub = pkg) {
+                                    IconAction(Ico.CLOSE, "Stop filling in ${VaultIcons.appLabel(context, pkg) ?: pkg}", { apps = apps - pkg }, color = jc.muted, size = 20.dp)
+                                }
+                            }
+                        }
+                    }
                     FormLabel("Notes")
-                    Card { InlineField(notes, { notes = it }, null, "Security questions, PINs, recovery codes…", singleLine = false, capitalize = true) }
+                    Card {
+                        InlineField(
+                            notes, { notes = it }, null,
+                            when (kind) { VaultKind.DEVICE -> "Recovery key, encryption details…"; VaultKind.WIFI -> "Router admin login, where it is…"; else -> "Security questions, PINs, recovery codes…" },
+                            singleLine = false, capitalize = true,
+                        )
+                    }
                 } else {
                     // Read-only: who it is, then each field with its action.
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Monogram(title, 64.dp)
+                        EntryIcon(edited, title, 64.dp)
                         Text(title, style = JType.subheading.copy(fontWeight = FontWeight.Bold), color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         siteOf(url).takeIf { it.isNotEmpty() && !it.equals(title, ignoreCase = true) }?.let { Text(it, style = JType.small, color = jc.muted) }
                     }
                     Card {
-                        DetailRow("Username", username.ifBlank { "None" }, dim = username.isBlank()) {
-                            if (username.isNotBlank()) IconAction(Ico.COPY, "Copy username", { copySecret(context, "Username", username, sensitive = false) }, color = jc.accent, size = 20.dp)
+                        if (wifi) {
+                            DetailRow("Network", name.ifBlank { "None" }, dim = name.isBlank()) {
+                                if (name.isNotBlank()) IconAction(Ico.COPY, "Copy network name", { copySecret(context, "Network name", name, sensitive = false) }, color = jc.accent, size = 20.dp)
+                            }
+                            CardDivider()
+                            DetailRow("Security", security.label)
+                            CardDivider()
+                        } else if (kind != VaultKind.OTHER) {
+                            DetailRow(if (kind == VaultKind.DEVICE) "Account" else "Username", username.ifBlank { "None" }, dim = username.isBlank()) {
+                                if (username.isNotBlank()) IconAction(Ico.COPY, "Copy username", { copySecret(context, "Username", username, sensitive = false) }, color = jc.accent, size = 20.dp)
+                            }
+                            CardDivider()
                         }
-                        CardDivider()
                         DetailRow(
                             "Password", if (password.isEmpty()) "None" else if (reveal) password else "•".repeat(minOf(password.length, 16)),
                             dim = password.isEmpty(), mono = reveal,
@@ -499,10 +697,17 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                                 }
                             }
                         }
+                        if (apps.isNotEmpty()) {
+                            CardDivider()
+                            DetailRow("Fills in", apps.joinToString { VaultIcons.appLabel(context, it) ?: it }, singleLine = false)
+                        }
                         if (notes.isNotBlank()) {
                             CardDivider()
                             DetailRow("Notes", notes, singleLine = false)
                         }
+                    }
+                    if (wifi && name.isNotBlank()) Card {
+                        CardRow("Connect This Phone", sub = "Adds the network to Wi-Fi settings", onClick = { connectWifi(context, name, password, security) }, icon = ICON_WIFI)
                     }
                     if (saved.passwordChangedAt > 0) Text(
                         "Password changed " + fullTime(context, saved.passwordChangedAt),
@@ -527,7 +732,7 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                             }
                         }
                     }
-                    Card { CardRow("Delete Password", onClick = { confirmDelete = true }, labelColor = jc.danger, icon = Ico.TRASH) }
+                    Card { CardRow(if (kind == VaultKind.LOGIN) "Delete Password" else "Delete ${kind.label}", onClick = { confirmDelete = true }, labelColor = jc.danger, icon = Ico.TRASH) }
                 }
                 Spacer(Modifier.height(16.dp))
             }

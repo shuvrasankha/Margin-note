@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One suggestion in the autofill dropdown: an icon, a title and a username. Colours follow the system's dropdown. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:orientation="horizontal" android:gravity="center_vertical"
+    android:minHeight="56dp" android:paddingStart="16dp" android:paddingEnd="16dp">
+    <ImageView android:id="@+id/autofill_icon" android:layout_width="28dp" android:layout_height="28dp"
+        android:layout_marginEnd="14dp" android:importantForAccessibility="no" android:scaleType="fitCenter" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+        <TextView android:id="@+id/autofill_title" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="?android:attr/textColorPrimary" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />
+        <TextView android:id="@+id/autofill_sub" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:textColor="?android:attr/textColorSecondary" android:textSize="13sp" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+</LinearLayout>

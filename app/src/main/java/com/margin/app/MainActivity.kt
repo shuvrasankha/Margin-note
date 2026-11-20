@@ -137,6 +137,7 @@ class MainActivity : FragmentActivity() {
                 if (it.startsWith("habit-")) Screen.Habits else if (it == com.margin.app.ui.JOURNAL_REMINDER) Screen.Journal else Screen.Editor(it, intent.getStringExtra(RecentWidget.EXTRA_FOLDER) ?: DEFAULT_FOLDER_ID)
             }
             RecentWidget.ACTION_NEW, RecentWidget.ACTION_SCAN, RecentWidget.ACTION_VOICE -> Screen.Editor(newId(), DEFAULT_FOLDER_ID)
+            RecentWidget.ACTION_PASSWORDS -> Screen.Passwords
             else -> null
         } ?: return
         // The new note starts the scanner or the recorder once it's open.

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Margin's autofill service: "Settings" beside it in Android's autofill list opens the app. -->
+<autofill-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.margin.app.MainActivity" />

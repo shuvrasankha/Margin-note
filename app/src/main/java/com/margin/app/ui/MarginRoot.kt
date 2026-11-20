@@ -238,7 +238,7 @@ fun MarginRoot(
             Screen.Passwords -> JournalGate(
                 editor, fingerprint, onCancel = ::back,
                 intro = "Passwords are locked. Choose a passcode to open them; locked notes use the same one.",
-            ) { PasswordsScreen(vault, onBack = ::back) }
+            ) { PasswordsScreen(vault, onBack = ::back, backLabel = backTo(below)) }
             Screen.Habits -> {
                 val all by folders.liveNotes.collectAsState()
                 HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onDelete = folders::deleteHabit, onBack = ::back,
@@ -308,6 +308,7 @@ fun MarginRoot(
                         todayGlance(
                             all, reminders, java.time.LocalDate.now(), java.time.ZoneId.systemDefault(),
                             onTodos = { nav.push(Screen.Todos) }, onReminders = { nav.push(Screen.Reminders) }, onJournal = { nav.push(Screen.Journal) },
+                            onPasswords = { nav.push(Screen.Passwords) },
                         )
                     }
                 } else null,

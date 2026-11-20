@@ -35,12 +35,14 @@ data class TodayGlance(
     /** The day of the next reminder after today, when none rings today. */
     val nextReminderDay: LocalDate?,
     val onTodos: () -> Unit, val onReminders: () -> Unit, val onJournal: () -> Unit,
+    /** Saved vault entries, counted without opening them; the card opens Passwords straight from home. */
+    val passwords: Int = 0, val onPasswords: (() -> Unit)? = null,
 )
 
 /** The glance for [today] from the live [notes] and the [reminders] (note id to when it rings). */
 fun todayGlance(
     notes: List<NoteEntity>, reminders: Map<String, Long>, today: LocalDate, zone: ZoneId,
-    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit,
+    onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onPasswords: (() -> Unit)? = null,
 ): TodayGlance {
     val ids = notes.mapTo(HashSet()) { it.id }
     return TodayGlance(
@@ -50,6 +52,7 @@ fun todayGlance(
             .map { Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }.filter { it.isAfter(today) }.minOrNull(),
         journaled = notes.any { journalDay(it) == today },
         onTodos = onTodos, onReminders = onReminders, onJournal = onJournal,
+        passwords = notes.count { com.margin.app.data.isLogin(it) }, onPasswords = onPasswords,
     )
 }
 
@@ -66,10 +69,39 @@ fun DateHeading(today: LocalDate) {
     }
 }
 
-/** Three small cards: to-do lists still open, reminders ringing today, and whether today's journal is written. */
+/**
+ * Three small cards: to-do lists still open, reminders ringing today, and whether today's journal is written;
+ * under them, a row that opens Passwords in one tap.
+ */
 @Composable
 fun TodayCards(g: TodayGlance, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier) {
+        TodayRow(g)
+        g.onPasswords?.let { PasswordsGlance(g.passwords, it, Modifier.padding(top = 10.dp)) }
+    }
+}
+
+/** Passwords from home: a key, how many are saved, and the way in. */
+@Composable
+private fun PasswordsGlance(count: Int, onClick: () -> Unit, modifier: Modifier) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        modifier.fillMaxWidth().padding(horizontal = 16.dp).pressScale(press).clip(JShape.lg).background(jc.card)
+            .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        IconTile(ICON_PASSWORDS, size = 26.dp)
+        Text("Passwords", Modifier.weight(1f), style = JType.item, color = jc.ink, maxLines = 1)
+        Text(if (count == 0) "Add" else "$count saved", style = JType.small, color = jc.muted, maxLines = 1)
+        JIcon(Ico.CHEVRON, jc.muted, size = 16.dp, stroke = 2f)
+    }
+}
+
+@Composable
+private fun TodayRow(g: TodayGlance) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         GlanceCard(Ico.CHECKLIST, "${g.openTodos}", if (g.openTodos == 1) "To-do open" else "To-dos open", g.onTodos, Modifier.weight(1f))
         // Reminders ringing today; on a day with none, when the next one rings, so the card never just reads 0.
         val next = g.nextReminderDay

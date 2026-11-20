@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Long-press the app icon: start a note, a scan or a voice note straight away. -->
+<!-- Long-press the app icon: start a note, a scan or a voice note straight away, or open Passwords. -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut android:shortcutId="new_note" android:enabled="true" android:icon="@drawable/shortcut_note"
         android:shortcutShortLabel="@string/shortcut_new_note">
@@ -14,6 +14,11 @@
     <shortcut android:shortcutId="voice" android:enabled="true" android:icon="@drawable/shortcut_voice"
         android:shortcutShortLabel="@string/shortcut_voice">
         <intent android:action="com.margin.app.VOICE_NOTE"
+            android:targetPackage="com.margin.note" android:targetClass="com.margin.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="passwords" android:enabled="true" android:icon="@drawable/shortcut_passwords"
+        android:shortcutShortLabel="@string/shortcut_passwords">
+        <intent android:action="com.margin.app.PASSWORDS"
             android:targetPackage="com.margin.note" android:targetClass="com.margin.app.MainActivity" />
     </shortcut>
 </shortcuts>
