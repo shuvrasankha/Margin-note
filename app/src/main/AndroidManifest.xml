@@ -88,6 +88,18 @@
             </intent-filter>
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
         </service>
+        <!-- Quick Settings: a voice command tile. -->
+        <service
+            android:name=".ui.VoiceCommandTile"
+            android:exported="true"
+            android:icon="@drawable/tile_voice_command"
+            android:label="@string/tile_voice_command"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
         <receiver
             android:name=".ui.RecentWidget"
             android:exported="false">
@@ -107,6 +119,27 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Margin.Popup"
             android:windowSoftInputMode="adjustResize|stateVisible" />
+        <!-- Voice commands ("remind me…", "add … to my shopping list") over the home screen, in its own task.
+             Also takes the Assistant's "create a note" text; nothing is saved until Save is tapped. -->
+        <activity
+            android:name=".ui.VoiceCommandActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/shortcut_voice_command"
+            android:noHistory="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Margin.Popup"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="com.margin.app.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.actions.CREATE_NOTE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".ui.ReminderAlarmActivity"
             android:exported="false"

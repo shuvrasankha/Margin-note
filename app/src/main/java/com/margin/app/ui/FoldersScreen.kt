@@ -120,7 +120,15 @@ fun FoldersScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     JIcon(Ico.SEARCH, jc.muted, size = 17.dp, stroke = 2f)
-                    Text("Search", style = JType.row, color = jc.muted)
+                    Text("Search", style = JType.row, color = jc.muted, modifier = Modifier.weight(1f))
+                    // Voice commands: "Remind me…", "Add … to my shopping list".
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    Box(
+                        Modifier.size(36.dp).clip(JShape.xs).clickable(role = Role.Button, onClickLabel = "Voice command") {
+                            context.startActivity(android.content.Intent(context, VoiceCommandActivity::class.java).setAction(VoiceCommandActivity.ACTION))
+                        }.semantics { contentDescription = "Voice command" },
+                        contentAlignment = Alignment.Center,
+                    ) { JIcon(Ico.MIC, jc.accent, size = 20.dp, stroke = 2f) }
                 }
             }
             syncBanner?.let { banner -> item { SyncBannerRow(banner, vm::retrySync) } }

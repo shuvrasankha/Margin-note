@@ -283,7 +283,8 @@ fun NoteListScreen(
                     style = JType.para, color = jc.muted,
                 )
             } else {
-                SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 16.dp), autoFocus = search, fill = jc.card)
+                SearchField(query, { vm.query.value = it; if (it.isBlank()) vm.searchScope.value = SearchScope.TOP }, "Search all notes", Modifier.padding(horizontal = 16.dp), autoFocus = search, fill = jc.card,
+                    onVoice = { lockContext.startActivity(android.content.Intent(lockContext, VoiceCommandActivity::class.java).setAction(VoiceCommandActivity.ACTION)) })
                 if (hasNotes) {
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(top = 12.dp, bottom = 4.dp),

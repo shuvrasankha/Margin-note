@@ -9,6 +9,8 @@
     <string name="shortcut_scan">Scan document</string>
     <string name="shortcut_voice">Voice note</string>
     <string name="shortcut_passwords">Passwords</string>
+    <string name="shortcut_voice_command">Voice command</string>
     <string name="autofill_unlock">Autofill with Margin</string>
     <string name="tile_new_note">New note</string>
+    <string name="tile_voice_command">Margin voice</string>
 </resources>

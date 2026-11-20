@@ -296,7 +296,11 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 
 /** The rounded grey search field. */
 @Composable
-fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false, fill: Color = jc.surface) {
+fun SearchField(
+    query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false, fill: Color = jc.surface,
+    /** Shows a microphone (for voice commands) while the field is empty. */
+    onVoice: (() -> Unit)? = null,
+) {
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
@@ -318,6 +322,12 @@ fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, 
                     .semantics { contentDescription = "Clear search" },
                 contentAlignment = Alignment.Center,
             ) { JIcon(Ico.CLOSE, jc.bg, size = 10.dp, stroke = 3.5f) }
+        } else if (onVoice != null) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onVoice)
+                    .semantics { contentDescription = "Voice command" },
+                contentAlignment = Alignment.Center,
+            ) { JIcon(Ico.MIC, jc.accent, size = 20.dp, stroke = 2f) }
         }
     }
 }
