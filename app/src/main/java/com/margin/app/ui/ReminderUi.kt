@@ -323,7 +323,8 @@ fun RemindersScreen(
                 }
                 return@LazyColumn
             }
-            if (rows.isNotEmpty()) item {
+            // With one reminder the card would only repeat the row below it.
+            if (rows.size > 1) item {
                 // The next one still to come, large, with how long until it rings and a few counts.
                 val next = rows.firstOrNull { it.at >= now } ?: rows.first()
                 val todayCount = rows.count { it.at >= now && group(it.at) == "Today" }
@@ -335,15 +336,17 @@ fun RemindersScreen(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         IconTile(Ico.ALARM, size = 48.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(if (next.at >= now) "Next up · " + countdown(next.at, now) else "Missed", style = JType.caption, color = if (next.at >= now) jc.muted else jc.danger)
+                            Text(if (next.at >= now) countdown(next.at, now).let { c -> if (c.startsWith("in ")) "Next up · $c" else "Next up" } else "Missed", style = JType.caption, color = if (next.at >= now) jc.muted else jc.danger)
                             Text(next.note?.displayTitle ?: "Write in your journal", style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(reminderLabel(context, next.at, next.repeat), style = JType.secondary, color = jc.accent, maxLines = 1)
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        StatTile("$todayCount", "Today", Modifier.weight(1f))
-                        StatTile("${rows.count { it.at >= now }}", "Coming up", Modifier.weight(1f))
-                        StatTile("${rows.count { it.repeat != Repeat.NEVER }}", "Repeating", Modifier.weight(1f))
+                    // Counts worth showing: none at 0, and no row for a single one (the list below says as much).
+                    val stats = listOf(
+                        todayCount to "Today", rows.count { it.at >= now } to "Coming up", rows.count { it.repeat != Repeat.NEVER } to "Repeating",
+                    ).filter { it.first > 0 }
+                    if (stats.size >= 2) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        stats.forEach { (n, label) -> StatTile("$n", label, Modifier.weight(1f)) }
                     }
                 }
             }

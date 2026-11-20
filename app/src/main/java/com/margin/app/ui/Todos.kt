@@ -126,57 +126,57 @@ fun TodoHeader(
     val today = todayEpochDay()
     val status = com.margin.app.data.todoStatus(count, startDay, target, today)
     val tint = if (status == TodoStatus.OVERDUE) jc.danger else jc.accent
-    // A card like the Reminders page's: an icon tile, the count large, where it stands, then the bar and target.
+    // One compact card: a progress ring and the count, then small chips for the target date and repeat.
     Column(
-        Modifier.padding(bottom = 14.dp).fillMaxWidth().clip(JShape.lg).background(jc.card).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(JShape.lg).background(jc.card).padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            IconTile(Ico.CHECKLIST, tint, size = 48.dp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("To-do list", style = JType.caption, color = jc.muted)
-                Text(if (count.total == 0) "No tasks yet" else "${count.done} of ${count.total} done", style = JType.subheading, color = jc.ink)
-                if (count.total > 0 && (target != null || count.complete)) {
-                    Text(statusLabel(status, target, today), style = JType.secondary, color = statusColor(status), maxLines = 1)
-                }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProgressRing(count.fraction, Modifier.size(34.dp), color = tint, stroke = 4.dp) {
+                JIcon(Ico.CHECKLIST, tint, size = 15.dp, stroke = 2f)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(if (count.total == 0) "No tasks yet" else "${count.done} of ${count.total} done", style = JType.rowTitle, color = jc.ink, maxLines = 1)
+                val sub = if (count.total > 0 && (target != null || count.complete)) statusLabel(status, target, today) else null
+                if (sub != null) Text(sub, style = JType.small, color = statusColor(status), maxLines = 1)
                 // A repeating list's run of rounds ticked off in full.
                 val run = com.margin.app.data.shownStreak(streak, count)
                 if (repeat != null && count.total > 0 && run > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        JIcon(Ico.SPARKLE, jc.accent, size = 14.dp, stroke = 2f)
-                        Text(com.margin.app.data.streakLabel(run, repeat), style = JType.secondary, color = jc.accent, maxLines = 1)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        JIcon(Ico.SPARKLE, jc.accent, size = 12.dp, stroke = 2f)
+                        Text(com.margin.app.data.streakLabel(run, repeat), style = JType.small, color = jc.accent, maxLines = 1)
                     }
                 }
             }
         }
-        if (count.total > 0) ProgressBar(count.fraction, color = tint)
-        val label = target?.let { "Target " + targetLabel(context, it) } ?: if (editable) "Add target date" else null
-        if (label != null) {
-            Row(
-                Modifier.fillMaxWidth().clip(JShape.sm).background(jc.page).clickable(enabled = editable, role = Role.Button, onClick = onPickTarget)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .semantics { contentDescription = if (target != null && editable) "$label. Tap to change it." else label },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                JIcon(ICON_TARGET, tint, size = 16.dp, stroke = 2f)
-                Text(label, Modifier.weight(1f), style = JType.secondary, color = if (target != null) jc.ink else tint)
-                if (editable && target != null) Text("Change", style = JType.small, color = jc.accent)
-            }
-        }
+        val targetLabel = target?.let { "Target " + targetLabel(context, it) } ?: if (editable) "Target date" else null
         // A list done again and again (a routine, the weekly shop) unticks itself each round.
-        val again = repeat?.let { "Unticks " + it.label.replaceFirstChar(Char::lowercase) } ?: if (editable && count.total > 0) "Repeat this list" else null
-        if (again != null) {
-            Row(
-                Modifier.fillMaxWidth().clip(JShape.sm).background(jc.page).clickable(enabled = editable, role = Role.Button, onClick = onPickRepeat)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                    .semantics { contentDescription = if (repeat != null && editable) "$again. Tap to change it." else again },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                JIcon(Ico.SYNC, tint, size = 16.dp, stroke = 2f)
-                Text(again, Modifier.weight(1f), style = JType.secondary, color = if (repeat != null) jc.ink else tint)
-                if (editable && repeat != null) Text("Change", style = JType.small, color = jc.accent)
+        val again = repeat?.label ?: if (editable && count.total > 0) "Repeat" else null
+        if (targetLabel != null || again != null) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (targetLabel != null) HeaderChip(
+                    ICON_TARGET, targetLabel, set = target != null, tint = tint, editable = editable, onClick = onPickTarget,
+                    description = if (target != null && editable) "$targetLabel. Tap to change it." else if (target == null) "Add target date" else targetLabel,
+                )
+                if (again != null) HeaderChip(
+                    Ico.SYNC, again, set = repeat != null, tint = tint, editable = editable, onClick = onPickRepeat,
+                    description = if (repeat != null) "Unticks ${again.lowercase()}." + (if (editable) " Tap to change it." else "") else "Repeat this list",
+                )
             }
         }
+    }
+}
+
+/** A small pill on the to-do card: tinted while not set yet (an action), plain once set. */
+@Composable
+private fun HeaderChip(icon: String, label: String, set: Boolean, tint: androidx.compose.ui.graphics.Color, editable: Boolean, onClick: () -> Unit, description: String) {
+    Row(
+        Modifier.height(32.dp).clip(JShape.pill).background(jc.page).clickable(enabled = editable, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp).semantics { contentDescription = description },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        JIcon(icon, tint, size = 14.dp, stroke = 2f)
+        Text(label, style = JType.small, color = if (set) jc.ink else tint, maxLines = 1)
     }
 }
 
@@ -354,13 +354,15 @@ private fun Summary(report: com.margin.app.data.TodoReport, today: Long) {
                 Text("Across ${plural(lists, "list")}", style = JType.secondary, color = jc.muted)
             }
         }
-        val stats = listOf(
+        val stats0 = listOf(
             Triple(report.count(TodoStatus.OVERDUE), "Overdue", jc.danger),
             Triple(report.count(TodoStatus.DUE_TODAY), "Due today", jc.accent),
             Triple(report.dueThisWeek(today), "This week", jc.ink),
             Triple(report.count(TodoStatus.BEHIND), "Behind", jc.accent),
             Triple(report.count(TodoStatus.DONE), "Done", jc.ink),
         ).filter { it.first > 0 }
+        // A lone tile (often just "1 Done") says less than the sections below; tiles earn their room in twos and threes.
+        val stats = if (stats0.size < 2) emptyList() else stats0
         stats.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { (n, label, color) -> StatTile("$n", label, Modifier.weight(1f), color = color) }
@@ -394,7 +396,8 @@ private fun ListRow(list: TodoList, context: Context, today: Long, open: Boolean
             )
         }
         val sc = statusColor(list.status)
-        Text(
+        // "No target date" and "All done" would only repeat the section heading above.
+        if (list.status != TodoStatus.NO_TARGET && list.status != TodoStatus.DONE) Text(
             statusLabel(list.status, target, today), Modifier.clip(JShape.pill).background(sc.copy(alpha = 0.12f)).padding(horizontal = 10.dp, vertical = 4.dp),
             style = JType.caption, color = sc, fontWeight = FontWeight.SemiBold, maxLines = 1,
         )

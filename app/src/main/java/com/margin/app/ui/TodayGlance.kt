@@ -134,7 +134,12 @@ private fun GlanceCard(icon: String, value: String, label: String, onClick: () -
     ) {
         IconTile(icon, size = 26.dp)
         Column {
-            Text(value, style = JType.rowTitle.copy(fontSize = 20.sp, lineHeight = 24.sp), fontWeight = FontWeight.Bold, color = if (accent) jc.accent else jc.ink, maxLines = 1)
+            // Shrinks to fit a word like "Tomorrow" rather than cutting it off.
+            androidx.compose.foundation.text.BasicText(
+                value, maxLines = 1,
+                style = JType.rowTitle.copy(fontSize = 20.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, color = if (accent) jc.accent else jc.ink),
+                autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 13.sp, maxFontSize = 20.sp),
+            )
             Text(label, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
