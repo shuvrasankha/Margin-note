@@ -368,6 +368,33 @@ class NoteRepository @Inject constructor(
     /** Turns read mode on or off: a note in read mode opens view-only. Not an edit of the text, so [NoteEntity.editedAt] stays. */
     suspend fun setViewOnly(id: String, on: Boolean) = update(id) { it.copy(viewOnly = on, updatedAt = now()) }
 
+    /** Makes a checklist untick itself each round of [repeat] (null: never), counting from now. */
+    suspend fun setListRepeat(id: String, repeat: ListRepeat?) =
+        update(id) { it.copy(resetEvery = repeat?.encode(), resetAt = now(), updatedAt = now()) }
+
+    /**
+     * Unticks the repeating lists whose new round has begun. A list with nothing ticked only notes the round,
+     * without counting as an edit (nothing to sync). Returns how many lists were unticked.
+     */
+    private val _listsReset = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
+    /** Ids of lists just unticked for a new round, so an open editor unticks its copy too. */
+    val listsReset: kotlinx.coroutines.flow.SharedFlow<String> = _listsReset
+
+    suspend fun resetRepeatingLists(now: java.time.ZonedDateTime = zonedNow()): Int {
+        val at = now.toInstant().toEpochMilli()
+        var count = 0
+        for (note in notes.live()) {
+            if (!roundOver(note, now)) continue
+            if (anyTicked(note.blocks)) {
+                notes.upsert(note.withBlocks(unticked(note.blocks), at).copy(resetAt = at))
+                _listsReset.tryEmit(note.id)
+                count++
+            } else notes.upsert(note.copy(resetAt = at))
+        }
+        if (count > 0) scheduler.requestDebounced()
+        return count
+    }
+
     suspend fun setFont(id: String, font: NoteFont) =
         update(id) { it.copy(font = font.name.takeIf { font != NoteFont.DEFAULT }, updatedAt = now()) }
 

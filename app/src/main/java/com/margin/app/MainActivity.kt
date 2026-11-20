@@ -1,6 +1,8 @@
 package com.margin.app
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +51,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var lockSession: LockSession
     @Inject lateinit var appPrefs: AppPrefs
     @Inject lateinit var appLock: com.margin.app.data.AppLock
+    @Inject lateinit var repository: com.margin.app.data.NoteRepository
 
     /** Margin opened another app for a result (camera, file picker, scanner): coming back doesn't lock it. */
     private var awaitingResult = false
@@ -122,6 +125,8 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         awaitingResult = false
+        // Back the next morning with Margin still open: today's round of a repeating list starts unticked.
+        lifecycleScope.launch { repository.resetRepeatingLists() }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

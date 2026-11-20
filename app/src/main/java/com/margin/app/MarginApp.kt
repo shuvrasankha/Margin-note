@@ -30,6 +30,9 @@ class MarginApp : Application() {
             repository.purgeExpiredTrash()
             attachmentFiles.cleanUp(repository.attachmentsInUse())
         }
+        // Repeating checklists: untick the ones whose new round began while Margin was closed, then hourly.
+        appScope.launch { repository.resetRepeatingLists() }
+        com.margin.app.sync.ListResetWorker.schedule(this)
         // Keeps the home-screen widget current while the process runs (app or background sync).
         appScope.launch {
             repository.liveNotes().collect {

@@ -751,6 +751,8 @@ class EditorViewModel @Inject constructor(
     var createdAt by mutableStateOf<Long?>(null); private set
     /** The open note's to-do target end date (an epoch day), or null. */
     var targetDate by mutableStateOf<Long?>(null); private set
+    /** How often this checklist unticks itself, or null. */
+    var listRepeat by mutableStateOf<com.margin.app.data.ListRepeat?>(null); private set
     /** The paper behind the note's text. */
     var paper by mutableStateOf(com.margin.app.data.Paper.PLAIN); private set
     var font by mutableStateOf(com.margin.app.data.NoteFont.DEFAULT); private set
@@ -778,6 +780,12 @@ class EditorViewModel @Inject constructor(
     private var lockParams: NoteCrypto.KeyParams? = null
 
     init {
+        // A repeating list unticked for its new round while open here (back the next morning): untick this copy too.
+        viewModelScope.launch {
+            repo.listsReset.collect { id ->
+                if (id == noteId && !readOnly) current = EditorDoc.fromBlocks(com.margin.app.data.unticked(current.toBlocks()))
+            }
+        }
         // When the app locks (it went to the background), hide an open locked note's body again.
         viewModelScope.launch {
             session.unlocked.collect { unlocked ->
@@ -814,6 +822,7 @@ class EditorViewModel @Inject constructor(
             pinned = note?.isPinned == true
             createdAt = note?.createdAt
             targetDate = note?.targetDate
+            listRepeat = note?.let { com.margin.app.data.ListRepeat.parse(it.resetEvery) }
             paper = note?.paperStyle ?: com.margin.app.data.Paper.PLAIN
             font = note?.fontStyle ?: com.margin.app.data.NoteFont.DEFAULT
             conflictWith = note?.takeIf { it.trashedAt == null && !it.isLocked }
@@ -1660,6 +1669,13 @@ class EditorViewModel @Inject constructor(
         if (readOnly) return
         targetDate = day
         afterSave { repo.setTargetDate(it, day) }
+    }
+
+    /** Makes the checklist untick itself each round of [repeat] (null: never); a new note is saved first. */
+    fun changeListRepeat(repeat: com.margin.app.data.ListRepeat?) {
+        if (readOnly) return
+        listRepeat = repeat
+        afterSave { repo.setListRepeat(it, repeat) }
     }
 
     /** Sets the paper behind the note's text; a new note is saved first. */

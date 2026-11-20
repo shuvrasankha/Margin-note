@@ -225,6 +225,8 @@ fun EditorScreen(
     placeAccess.Dialogs()
     /** The to-do target date picker is open. */
     var pickingTarget by remember { mutableStateOf(false) }
+    var pickingRepeat by remember { mutableStateOf(false) }
+    if (pickingRepeat) ListRepeatDialog(vm.listRepeat, onPick = { pickingRepeat = false; vm.changeListRepeat(it) }, onDismiss = { pickingRepeat = false })
     var pickingPaper by remember { mutableStateOf(false) }
     if (pickingPaper) PaperDialog(vm.paper, onPick = { pickingPaper = false; vm.changePaper(it) }, onDismiss = { pickingPaper = false })
     var pickingFont by remember { mutableStateOf(false) }
@@ -598,6 +600,7 @@ fun EditorScreen(
                     TodoHeader(
                         todo, startDay = epochDay(vm.createdAt ?: System.currentTimeMillis(), java.time.ZoneId.systemDefault()),
                         target = vm.targetDate, editable = !vm.readOnly, onPickTarget = { pickingTarget = true },
+                        repeat = vm.listRepeat, onPickRepeat = { pickingRepeat = true },
                     )
                 }
                 vm.conflictWith?.let { original -> ConflictChooser(original.displayTitle, vm, onBack) }

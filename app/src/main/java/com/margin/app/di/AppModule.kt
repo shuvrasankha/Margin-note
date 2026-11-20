@@ -12,6 +12,7 @@ import com.margin.app.data.MIGRATION_6_7
 import com.margin.app.data.MIGRATION_7_8
 import com.margin.app.data.MIGRATION_8_9
 import com.margin.app.data.MIGRATION_9_10
+import com.margin.app.data.MIGRATION_10_11
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,5 +27,5 @@ object AppModule {
     @Singleton
     fun database(@ApplicationContext context: Context): MarginDatabase =
         // Stored under the app's old name (Jotter); renaming it would lose what is saved.
-        Room.databaseBuilder(context, MarginDatabase::class.java, "jotter.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build()
+        Room.databaseBuilder(context, MarginDatabase::class.java, "jotter.db").addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).build()
 }

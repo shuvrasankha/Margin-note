@@ -210,6 +210,13 @@ data class NoteEntity(
      * turned off again. Older versions ignore it when syncing.
      */
     @ColumnInfo(defaultValue = "0") val viewOnly: Boolean = false,
+    /**
+     * A checklist that unticks itself each round (schema v11): a [ListRepeat] encoded, or null. Older versions
+     * ignore it when syncing.
+     */
+    val resetEvery: String? = null,
+    /** When the list last unticked for a new round, or its repeat was turned on (epoch millis). */
+    @ColumnInfo(defaultValue = "0") val resetAt: Long = 0,
 )
 
 val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN

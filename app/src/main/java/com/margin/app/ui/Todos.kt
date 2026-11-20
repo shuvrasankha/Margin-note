@@ -5,6 +5,8 @@ import android.text.format.DateUtils
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -116,7 +118,10 @@ fun ProgressBar(fraction: Float, modifier: Modifier = Modifier, color: Color = j
  * where the list stands. Counts come from the note as typed, so they move as tasks are ticked.
  */
 @Composable
-fun TodoHeader(count: TodoCount, startDay: Long, target: Long?, editable: Boolean, onPickTarget: () -> Unit) {
+fun TodoHeader(
+    count: TodoCount, startDay: Long, target: Long?, editable: Boolean, onPickTarget: () -> Unit,
+    repeat: com.margin.app.data.ListRepeat? = null, onPickRepeat: () -> Unit = {},
+) {
     val context = LocalContext.current
     val today = todayEpochDay()
     val status = com.margin.app.data.todoStatus(count, startDay, target, today)
@@ -149,6 +154,64 @@ fun TodoHeader(count: TodoCount, startDay: Long, target: Long?, editable: Boolea
                 Text(label, Modifier.weight(1f), style = JType.secondary, color = if (target != null) jc.ink else tint)
                 if (editable && target != null) Text("Change", style = JType.small, color = jc.accent)
             }
+        }
+        // A list done again and again (a routine, the weekly shop) unticks itself each round.
+        val again = repeat?.let { "Unticks " + it.label.replaceFirstChar(Char::lowercase) } ?: if (editable && count.total > 0) "Repeat this list" else null
+        if (again != null) {
+            Row(
+                Modifier.fillMaxWidth().clip(JShape.sm).background(jc.page).clickable(enabled = editable, role = Role.Button, onClick = onPickRepeat)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                    .semantics { contentDescription = if (repeat != null && editable) "$again. Tap to change it." else again },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                JIcon(Ico.SYNC, tint, size = 16.dp, stroke = 2f)
+                Text(again, Modifier.weight(1f), style = JType.secondary, color = if (repeat != null) jc.ink else tint)
+                if (editable && repeat != null) Text("Change", style = JType.small, color = jc.accent)
+            }
+        }
+    }
+}
+
+/** Picks how often a checklist unticks itself: never, every day, every week on a day, or every month. */
+@Composable
+fun ListRepeatDialog(current: com.margin.app.data.ListRepeat?, onPick: (com.margin.app.data.ListRepeat?) -> Unit, onDismiss: () -> Unit) {
+    var weekly by remember { mutableStateOf(current?.kind == com.margin.app.data.ListRepeat.Kind.WEEKLY) }
+    val day = current?.takeIf { it.kind == com.margin.app.data.ListRepeat.Kind.WEEKLY }?.day ?: LocalDate.now().dayOfWeek
+    Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.clip(JShape.lg).background(jc.bg).padding(vertical = 16.dp)) {
+            Text("Repeat this list", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            Text("Every task unticks at the start of each round, ready to tick off again.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+            Spacer(Modifier.height(8.dp))
+            @Composable fun option(label: String, on: Boolean, onClick: () -> Unit) = Row(
+                Modifier.fillMaxWidth().height(52.dp).clickable(role = Role.RadioButton, onClick = onClick).padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, Modifier.weight(1f), style = JType.item, color = if (on) jc.accent else jc.ink)
+                if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
+            }
+            option("Never", current == null && !weekly) { onPick(null) }
+            option("Every day", current?.kind == com.margin.app.data.ListRepeat.Kind.DAILY && !weekly) { onPick(com.margin.app.data.ListRepeat(com.margin.app.data.ListRepeat.Kind.DAILY)) }
+            option("Every week", weekly) { weekly = true }
+            if (weekly) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    java.time.DayOfWeek.entries.forEach { d ->
+                        val on = current?.kind == com.margin.app.data.ListRepeat.Kind.WEEKLY && d == day
+                        Text(
+                            d.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault()),
+                            Modifier.clip(JShape.md).background(if (on) jc.accent else jc.bg)
+                                .border(1.dp, if (on) jc.accent else jc.line, JShape.md)
+                                .clickable(role = Role.RadioButton) { onPick(com.margin.app.data.ListRepeat(com.margin.app.data.ListRepeat.Kind.WEEKLY, d)) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .semantics { contentDescription = "Every " + d.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault()) },
+                            style = JType.small, color = if (on) jc.bg else jc.ink,
+                        )
+                    }
+                }
+            }
+            option("Every month", current?.kind == com.margin.app.data.ListRepeat.Kind.MONTHLY && !weekly) { onPick(com.margin.app.data.ListRepeat(com.margin.app.data.ListRepeat.Kind.MONTHLY)) }
         }
     }
 }
