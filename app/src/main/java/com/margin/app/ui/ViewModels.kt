@@ -142,7 +142,14 @@ sealed interface Screen {
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
-data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false, val open: Boolean = false)
+data class SharedIn(
+    val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false, val open: Boolean = false,
+    /** Saved as a note of its own even if it's a copy of a list Margin already has. */
+    val asNote: Boolean = false,
+)
+
+/** A shared checklist that matches a list here: [merge] shows what updating it would change. */
+data class ListMatch(val note: NoteEntity, val list: com.margin.app.data.SharedList, val merge: com.margin.app.data.ListMerge)
 
 /**
  * Reads a share intent; null for anything else (or a share with nothing usable in it). [typeOf] finds a URI's
@@ -241,8 +248,28 @@ class FoldersViewModel @Inject constructor(
             }
             if (attachment == null && text.isNullOrBlank() && subject.isNullOrBlank()) return@launch
             val id = newId()
-            repo.saveNote(id, folderId, sharedNoteBlocks(subject, text, attachment))
+            // A checklist shared as text comes in as a checklist, not as "[ ] Milk" lines.
+            val list = if (attachment == null) com.margin.app.data.parseSharedList(subject, text) else null
+            repo.saveNote(id, folderId, list?.let { com.margin.app.data.sharedListBlocks(it) } ?: sharedNoteBlocks(subject, text, attachment))
             onSaved(id)
+        }
+    }
+
+    /** A shared checklist whose list is already here (same name), with what updating it would add and tick off; else null. */
+    fun listMatch(share: SharedIn, notes: List<NoteEntity>): ListMatch? {
+        if (share.asNote || share.image != null) return null
+        val list = com.margin.app.data.parseSharedList(share.subject, share.text)?.takeIf { it.title.isNotBlank() } ?: return null
+        val note = com.margin.app.data.VoiceActions.findList(notes, list.title) ?: return null
+        return ListMatch(note, list, com.margin.app.data.mergeSharedList(note.blocks, list))
+    }
+
+    /** Updates the matched list with the shared copy, read fresh so nothing typed meanwhile is lost; [onSaved] opens it. */
+    fun mergeShared(match: ListMatch, onSaved: (id: String, folderId: String) -> Unit) {
+        viewModelScope.launch {
+            val note = repo.getNote(match.note.id) ?: return@launch
+            val merged = com.margin.app.data.mergeSharedList(note.blocks, match.list)
+            if (merged.changed) repo.saveNote(note.id, note.folderId, merged.blocks)
+            onSaved(note.id, note.folderId)
         }
     }
 

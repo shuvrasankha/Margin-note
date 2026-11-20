@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -100,7 +101,37 @@ fun MarginRoot(
             }
         }
     }
-    nav.incoming?.takeIf { !it.open }?.let { share ->
+    // A list shared back (Share → Text from someone's Margin): update the list of the same name rather than file a copy.
+    val allNotes by folders.liveNotes.collectAsState()
+    val listMatch = nav.incoming?.takeIf { !it.open }?.let { share -> remember(share, allNotes) { folders.listMatch(share, allNotes) } }
+    if (listMatch != null) {
+        val share = nav.incoming!!
+        val m = listMatch.merge
+        val name = listMatch.note.title.ifBlank { listMatch.list.title }
+        MarginDialog(
+            onDismissRequest = { nav.incoming = null },
+            title = { Text(if (m.changed) "Update “$name”?" else "“$name” is up to date") },
+            text = {
+                Text(
+                    if (!m.changed) "It already has everything on the shared list."
+                    else listOfNotNull(
+                        m.added.takeIf { it > 0 }?.let { if (it == 1) "Adds 1 item" else "Adds $it items" },
+                        m.ticked.takeIf { it > 0 }?.let { "ticks off $it" },
+                    ).joinToString(" and ").replaceFirstChar { it.uppercase() } + ". Nothing is removed.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    nav.incoming = null
+                    folders.mergeShared(listMatch) { id, folderId ->
+                        if (nav.current is Screen.Editor) editor.close()
+                        nav.push(Screen.Editor(id, folderId))
+                    }
+                }) { Text(if (m.changed) "Update List" else "Open List") }
+            },
+            dismissButton = { TextButton(onClick = { nav.incoming = share.copy(asNote = true) }) { Text("Save as New Note") } },
+        )
+    } else nav.incoming?.takeIf { !it.open }?.let { share ->
         FolderSheet(
             title = "Save to Margin",
             subject = share.subject?.takeIf { it.isNotBlank() } ?: share.text?.lineSequence()?.firstOrNull { it.isNotBlank() } ?: if (share.pdf) "PDF" else "Photo",
