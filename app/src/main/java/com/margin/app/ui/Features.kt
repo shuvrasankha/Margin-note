@@ -36,6 +36,7 @@ internal val FEATURES: List<Pair<String, List<Feature>>> = listOf(
         Feature(Ico.GRAMMAR, "Spelling and grammar", "Mistakes are underlined as you type; tap one to see why and fix it. Works offline, with an optional fuller online check."),
         Feature(Ico.SEARCH, "Find and replace", "Find in a note and replace words in it."),
         Feature(ICON_HISTORY, "Version history", "Go back to an earlier version of a note."),
+        Feature(Ico.PEN, "Writing stats", "Word count, reading time and a daily word goal with a streak."),
     ),
     "Math" to listOf(
         Feature(Ico.NUMBERS, "Answers as you type", "End a line with = to get the answer: sums, percentages, powers, roots, trig, logs and factorials."),

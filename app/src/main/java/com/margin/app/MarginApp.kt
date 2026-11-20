@@ -20,6 +20,7 @@ class MarginApp : Application() {
     @Inject lateinit var attachmentIndex: com.margin.app.data.AttachmentIndex
     @Inject lateinit var backupPrefs: com.margin.app.sync.BackupPrefs
     @Inject lateinit var placeReminders: com.margin.app.data.PlaceReminders
+    @Inject lateinit var pinnedNotes: com.margin.app.data.PinnedNotes
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -38,6 +39,8 @@ class MarginApp : Application() {
             repository.liveNotes().collect {
                 RecentWidget.push(this@MarginApp, it)
                 com.margin.app.ui.ListWidget.push(this@MarginApp, it)
+                // Notes pinned to the shade; also puts them back after a restart, when this process starts.
+                pinnedNotes.refresh(it)
             }
         }
         // Place reminders: Android or Play services may have dropped the geofences (restart, update, data cleared).

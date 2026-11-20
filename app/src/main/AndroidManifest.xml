@@ -193,6 +193,10 @@
                 <action android:name="android.location.PROVIDERS_CHANGED" />
             </intent-filter>
         </receiver>
+        <!-- Notes pinned to the notification shade: tick the next task, or unpin. -->
+        <receiver
+            android:name=".ui.PinReceiver"
+            android:exported="false" />
         <!-- Autofill: fills and saves passwords in other apps and browsers, once the vault is unlocked. -->
         <service
             android:name=".autofill.MarginAutofillService"

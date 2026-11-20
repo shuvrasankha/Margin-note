@@ -29,6 +29,7 @@ import com.margin.app.data.isDrawing
 import com.margin.app.data.clock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
+import com.margin.app.data.displayTitle
 import kotlinx.coroutines.Dispatchers
 import com.margin.app.data.Appearance
 import com.margin.app.data.Toggle
@@ -635,8 +636,11 @@ class EditorViewModel @Inject constructor(
     val files: AttachmentFiles,
     private val reminders: com.margin.app.data.Reminders,
     private val places: com.margin.app.data.PlaceReminders,
+    private val shade: com.margin.app.data.PinnedNotes,
+    private val aisles: com.margin.app.data.AisleChoices,
     val ai: com.margin.app.data.AiKeys,
     private val appLock: com.margin.app.data.AppLock,
+    val writing: com.margin.app.data.WritingLog,
 ) : ViewModel() {
     companion object {
         const val START_SCAN = "scan"
@@ -665,6 +669,65 @@ class EditorViewModel @Inject constructor(
     fun recentPlaces() = places.recent()
     /** Once location access is given: watch the places set before it. */
     fun watchPlaces() = places.registerAll()
+
+    /** Copying a list's tasks elsewhere: not from a locked note, which is never shown outside it. */
+    val canCopyTasks get() = !needsUnlock && !locked && !trashed
+    /** Moving takes them out of this note, so it has to be editable too. */
+    val canMoveTasks get() = canCopyTasks && !readOnly && !viewOnly
+
+    /**
+     * Moves (or with [copy], copies) the tasks on [lines] of this note into the list [to], or a new list called
+     * [newTitle] in this note's folder. Moving takes them out here as one edit, so Undo brings them back.
+     * [onDone] gets the list's name and how many tasks it gained.
+     */
+    fun moveTasks(lines: Set<Int>, to: NoteEntity?, newTitle: String, copy: Boolean, onDone: (String, Int) -> Unit) {
+        if (!canCopyTasks || (!copy && !canMoveTasks)) return
+        val blocks = doc.toBlocks()
+        val tasks = lines.sorted().mapNotNull { blocks.getOrNull(it) }.filter { it.type == com.margin.app.data.BlockType.CHECK }
+        if (tasks.isEmpty()) return
+        viewModelScope.launch {
+            val result: Pair<String, Int> = if (to == null) {
+                val title = newTitle.trim().ifEmpty { "New list" }
+                repo.saveNote(com.margin.app.data.newId(), folderId.ifEmpty { com.margin.app.data.DEFAULT_FOLDER_ID }, com.margin.app.data.newListBlocks(title, tasks))
+                title to tasks.size
+            } else {
+                val fresh = repo.getNote(to.id)?.takeIf { it.cipher == null && it.trashedAt == null && !it.deleted } ?: return@launch
+                val r = com.margin.app.data.withTasksAdded(fresh.blocks, tasks)
+                if (r.added > 0) repo.saveNote(fresh.id, fresh.folderId, r.blocks)
+                fresh.displayTitle to r.added
+            }
+            val (name, gained) = result
+            if (!copy && doc.toBlocks() == blocks) {
+                lastChangeAt = 0 // its own undo step
+                doc = EditorDoc.fromBlocks(com.margin.app.data.withoutLines(blocks, lines))
+                value = TextFieldValue(doc.text, TextRange(0))
+                changed()
+            }
+            onDone(name, gained)
+        }
+    }
+
+    /** A list's tasks can be sorted into aisles: it's editable (not just tickable). */
+    val canSortAisles get() = !needsUnlock && !trashed && !readOnly && !viewOnly
+    fun aisleChoices() = aisles.all()
+    fun chooseAisle(text: String, aisle: com.margin.app.data.Aisle) = aisles.set(text, aisle)
+
+    /** Groups the list's tasks under aisle headings in shop order, as one edit that Undo takes back. */
+    fun sortByAisle() {
+        if (!canSortAisles) return
+        val sorted = com.margin.app.data.byAisle(doc.toBlocks(), aisles.all())
+        if (sorted == doc.toBlocks()) return
+        lastChangeAt = 0
+        doc = EditorDoc.fromBlocks(sorted)
+        value = TextFieldValue(doc.text, TextRange(0))
+        changed()
+    }
+
+    /** Whether this note is kept in the notification shade. */
+    val inShade: StateFlow<Boolean> = combine(shade.ids, openId) { all, id -> id in all }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** Keeps the note in the notification shade (a new note is saved first). */
+    fun pinToShade() { if (!trashed) afterSave { id -> repo.getNote(id)?.let(shade::pin) } }
+    fun unpinFromShade() { if (noteId.isNotEmpty()) shade.unpin(noteId) }
 
     /** A reminder can be set: the note is stored, or has text that will be saved first. */
     val canRemind get() = !trashed && !needsUnlock && (exists || doc.text.isNotBlank())
@@ -753,6 +816,8 @@ class EditorViewModel @Inject constructor(
     var targetDate by mutableStateOf<Long?>(null); private set
     /** How often this checklist unticks itself, or null. */
     var listRepeat by mutableStateOf<com.margin.app.data.ListRepeat?>(null); private set
+    /** Its rounds ticked off in full in a row, before this one. */
+    var listStreak by mutableStateOf(0); private set
     /** The paper behind the note's text. */
     var paper by mutableStateOf(com.margin.app.data.Paper.PLAIN); private set
     var font by mutableStateOf(com.margin.app.data.NoteFont.DEFAULT); private set
@@ -780,10 +845,14 @@ class EditorViewModel @Inject constructor(
     private var lockParams: NoteCrypto.KeyParams? = null
 
     init {
-        // A repeating list unticked for its new round while open here (back the next morning): untick this copy too.
+        // Tasks ticked while open here, on the widget or a pinned notification, or unticked for a repeating
+        // list's new round: take those ticks into this copy, so its next save doesn't undo them.
         viewModelScope.launch {
-            repo.listsReset.collect { id ->
-                if (id == noteId && !readOnly) current = EditorDoc.fromBlocks(com.margin.app.data.unticked(current.toBlocks()))
+            repo.ticksElsewhere.collect { id ->
+                if (id != noteId || needsUnlock) return@collect
+                val stored = repo.getNote(id) ?: return@collect
+                current = EditorDoc.fromBlocks(com.margin.app.data.withTicksFrom(current.toBlocks(), stored.blocks))
+                listStreak = stored.streak
             }
         }
         // When the app locks (it went to the background), hide an open locked note's body again.
@@ -823,6 +892,7 @@ class EditorViewModel @Inject constructor(
             createdAt = note?.createdAt
             targetDate = note?.targetDate
             listRepeat = note?.let { com.margin.app.data.ListRepeat.parse(it.resetEvery) }
+            listStreak = note?.streak ?: 0
             paper = note?.paperStyle ?: com.margin.app.data.Paper.PLAIN
             font = note?.fontStyle ?: com.margin.app.data.NoteFont.DEFAULT
             conflictWith = note?.takeIf { it.trashedAt == null && !it.isLocked }
@@ -1673,8 +1743,9 @@ class EditorViewModel @Inject constructor(
 
     /** Makes the checklist untick itself each round of [repeat] (null: never); a new note is saved first. */
     fun changeListRepeat(repeat: com.margin.app.data.ListRepeat?) {
-        if (readOnly) return
+        if (readOnly || repeat == listRepeat) return // the same again keeps its streak
         listRepeat = repeat
+        listStreak = 0
         afterSave { repo.setListRepeat(it, repeat) }
     }
 
@@ -1745,6 +1816,8 @@ class EditorViewModel @Inject constructor(
             val params = lockParams ?: return null
             (session.cachedKey(params) ?: return null) to params
         } else null
+        // Words written today, for the daily goal: the change since the last save, net.
+        writing.record(com.margin.app.data.noteWords(current) - com.margin.app.data.noteWords(lastSaved))
         lastSaved = current
         isNew = false
         val id = noteId

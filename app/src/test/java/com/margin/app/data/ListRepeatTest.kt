@@ -67,3 +67,35 @@ class ListRepeatTest {
         assertEquals(blocks.map { it.type }, out.map { it.type })
     }
 }
+
+class ListStreakTest {
+    private val zone = ZoneId.of("Europe/Berlin")
+    private fun at(y: Int, m: Int, d: Int, h: Int = 12) = ZonedDateTime.of(y, m, d, h, 0, 0, 0, zone)
+    private val daily = ListRepeat(ListRepeat.Kind.DAILY)
+    private fun list(done: Boolean, streak: Int, resetAt: ZonedDateTime) = NoteEntity(
+        "n", "f", listOf(Block(type = BlockType.CHECK, text = "Stretch", checked = true), Block(type = BlockType.CHECK, text = "Run", checked = done)),
+        "Gym", "", createdAt = 0, updatedAt = 0, resetEvery = daily.encode(), resetAt = resetAt.toInstant().toEpochMilli(), streak = streak,
+    )
+
+    @Test fun growsWhenEachRoundIsDone() {
+        assertEquals(4, nextStreak(list(true, 3, at(2026, 11, 19, 0)), at(2026, 11, 20, 0)))
+        // Reset at 6 in the morning still counts as that day's round.
+        assertEquals(4, nextStreak(list(true, 3, at(2026, 11, 19, 6)), at(2026, 11, 20, 9)))
+    }
+
+    @Test fun startsOverWhenARoundIsMissedOrUnfinished() {
+        assertEquals(0, nextStreak(list(false, 3, at(2026, 11, 19)), at(2026, 11, 20, 1)))
+        assertEquals(1, nextStreak(list(true, 3, at(2026, 11, 17)), at(2026, 11, 20, 1)))
+    }
+
+    @Test fun weeklyAndLabels() {
+        val weekly = ListRepeat(ListRepeat.Kind.WEEKLY, DayOfWeek.MONDAY)
+        val n = list(true, 1, at(2026, 11, 16, 8)).copy(resetEvery = weekly.encode())
+        assertEquals(2, nextStreak(n, at(2026, 11, 23, 1)))
+        assertEquals(1, nextStreak(n, at(2026, 11, 30, 1)))
+        assertEquals("1 week in a row", streakLabel(1, weekly))
+        assertEquals("5 days in a row", streakLabel(5, daily))
+        assertEquals(3, shownStreak(2, TodoCount(2, 2)))
+        assertEquals(2, shownStreak(2, TodoCount(1, 2)))
+    }
+}

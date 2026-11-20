@@ -164,7 +164,7 @@ private fun PlaceRow(icon: String, label: String, detail: String?, danger: Boole
 }
 
 @Composable
-private fun PlainField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, search: Boolean = false, onDone: () -> Unit) {
+internal fun PlainField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, search: Boolean = false, onDone: () -> Unit) {
     Box(modifier.fillMaxWidth().height(44.dp).clip(JShape.sm).background(jc.surface).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
         if (value.isEmpty()) Text(placeholder, style = JType.row, color = jc.muted, maxLines = 1)
         BasicTextField(

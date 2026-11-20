@@ -44,9 +44,8 @@ class ListWidget : AppWidgetProvider() {
         val noteId = intent.getStringExtra(EXTRA_NOTE) ?: return
         val blockId = intent.getStringExtra(EXTRA_BLOCK) ?: return
         async {
-            val note = repo.getNote(noteId)?.takeIf { !it.deleted && it.trashedAt == null && it.cipher == null }
             // Saving fires the app's note watcher, which pushes the new views; push here too in case it isn't running.
-            if (note != null) repo.saveNote(note.id, note.folderId, ListWidgetData.toggled(note.blocks, blockId))
+            repo.toggleTask(noteId, blockId)
             push(context, repo.liveNotes().first())
         }
     }

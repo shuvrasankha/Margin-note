@@ -217,6 +217,8 @@ data class NoteEntity(
     val resetEvery: String? = null,
     /** When the list last unticked for a new round, or its repeat was turned on (epoch millis). */
     @ColumnInfo(defaultValue = "0") val resetAt: Long = 0,
+    /** Rounds of a repeating list fully ticked off in a row, up to its last reset (schema v12). */
+    @ColumnInfo(defaultValue = "0") val streak: Int = 0,
 )
 
 val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN

@@ -88,3 +88,56 @@ fun todoReport(notes: List<NoteEntity>, today: Long, zone: ZoneId): TodoReport =
         )
         .toList(),
 )
+
+/**
+ * [blocks] with each task ticked as it is in [stored], matching tasks by their text (the nth "Milk" to the
+ * nth "Milk"). Everything else in [blocks], edits not yet saved included, stays as it is.
+ */
+fun withTicksFrom(blocks: List<Block>, stored: List<Block>): List<Block> {
+    val ticks = stored.filter { it.type == BlockType.CHECK }.groupBy({ it.text.trim() }, { it.checked })
+    val seen = mutableMapOf<String, Int>()
+    return blocks.map { b ->
+        if (b.type != BlockType.CHECK) return@map b
+        val key = b.text.trim()
+        val n = seen.merge(key, 1, Int::plus)!! - 1
+        ticks[key]?.getOrNull(n)?.let { if (it != b.checked) b.copy(checked = it) else b } ?: b
+    }
+}
+
+private fun taskKey(text: String) = text.trim().lowercase().replace(Regex("\\s+"), " ")
+
+/** [tasks] added to another list's [blocks], and how many it didn't have yet. */
+data class TasksAdded(val blocks: List<Block>, val added: Int)
+
+/**
+ * Brings [tasks] into a list: after its last task, or at the end when it has none. A task it already has still
+ * to do isn't added twice; one it has ticked off comes back as to do (when the task brought in is to do).
+ */
+fun withTasksAdded(blocks: List<Block>, tasks: List<Block>): TasksAdded {
+    val out = blocks.toMutableList()
+    var added = 0
+    for (t in tasks) {
+        val k = taskKey(t.text)
+        val same = out.indexOfFirst { it.type == BlockType.CHECK && taskKey(it.text) == k }
+        if (same >= 0) {
+            if (out[same].checked && !t.checked) { out[same] = out[same].copy(checked = false); added++ }
+            continue
+        }
+        val task = t.copy(id = newId(), type = BlockType.CHECK, indent = 0)
+        val last = out.indexOfLast { it.type == BlockType.CHECK }
+        if (last >= 0) out.add(last + 1, task) else {
+            if (out.size > 1 && out.last().type == BlockType.BODY && out.last().text.isBlank() && !out.last().isObject) out.removeAt(out.lastIndex)
+            out.add(task)
+        }
+        added++
+    }
+    return TasksAdded(out, added)
+}
+
+/** A new list holding [tasks], called [title]. */
+fun newListBlocks(title: String, tasks: List<Block>): List<Block> =
+    listOf(Block(type = BlockType.TITLE, text = title)) + tasks.map { it.copy(id = newId(), indent = 0) }
+
+/** [blocks] without the lines at [indices] (moved away); the title always stays. */
+fun withoutLines(blocks: List<Block>, indices: Set<Int>): List<Block> =
+    blocks.filterIndexed { i, _ -> i == 0 || i !in indices }.ifEmpty { blocks.take(1) }

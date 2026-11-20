@@ -370,26 +370,37 @@ class NoteRepository @Inject constructor(
 
     /** Makes a checklist untick itself each round of [repeat] (null: never), counting from now. */
     suspend fun setListRepeat(id: String, repeat: ListRepeat?) =
-        update(id) { it.copy(resetEvery = repeat?.encode(), resetAt = now(), updatedAt = now()) }
+        update(id) { it.copy(resetEvery = repeat?.encode(), resetAt = now(), streak = 0, updatedAt = now()) }
 
     /**
      * Unticks the repeating lists whose new round has begun. A list with nothing ticked only notes the round,
      * without counting as an edit (nothing to sync). Returns how many lists were unticked.
      */
-    private val _listsReset = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
-    /** Ids of lists just unticked for a new round, so an open editor unticks its copy too. */
-    val listsReset: kotlinx.coroutines.flow.SharedFlow<String> = _listsReset
+    private val _ticksElsewhere = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
+    /**
+     * Ids of lists whose tasks were ticked or unticked outside the editor (the home-screen widget, a pinned
+     * notification, a new round), so an open editor takes the change instead of saving over it.
+     */
+    val ticksElsewhere: kotlinx.coroutines.flow.SharedFlow<String> = _ticksElsewhere
+
+    /** Ticks or unticks one task from outside the editor. */
+    suspend fun toggleTask(noteId: String, blockId: String) {
+        val note = notes.get(noteId)?.takeIf { !it.deleted && it.trashedAt == null && it.cipher == null } ?: return
+        saveNote(note.id, note.folderId, ListWidgetData.toggled(note.blocks, blockId))
+        _ticksElsewhere.tryEmit(noteId)
+    }
 
     suspend fun resetRepeatingLists(now: java.time.ZonedDateTime = zonedNow()): Int {
         val at = now.toInstant().toEpochMilli()
         var count = 0
         for (note in notes.live()) {
             if (!roundOver(note, now)) continue
+            val streak = nextStreak(note, now)
             if (anyTicked(note.blocks)) {
-                notes.upsert(note.withBlocks(unticked(note.blocks), at).copy(resetAt = at))
-                _listsReset.tryEmit(note.id)
+                notes.upsert(note.withBlocks(unticked(note.blocks), at).copy(resetAt = at, streak = streak))
+                _ticksElsewhere.tryEmit(note.id)
                 count++
-            } else notes.upsert(note.copy(resetAt = at))
+            } else notes.upsert(note.copy(resetAt = at, streak = streak))
         }
         if (count > 0) scheduler.requestDebounced()
         return count

@@ -120,7 +120,7 @@ fun ProgressBar(fraction: Float, modifier: Modifier = Modifier, color: Color = j
 @Composable
 fun TodoHeader(
     count: TodoCount, startDay: Long, target: Long?, editable: Boolean, onPickTarget: () -> Unit,
-    repeat: com.margin.app.data.ListRepeat? = null, onPickRepeat: () -> Unit = {},
+    repeat: com.margin.app.data.ListRepeat? = null, onPickRepeat: () -> Unit = {}, streak: Int = 0,
 ) {
     val context = LocalContext.current
     val today = todayEpochDay()
@@ -138,6 +138,14 @@ fun TodoHeader(
                 Text(if (count.total == 0) "No tasks yet" else "${count.done} of ${count.total} done", style = JType.subheading, color = jc.ink)
                 if (count.total > 0 && (target != null || count.complete)) {
                     Text(statusLabel(status, target, today), style = JType.secondary, color = statusColor(status), maxLines = 1)
+                }
+                // A repeating list's run of rounds ticked off in full.
+                val run = com.margin.app.data.shownStreak(streak, count)
+                if (repeat != null && count.total > 0 && run > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        JIcon(Ico.SPARKLE, jc.accent, size = 14.dp, stroke = 2f)
+                        Text(com.margin.app.data.streakLabel(run, repeat), style = JType.secondary, color = jc.accent, maxLines = 1)
+                    }
                 }
             }
         }

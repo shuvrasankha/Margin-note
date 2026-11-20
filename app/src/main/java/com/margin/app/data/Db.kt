@@ -158,7 +158,7 @@ interface NoteVersionDao {
     suspend fun allBlocks(): List<String>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 11, exportSchema = true)
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 12, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class MarginDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
@@ -185,6 +185,13 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
 val MIGRATION_9_10 = object : Migration(9, 10) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE notes ADD COLUMN viewOnly INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v12: streaks for repeating checklists. */
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN streak INTEGER NOT NULL DEFAULT 0")
     }
 }
 

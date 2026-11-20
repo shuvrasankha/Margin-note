@@ -155,6 +155,7 @@ fun EditorScreen(
     var formatting by remember { mutableStateOf(false) }
     var attaching by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
+    var stats by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
     var linked by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
@@ -226,6 +227,34 @@ fun EditorScreen(
     /** The to-do target date picker is open. */
     var pickingTarget by remember { mutableStateOf(false) }
     var pickingRepeat by remember { mutableStateOf(false) }
+    var movingTasks by remember { mutableStateOf(false) }
+    var sortingAisles by remember { mutableStateOf(false) }
+    if (sortingAisles) {
+        val items = remember { vm.doc.toBlocks().filter { it.type == com.margin.app.data.BlockType.CHECK && !it.checked && it.attachment == null && it.text.isNotBlank() }.map { it.text.trim() } }
+        AisleSortDialog(
+            items, remember { vm.aisleChoices() }, onChoose = vm::chooseAisle,
+            onSort = { sortingAisles = false; vm.sortByAisle(); toast("Sorted by aisle. Undo puts it back.") },
+            onDismiss = { sortingAisles = false },
+        )
+    }
+    if (movingTasks) {
+        val all by vm.linkTargets.collectAsState()
+        val tasks = remember { vm.doc.toBlocks().withIndex().filter { it.value.type == com.margin.app.data.BlockType.CHECK && it.value.attachment == null && it.value.table == null }.map { it.index to it.value } }
+        MoveTasksDialog(
+            tasks, remember(all) { com.margin.app.data.ListWidgetData.lists(all).filter { it.id != vm.noteId } }, vm.canMoveTasks,
+            onDone = { lines, to, title, copy ->
+                movingTasks = false
+                vm.moveTasks(lines, to, title, copy) { name, gained ->
+                    val n = lines.size
+                    toast(
+                        if (gained == 0) "“$name” already has ${if (n == 1) "it" else "them"}"
+                        else (if (copy) "Copied" else "Moved") + " ${if (n == 1) "1 item" else "$n items"} to “$name”",
+                    )
+                }
+            },
+            onDismiss = { movingTasks = false },
+        )
+    }
     if (pickingRepeat) ListRepeatDialog(vm.listRepeat, onPick = { pickingRepeat = false; vm.changeListRepeat(it) }, onDismiss = { pickingRepeat = false })
     var pickingPaper by remember { mutableStateOf(false) }
     if (pickingPaper) PaperDialog(vm.paper, onPick = { pickingPaper = false; vm.changePaper(it) }, onDismiss = { pickingPaper = false })
@@ -260,6 +289,11 @@ fun EditorScreen(
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) toast("Reminder set, but notifications are off for Margin, so it won't show. Turn them on in the phone's settings.")
         else askForExactAlarms()
+    }
+    val inShade by vm.inShade.collectAsState()
+    val shadePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) { vm.pinToShade(); toast("Pinned to notifications") }
+        else toast("Notifications are off for Margin. Turn them on in the phone's settings to pin notes.")
     }
     val reminderScope = rememberCoroutineScope()
     if (reminding) {
@@ -388,6 +422,15 @@ fun EditorScreen(
                             item("Move to folder…", Ico.MOVE, gap = first) { moving = true }
                             if (vm.canRemind) item(if (reminderAt != null || placeReminder != null) "Change reminder…" else "Remind me…", Ico.ALARM) { reminding = true }
                             if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
+                            if (vm.canSortAisles && todoCount(vm.doc.toBlocks()).total > 1) item("Sort by aisle…", ICON_AISLE) { sortingAisles = true }
+                            if (vm.canCopyTasks && todoCount(vm.doc.toBlocks()).total > 0) item(if (vm.canMoveTasks) "Move items…" else "Copy items…", Ico.MOVE) { movingTasks = true }
+                            if (inShade) item("Unpin from notifications", Ico.PIN) { vm.unpinFromShade(); toast("Unpinned from notifications") }
+                            else if (vm.canRemind) item("Pin to notifications", Ico.PIN) {
+                                if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                                    != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) shadePermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                else { vm.pinToShade(); toast("Pinned to notifications") }
+                            }
                             if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
                             if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
                             if (vm.canSaveTemplate) item("Save as template", ICON_TEMPLATE) { vm.saveAsTemplate { toast("Saved as template “$it”") } }
@@ -395,6 +438,7 @@ fun EditorScreen(
                             if (!vm.locked && !vm.needsUnlock) item("Ask AI…", Ico.SPARKLE) { asking = true }
                             item("Linked notes · ${vm.linkedNotes(targets).size}", Ico.LINK, gap = true) { linked = true }
                             item("Note info", Ico.INFO) { info = true }
+                            if (!vm.needsUnlock) item("Writing stats", Ico.PEN) { stats = true }
                             if (vm.exists && !vm.locked && !vm.needsUnlock) item("Version history", ICON_HISTORY) { history = true }
                             item("Delete", Ico.TRASH, gap = true, danger = true) { vm.delete(onBack) }
                         }
@@ -557,6 +601,8 @@ fun EditorScreen(
                             }
                         },
                     )
+                    val showCount by vm.writing.showCount.collectAsState()
+                    if (showCount && !formatting && !attaching && !sharing) WordCountBar(vm) { stats = true }
                     EditorToolbar(
                         vm, formatting, attaching,
                         onFormat = { formatting = !formatting; attaching = false; sharing = false }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
@@ -600,7 +646,7 @@ fun EditorScreen(
                     TodoHeader(
                         todo, startDay = epochDay(vm.createdAt ?: System.currentTimeMillis(), java.time.ZoneId.systemDefault()),
                         target = vm.targetDate, editable = !vm.readOnly, onPickTarget = { pickingTarget = true },
-                        repeat = vm.listRepeat, onPickRepeat = { pickingRepeat = true },
+                        repeat = vm.listRepeat, onPickRepeat = { pickingRepeat = true }, streak = vm.listStreak,
                     )
                 }
                 vm.conflictWith?.let { original -> ConflictChooser(original.displayTitle, vm, onBack) }
@@ -646,6 +692,7 @@ fun EditorScreen(
         }
     }
     if (info) NoteInfoDialog(vm, folderName) { info = false }
+    if (stats) WritingStatsDialog(vm) { stats = false }
     if (history) VersionHistory(vm) { history = false }
     peek?.let { n -> LinkedNotePreview(n, onOpen = { peek = null; onOpenNote(n) }, onDismiss = { peek = null }) }
     if (asking) {
@@ -761,8 +808,8 @@ internal fun ReplaceBar(text: String, count: Int, onChange: (String) -> Unit, on
 internal fun NoteInfoDialog(vm: EditorViewModel, folderName: String?, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val blocks = vm.doc.toBlocks()
-    val body = blocks.drop(1).filter { it.attachment == null }.joinToString("\n") { it.plainText }
-    val words = body.split(Regex("\\s+")).count { it.isNotBlank() }
+    val body = com.margin.app.data.bodyText(blocks)
+    val words = com.margin.app.data.countWords(body)
     val attachments = blocks.count { it.attachment != null }
     val rows = listOfNotNull(
         "Created" to (vm.createdAt?.let { fullTime(context, it) } ?: "Not saved yet"),
@@ -770,6 +817,7 @@ internal fun NoteInfoDialog(vm: EditorViewModel, folderName: String?, onDismiss:
         folderName?.let { "Folder" to it },
         "Words" to "$words",
         "Characters" to "${body.count { !it.isWhitespace() }}",
+        "Reading time" to com.margin.app.data.readingLabel(words),
         ("Attachments" to "$attachments").takeIf { attachments > 0 },
         ("Locked" to "Yes").takeIf { vm.locked },
     )

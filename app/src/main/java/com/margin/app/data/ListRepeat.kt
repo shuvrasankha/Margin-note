@@ -35,6 +35,9 @@ data class ListRepeat(val kind: Kind, val day: DayOfWeek = DayOfWeek.MONDAY) {
         }
     }
 
+    /** "day", "week", "month": one round, for "5 days in a row". */
+    val unit: String get() = when (kind) { Kind.DAILY -> "day"; Kind.WEEKLY -> "week"; Kind.MONTHLY -> "month" }
+
     /** When the next round begins, and the list unticks. */
     fun nextRound(now: ZonedDateTime): ZonedDateTime {
         val start = roundStart(now)
@@ -67,6 +70,24 @@ fun roundOver(note: NoteEntity, now: ZonedDateTime): Boolean {
     val last = Instant.ofEpochMilli(note.resetAt).atZone(now.zone)
     return repeat.roundStart(now).isAfter(last)
 }
+
+/**
+ * The list's streak once the round it was last reset in is over: one more if every task got ticked off and
+ * the next round is the one starting now; 1 if it was done but rounds were skipped since; 0 if it wasn't done.
+ */
+fun nextStreak(note: NoteEntity, now: ZonedDateTime): Int {
+    val repeat = note.listRepeat ?: return 0
+    if (!todoCount(note.blocks).complete) return 0
+    val last = Instant.ofEpochMilli(note.resetAt).atZone(now.zone)
+    val following = repeat.nextRound(last)
+    return if (!following.isBefore(repeat.roundStart(now))) note.streak + 1 else 1
+}
+
+/** The streak to show: rounds done in a row, counting this one once everything is ticked. */
+fun shownStreak(streak: Int, count: TodoCount) = streak + if (count.complete) 1 else 0
+
+/** "5 days in a row", "1 week in a row". */
+fun streakLabel(n: Int, repeat: ListRepeat) = "$n ${repeat.unit}${if (n == 1) "" else "s"} in a row"
 
 /** Every task unticked, for the next round. */
 fun unticked(blocks: List<Block>): List<Block> = blocks.map { if (it.type == BlockType.CHECK && it.checked) it.copy(checked = false) else it }
