@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Refreshed by the app whenever notes change, so no periodic update. Picks a list when added (optional from
+     Android 12, where it starts on the shopping list) and again from the widget's long-press menu. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.margin.app.ui.ListWidgetConfigActivity"
+    android:description="@string/list_widget_description"
+    android:initialLayout="@layout/widget_list"
+    android:previewLayout="@layout/widget_list"
+    android:minWidth="180dp"
+    android:minHeight="180dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="3"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetFeatures="reconfigurable|configuration_optional"
+    android:widgetCategory="home_screen" />

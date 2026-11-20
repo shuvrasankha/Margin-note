@@ -76,6 +76,14 @@ class VoiceCommandTest {
         assertEquals(VoiceCommand.AddToList("Grocery list", listOf("Apples")), parse("add apples to grocery list"))
     }
 
+    @Test fun saidIntoAListWidget() {
+        assertEquals(VoiceCommand.AddToList("Groceries", listOf("Milk", "Eggs")), VoiceCommands.parse("milk and eggs", now, "Groceries"))
+        assertEquals(VoiceCommand.AddToList("Groceries", listOf("Tomatoes")), VoiceCommands.parse("Add tomatoes.", now, "Groceries"))
+        // Other commands still work from the widget.
+        assertEquals(VoiceCommand.AddToList("To-do list", listOf("Call Jo")), VoiceCommands.parse("add call Jo to my to do list", now, "Groceries"))
+        assertEquals(LocalDateTime.of(2026, 11, 18, 20, 0), (VoiceCommands.parse("remind me to lock up at 8", now, "Groceries") as VoiceCommand.Remind).at)
+    }
+
     @Test fun listKeysMatch() {
         assertEquals(VoiceCommands.listKey("Shopping list"), VoiceCommands.listKey("my shopping"))
         assertEquals("todo", VoiceCommands.listKey("To-do"))

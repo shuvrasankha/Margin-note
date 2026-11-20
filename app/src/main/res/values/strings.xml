@@ -5,6 +5,12 @@
     <string name="widget_new_note">New note</string>
     <string name="widget_empty">No notes yet</string>
     <string name="widget_description">Your latest notes</string>
+    <string name="list_widget_label">Margin list</string>
+    <string name="list_widget_description">A shopping or to-do list you can tick off</string>
+    <string name="list_widget_pick">Pick a list</string>
+    <string name="list_widget_empty">Nothing on this list. Tap + or the mic to add.</string>
+    <string name="list_widget_voice">Add by voice</string>
+    <string name="list_widget_add">Add an item</string>
     <string name="shortcut_new_note">New note</string>
     <string name="shortcut_scan">Scan document</string>
     <string name="shortcut_voice">Voice note</string>

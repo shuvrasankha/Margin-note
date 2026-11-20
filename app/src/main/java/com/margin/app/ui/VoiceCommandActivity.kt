@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -79,10 +80,12 @@ class VoiceCommandActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val given = givenText(intent)
+        val list = intent?.getStringExtra(EXTRA_LIST)
+        val typed = intent?.getBooleanExtra(EXTRA_TYPED, false) == true
         setContent {
             val appearance by appPrefs.appearance.collectAsState()
             MarginTheme(appearance) {
-                VoiceCommandCard(given, actions, onClose = ::finish, onOpen = { done ->
+                VoiceCommandCard(given, list, typed, actions, onClose = ::finish, onOpen = { done ->
                     startActivity(
                         Intent(this, MainActivity::class.java).setAction(RecentWidget.ACTION_OPEN)
                             .putExtra(RecentWidget.EXTRA_NOTE, done.noteId).putExtra(RecentWidget.EXTRA_FOLDER, done.folderId)
@@ -96,6 +99,10 @@ class VoiceCommandActivity : ComponentActivity() {
 
     companion object {
         const val ACTION = "com.margin.app.VOICE_COMMAND"
+        /** From the list widget: plain items go on this list (its note title). */
+        const val EXTRA_LIST = "list"
+        /** From the list widget's +: type instead of listening. */
+        const val EXTRA_TYPED = "typed"
         private const val GMS_NAME = "com.google.android.gms.actions.extra.NAME"
         private const val GMS_TEXT = "com.google.android.gms.actions.extra.TEXT"
 
@@ -135,18 +142,18 @@ private fun details(c: VoiceCommand?): List<String> = when (c) {
 }
 
 @Composable
-private fun VoiceCommandCard(given: String?, actions: VoiceActions, onClose: () -> Unit, onOpen: (VoiceActions.Done) -> Unit) {
+private fun VoiceCommandCard(given: String?, list: String?, typed: Boolean, actions: VoiceActions, onClose: () -> Unit, onOpen: (VoiceActions.Done) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var said by rememberSaveable { mutableStateOf(given.orEmpty()) }
-    var listened by rememberSaveable { mutableStateOf(given != null) }
+    var listened by rememberSaveable { mutableStateOf(given != null || typed) }
     var noRecogniser by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     // Saveable, so turning the phone on the "Saved" card doesn't offer Save (and a second reminder) again.
     var savedId by rememberSaveable { mutableStateOf<String?>(null) }
     var savedFolder by rememberSaveable { mutableStateOf<String?>(null) }
     val done = savedId?.let { VoiceActions.Done(it, savedFolder ?: com.margin.app.data.DEFAULT_FOLDER_ID) }
-    val command = remember(said) { VoiceCommands.parse(said, LocalDateTime.now()) }
+    val command = remember(said) { VoiceCommands.parse(said, LocalDateTime.now(), list) }
 
     val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { said = it }
@@ -158,12 +165,13 @@ private fun VoiceCommandCard(given: String?, actions: VoiceActions, onClose: () 
         listen.launch(
             Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Try “Remind me to call Sam at 6”"),
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, if (list != null) "What should go on $list?" else "Try “Remind me to call Sam at 6”"),
         )
     } catch (_: ActivityNotFoundException) {
         noRecogniser = true; listened = true
     }
-    LaunchedEffect(Unit) { if (!listened) startListening() }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { if (!listened) startListening() else if (typed && done == null) runCatching { focus.requestFocus() } }
 
     fun save() {
         val c = command ?: return
@@ -194,7 +202,7 @@ private fun VoiceCommandCard(given: String?, actions: VoiceActions, onClose: () 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextAction(if (finished != null) "Done" else "Cancel", onClose, bold = finished != null)
                 Spacer(Modifier.weight(1f))
-                Text(if (finished != null) "Saved" else "Voice command", style = JType.rowTitle, color = jc.ink)
+                Text(if (finished != null) "Saved" else if (list != null) list else "Voice command", style = JType.rowTitle, color = jc.ink)
                 Spacer(Modifier.weight(1f))
                 if (finished != null) TextAction("Open", { onOpen(finished) })
                 else TextAction("Save", ::onSave, bold = true, enabled = command != null && !saving)
@@ -202,12 +210,12 @@ private fun VoiceCommandCard(given: String?, actions: VoiceActions, onClose: () 
             if (finished == null) {
                 Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Top) {
                     BasicTextField(
-                        said, { said = it }, Modifier.weight(1f).heightIn(min = 48.dp),
+                        said, { said = it }, Modifier.weight(1f).heightIn(min = 48.dp).focusRequester(focus),
                         textStyle = JType.body.copy(color = jc.ink), cursorBrush = SolidColor(jc.accent),
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         decorationBox = { inner ->
                             Box {
-                                if (said.isEmpty()) Text(if (noRecogniser) "Type a command" else "Listening…", style = JType.body, color = jc.muted)
+                                if (said.isEmpty()) Text(if (typed) "Milk, eggs and bread" else if (noRecogniser) "Type a command" else "Listening…", style = JType.body, color = jc.muted)
                                 inner()
                             }
                         },

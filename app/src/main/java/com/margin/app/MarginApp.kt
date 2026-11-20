@@ -30,7 +30,12 @@ class MarginApp : Application() {
             attachmentFiles.cleanUp(repository.attachmentsInUse())
         }
         // Keeps the home-screen widget current while the process runs (app or background sync).
-        appScope.launch { repository.liveNotes().collect { RecentWidget.push(this@MarginApp, it) } }
+        appScope.launch {
+            repository.liveNotes().collect {
+                RecentWidget.push(this@MarginApp, it)
+                com.margin.app.ui.ListWidget.push(this@MarginApp, it)
+            }
+        }
         // Reads text in photos and PDFs so search finds it.
         appScope.launch { attachmentIndex.run() }
         scheduler.onAppStart() // sync on app start (when signed in) + 6 h periodic job

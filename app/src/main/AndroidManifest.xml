@@ -110,6 +110,30 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_recent_info" />
         </receiver>
+        <!-- Home-screen list widget: one shopping or to-do list to tick off, with voice and typed add. -->
+        <receiver
+            android:name=".ui.ListWidget"
+            android:exported="false"
+            android:label="@string/list_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_list_info" />
+        </receiver>
+        <activity
+            android:name=".ui.ListWidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <!-- Its own task, so saving returns to the home screen instead of showing the app. -->
         <activity
             android:name=".ui.QuickNoteActivity"

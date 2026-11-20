@@ -27,7 +27,19 @@ object VoiceCommands {
     /** The hour a day said without a time rings at ("tomorrow", "on Friday"). */
     private const val DEFAULT_HOUR = 9
 
-    fun parse(spoken: String, now: LocalDateTime): VoiceCommand? {
+    /**
+     * What [spoken] asks for. With a [list] (said into a list widget), anything that isn't another command
+     * ("milk and eggs") goes on that list.
+     */
+    fun parse(spoken: String, now: LocalDateTime, list: String? = null): VoiceCommand? {
+        val command = parse(spoken, now)
+        if (list == null || command !is VoiceCommand.Note) return command
+        val items = clean(unprefixed(spoken)).trimEnd('.', '!', '?', ' ')
+            .replace(Regex("^(?:add|put|buy|get)\\s+", RegexOption.IGNORE_CASE), "")
+        return (list(list, items) as? VoiceCommand.AddToList)?.copy(list = list) ?: command
+    }
+
+    private fun parse(spoken: String, now: LocalDateTime): VoiceCommand? {
         // A note keeps what was said as it was said; commands read times written one way and no closing full stop.
         val said = unprefixed(spoken)
         val text = clean(said).trimEnd('.', '!', '?', ' ')
