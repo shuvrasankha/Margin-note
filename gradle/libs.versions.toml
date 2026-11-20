@@ -21,6 +21,7 @@ biometric = "1.1.0"
 mlkitText = "19.0.1"
 mlkitInk = "19.0.0"
 docScanner = "16.0.0-beta1"
+codeScanner = "16.1.0"
 pdfbox = "2.0.27.0"
 
 [libraries]
@@ -47,6 +48,7 @@ androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "b
 mlkit-text-recognition = { module = "com.google.android.gms:play-services-mlkit-text-recognition", version.ref = "mlkitText" }
 mlkit-digital-ink = { module = "com.google.mlkit:digital-ink-recognition", version.ref = "mlkitInk" }
 mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-document-scanner", version.ref = "docScanner" }
+code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "codeScanner" }
 pdfbox-android = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox" }
 junit = { module = "junit:junit", version.ref = "junit" }
 

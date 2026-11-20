@@ -12,7 +12,16 @@ class AutofillFormTest {
     fun `hints come first`() {
         assertEquals(FieldRole.USERNAME, roleOf(FieldInfo(hints = listOf("emailAddress"), inputType = text)))
         assertEquals(FieldRole.NEW_PASSWORD, roleOf(FieldInfo(htmlAutocomplete = "new-password", htmlType = "password")))
-        assertEquals(FieldRole.NONE, roleOf(FieldInfo(htmlAutocomplete = "one-time-code", inputType = text)))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(htmlAutocomplete = "one-time-code", inputType = text)))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(hints = listOf("2faAppOTPCode"))))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(hints = listOf("smsOTPCode"))))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(inputType = text, words = listOf("totp_code"))))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(inputType = text, words = listOf("Enter verification code"))))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(inputType = text, words = listOf("otp-input"))))
+        assertEquals(FieldRole.OTP, roleOf(FieldInfo(inputType = text, htmlAutocomplete = "off", words = listOf("login_otp"))))
+        assertEquals(FieldRole.NONE, roleOf(FieldInfo(inputType = text, htmlAutocomplete = "off", words = listOf("comment"))))
+        assertEquals(FieldRole.PASSWORD, roleOf(FieldInfo(inputType = text, words = listOf("passcode"), htmlType = "password")))
+        assertEquals(FieldRole.USERNAME, roleOf(FieldInfo(inputType = text, words = listOf("hotpot_lover_email"))))
     }
 
     @Test

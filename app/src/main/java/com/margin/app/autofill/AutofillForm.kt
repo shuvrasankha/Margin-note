@@ -7,7 +7,7 @@ import android.view.View
 import android.view.autofill.AutofillId
 
 /** What a field on a sign-in form is for. */
-enum class FieldRole { USERNAME, PASSWORD, NEW_PASSWORD, NONE }
+enum class FieldRole { USERNAME, PASSWORD, NEW_PASSWORD, OTP, NONE }
 
 /** What Android tells about one text field, enough to guess its role. */
 data class FieldInfo(
@@ -22,22 +22,28 @@ data class FieldInfo(
 private val PASSWORD_VARIATIONS = setOf(
     InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
 )
+/** Names of fields that take a code from an authenticator app (or a text message). */
+private val OTP_WORDS = Regex("(?<![a-z0-9])(otp|totp|2fa|mfa)(?![a-z])|one.?time|verification.?code|verify.?code|auth(enticator|entication)?.?code|two.?factor|security.?code")
 private val EMAIL_VARIATIONS = setOf(InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS, InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS)
 
 /** The role of one field on its own: the app's autofill hints first, then the input type, then its words. */
 fun roleOf(f: FieldInfo): FieldRole {
     val hints = (f.hints + listOfNotNull(f.htmlAutocomplete)).flatMap { it.lowercase().split(' ') }
-    if (hints.any { it == "off" || it == "one-time-code" || it == "cc-number" || it == "cc-csc" }) return FieldRole.NONE
+    if (hints.any { it == "one-time-code" || it == "2faappotpcode" || it.startsWith("smsotpcode") }) return FieldRole.OTP
+    if (hints.any { it == "cc-number" || it == "cc-csc" }) return FieldRole.NONE
     if (hints.any { it == "newpassword" || it == "new-password" }) return FieldRole.NEW_PASSWORD
     if (hints.any { it == "password" || it == "current-password" || it == "currentpassword" }) return FieldRole.PASSWORD
     if (hints.any { it == "username" || it == "emailaddress" || it == "email" || it == "newusername" }) return FieldRole.USERNAME
+    // Code fields often say autocomplete="off", so their names count before that does.
+    val words = f.words.joinToString(" ").lowercase()
+    if (OTP_WORDS.containsMatchIn(words)) return FieldRole.OTP
+    if ("off" in hints) return FieldRole.NONE
     val cls = f.inputType and InputType.TYPE_MASK_CLASS
     val variation = f.inputType and InputType.TYPE_MASK_VARIATION
     if (cls == InputType.TYPE_CLASS_TEXT && variation in PASSWORD_VARIATIONS) return FieldRole.PASSWORD
     if (cls == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD) return FieldRole.PASSWORD
     val type = f.htmlType?.lowercase()
     if (type == "password") return FieldRole.PASSWORD
-    val words = f.words.joinToString(" ").lowercase()
     if ("search" in words) return FieldRole.NONE
     if (cls == InputType.TYPE_CLASS_TEXT && variation in EMAIL_VARIATIONS || type == "email") return FieldRole.USERNAME
     if (Regex("pass(word|wd|code)?\\b|pwd|passwort|contrase|mot de passe").containsMatchIn(words) && type != "text") return FieldRole.PASSWORD
@@ -77,8 +83,10 @@ class AutofillForm(
     val usernameValue: String?,
     /** The password to save: the last one typed into a new-password field, else into a password field. */
     val passwordValue: String?,
+    /** Where a 2FA code goes. */
+    val otp: List<AutofillId> = emptyList(),
 ) {
-    val isEmpty get() = username.isEmpty() && password.isEmpty() && newPassword.isEmpty()
+    val isEmpty get() = username.isEmpty() && password.isEmpty() && newPassword.isEmpty() && otp.isEmpty()
 
     companion object {
         fun parse(structure: AssistStructure): AutofillForm {
@@ -101,6 +109,7 @@ class AutofillForm(
                 newPassword = ids(FieldRole.NEW_PASSWORD),
                 usernameValue = values(FieldRole.USERNAME).firstOrNull(),
                 passwordValue = values(FieldRole.NEW_PASSWORD).lastOrNull() ?: values(FieldRole.PASSWORD).lastOrNull(),
+                otp = ids(FieldRole.OTP),
             )
         }
 

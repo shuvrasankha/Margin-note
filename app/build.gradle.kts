@@ -130,6 +130,7 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.digital.ink)
     implementation(libs.mlkit.document.scanner)
+    implementation(libs.code.scanner) // 2FA setup QR codes, scanned by Play services: no camera permission
     implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)

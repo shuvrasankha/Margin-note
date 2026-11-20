@@ -43,6 +43,7 @@ import com.margin.app.data.AppPrefs
 import com.margin.app.data.AutofillSave
 import com.margin.app.data.LockSession
 import com.margin.app.data.Login
+import com.margin.app.data.Totp
 import com.margin.app.data.VaultIcons
 import com.margin.app.data.VaultKind
 import com.margin.app.data.VaultStore
@@ -198,7 +199,10 @@ class AutofillActivity : FragmentActivity() {
     /** Hands back the logins for this app or site; with none linked yet, the one the user picks (and links it). */
     private suspend fun fill(form: AutofillForm) {
         val domain = trusted(form.pkg, form.webDomain)
-        val all = store.openAll(session).filter { it.second.vaultKind == VaultKind.LOGIN }
+        // A code-only screen (the second step of a sign-in) offers just the logins that have 2FA codes.
+        val codeOnly = form.username.isEmpty() && form.password.isEmpty()
+        val all = store.openAll(session).filter { it.second.vaultKind == VaultKind.LOGIN && (!codeOnly || Totp.parse(it.second.otp) != null) }
+        if (all.isEmpty()) return cancel()
         val matches = all.filter { it.second.fills(form.pkg, domain) }
         if (matches.isNotEmpty()) return reply(form, matches.map { it.second })
         val label = domain?.let(::siteOf) ?: VaultIcons.appLabel(this, form.pkg) ?: form.pkg
@@ -223,10 +227,15 @@ class AutofillActivity : FragmentActivity() {
         var any = false
         for (l in logins) {
             val title = VaultEntry("", l).title
-            val ds = Dataset.Builder(MarginAutofillService.item(this, title, l.username.ifBlank { null }, VaultIcons.decode(l.icon)))
+            val spec = Totp.parse(l.otp)
+            val codeOnly = form.username.isEmpty() && form.password.isEmpty()
+            val sub = if (codeOnly) "Verification code" else l.username.ifBlank { null }
+            val ds = Dataset.Builder(MarginAutofillService.item(this, title, sub, VaultIcons.decode(l.icon)))
             var values = 0
             if (l.username.isNotBlank()) form.username.forEach { ds.setValue(it, AutofillValue.forText(l.username)); values++ }
             if (l.password.isNotEmpty()) form.password.firstOrNull()?.let { ds.setValue(it, AutofillValue.forText(l.password)); values++ }
+            // The code as it is now; it stays good for the rest of its 30 seconds, which is when people pick it.
+            if (spec != null) form.otp.firstOrNull()?.let { ds.setValue(it, AutofillValue.forText(Totp.code(spec, System.currentTimeMillis()))); values++ }
             if (values > 0) { response.addDataset(ds.build()); any = true }
         }
         if (!any && save == null) return cancel()

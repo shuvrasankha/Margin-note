@@ -72,6 +72,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.margin.app.data.LockSession
 import com.margin.app.data.Login
+import com.margin.app.data.OtpSpec
+import com.margin.app.data.Totp
 import com.margin.app.data.NoteRepository
 import com.margin.app.data.VaultIcons
 import com.margin.app.data.VaultKind
@@ -488,6 +490,7 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
     var kind by rememberSaveable { mutableStateOf(entry.login.vaultKind) }
     var security by rememberSaveable { mutableStateOf(WifiSecurity.of(entry.login.security)) }
     var apps by rememberSaveable { mutableStateOf(entry.login.apps) }
+    var otp by rememberSaveable { mutableStateOf(entry.login.otp) }
     var editing by rememberSaveable { mutableStateOf(isNew) }
     var reveal by rememberSaveable { mutableStateOf(false) }
     var generating by rememberSaveable { mutableStateOf(isNew) }
@@ -500,7 +503,7 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
         if (!editing && entry.login != saved) {
             saved = entry.login
             name = saved.name; username = saved.username; password = saved.password; url = saved.url; notes = saved.notes
-            kind = saved.vaultKind; security = WifiSecurity.of(saved.security); apps = saved.apps
+            kind = saved.vaultKind; security = WifiSecurity.of(saved.security); apps = saved.apps; otp = saved.otp
         }
     }
     var showHistory by rememberSaveable { mutableStateOf(false) }
@@ -509,12 +512,25 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
     val edited = saved.copy(
         name = name, username = if (wifi) "" else username, password = password, url = if (kind == VaultKind.LOGIN) url else "", notes = notes,
         kind = kind.name, security = if (wifi) security.name else "", apps = if (kind == VaultKind.LOGIN) apps else emptyList(),
+        otp = if (kind == VaultKind.LOGIN) otp.trim() else "",
     )
     val changed = edited != saved
-    val canSave = name.isNotBlank() || url.isNotBlank() || username.isNotBlank() || password.isNotEmpty()
+    val otpSpec = remember(otp) { Totp.parse(otp) }
+    val otpBad = kind == VaultKind.LOGIN && otp.isNotBlank() && otpSpec == null
+    val hasContent = name.isNotBlank() || url.isNotBlank() || username.isNotBlank() || password.isNotEmpty()
+    val canSave = hasContent && !otpBad
+    // A setup link names the site and account: fill in what's still empty, whether it was scanned or pasted.
+    fun takeOtp(value: String) {
+        val pasted = otp.isBlank() && value.length > 1
+        otp = value
+        if (pasted) Totp.parse(value)?.let { spec ->
+            if (name.isBlank() && spec.issuer.isNotBlank()) name = spec.issuer
+            if (username.isBlank() && spec.account.isNotBlank()) username = spec.account
+        }
+    }
     fun reset() {
         name = saved.name; username = saved.username; password = saved.password; url = saved.url; notes = saved.notes
-        kind = saved.vaultKind; security = WifiSecurity.of(saved.security); apps = saved.apps; generating = false; reveal = false
+        kind = saved.vaultKind; security = WifiSecurity.of(saved.security); apps = saved.apps; otp = saved.otp; generating = false; reveal = false
     }
     val leaveEdit: () -> Unit = { if (isNew) onDismiss() else { reset(); editing = false } }
     val close: () -> Unit = { if (editing && changed) confirmDiscard = true else if (editing && !isNew) editing = false else onDismiss() }
@@ -564,9 +580,9 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                 if (editing) {
                     // A live preview of how the login will look in the list.
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        EntryIcon(edited, if (canSave) title else "", 56.dp)
+                        EntryIcon(edited, if (hasContent) title else "", 56.dp)
                         Text(
-                            if (canSave) title else when (kind) {
+                            if (hasContent) title else when (kind) {
                                 VaultKind.LOGIN -> "Name it after the site or app"; VaultKind.WIFI -> "The network's name"
                                 VaultKind.DEVICE -> "The computer, drive or device"; VaultKind.OTHER -> "Name it"
                             }, style = JType.small,
@@ -634,6 +650,18 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                         replacing = password.isNotEmpty(),
                         onUse = { password = it; reveal = true; generating = false },
                     ) else TextAction("Suggest a Strong Password", { generating = true })
+                    if (kind == VaultKind.LOGIN) {
+                        FormLabel("Two-factor code")
+                        Card {
+                            InlineField(otp, ::takeOtp, "Setup key", "Paste the key, or scan", KeyboardType.Password, mono = true) {
+                                IconAction(Ico.SCAN, "Scan the setup QR code", { scanOtp(context) { otp = ""; takeOtp(it) } }, color = jc.accent, size = 20.dp)
+                            }
+                            Text(
+                                if (otpBad) "Not a valid setup key" else "From the site's “set up authenticator app” page. Margin then shows the codes.",
+                                Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), style = JType.small, color = if (otpBad) jc.danger else jc.muted,
+                            )
+                        }
+                    }
                     if (kind == VaultKind.LOGIN && apps.isNotEmpty()) {
                         FormLabel("Fills in apps")
                         Card {
@@ -687,6 +715,10 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                             StrengthMeter(strengthOf(edited))
                             if (reused) Text("  ·  Used on another login too", style = JType.small, color = jc.danger)
                         }
+                        if (kind == VaultKind.LOGIN && otpSpec != null) {
+                            CardDivider()
+                            OtpRow(otpSpec)
+                        }
                         if (url.isNotBlank()) {
                             CardDivider()
                             DetailRow("Website", url) {
@@ -738,6 +770,37 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
             }
         }
     }
+}
+
+/** The current 2FA code, its seconds left, and copy; it rolls over by itself. */
+@Composable
+private fun OtpRow(spec: OtpSpec) {
+    val context = LocalContext.current
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    androidx.compose.runtime.LaunchedEffect(spec) {
+        while (true) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000 - now % 1000)
+        }
+    }
+    val code = Totp.code(spec, now)
+    val left = Totp.secondsLeft(spec, now)
+    DetailRow("Verification code · ${left}s", Totp.grouped(code), mono = true) {
+        IconAction(Ico.COPY, "Copy verification code", { copySecret(context, "Code", Totp.code(spec, System.currentTimeMillis())) }, color = jc.accent, size = 20.dp)
+    }
+}
+
+/** Scans a 2FA setup QR code with Google Play services (no camera permission) and hands back what it read if it's a setup key. */
+private fun scanOtp(context: Context, onKey: (String) -> Unit) {
+    val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+        .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE).build()
+    com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options).startScan()
+        .addOnSuccessListener { code ->
+            val raw = code.rawValue.orEmpty()
+            if (Totp.parse(raw) != null) onKey(raw)
+            else Toast.makeText(context, "That QR code isn't a 2FA setup code", Toast.LENGTH_SHORT).show()
+        }
+        .addOnFailureListener { Toast.makeText(context, "Couldn't open the scanner", Toast.LENGTH_SHORT).show() }
 }
 
 /** A field in the read-only view: a small grey label over the value, actions on the right. */

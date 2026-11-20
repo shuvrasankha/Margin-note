@@ -28,6 +28,8 @@ data class Login(
     val icon: String = "",
     /** Wi-Fi only: a [WifiSecurity] name. */
     val security: String = "",
+    /** Logins only: the authenticator setup key (an otpauth:// link or a base32 key) its 2FA codes come from; empty for none. */
+    val otp: String = "",
 )
 
 /** What a vault entry holds. Only logins are offered for autofill. */

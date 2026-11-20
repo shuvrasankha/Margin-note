@@ -49,7 +49,7 @@ class MarginAutofillService : AutofillService() {
             val builder = FillResponse.Builder()
             val save = saveInfo(form)
             save?.let(builder::setSaveInfo)
-            val fillable = (form.username + form.password).toTypedArray()
+            val fillable = (form.username + form.password + form.otp).toTypedArray()
             if (fillable.isNotEmpty() && !store.isEmpty()) {
                 @Suppress("DEPRECATION")
                 builder.setAuthentication(fillable, AutofillActivity.fillSender(this@MarginAutofillService), unlockItem(this@MarginAutofillService))
