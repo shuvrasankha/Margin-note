@@ -336,6 +336,12 @@ class FoldersViewModel @Inject constructor(
     fun addTracker(name: String) = addTitled(com.margin.app.data.TRACKER_PREFIX, name)
     fun renameTracker(note: NoteEntity, name: String) = renameHabit(note, name)
     fun deleteTracker(note: NoteEntity) = viewModelScope.launch { repo.moveToTrash(note.id) }
+    /** Tracker photos: compressed as they're added, read from app storage. */
+    val trackerPhotos = TrackerPhotos(
+        compress = { uri, name -> files.compressedPhoto(uri, name) },
+        file = { files.file(it) },
+        cameraTarget = { files.newPhotoTarget() },
+    )
     /** Rewrites the tracker [note] as [entries], one line each, newest first. */
     fun saveTracker(note: NoteEntity, entries: List<com.margin.app.data.TrackerEntry>) = viewModelScope.launch {
         repo.saveNote(note.id, note.folderId, com.margin.app.data.trackerBlocks(note, entries))

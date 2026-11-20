@@ -11,7 +11,8 @@ const val TRACKER_PREFIX = "tracker-"
 
 fun isTracker(note: NoteEntity) = note.id.startsWith(TRACKER_PREFIX)
 
-data class TrackerEntry(val date: LocalDate?, val title: String, val rating: Int? = null)
+/** [photo]: a cover or snapshot (a compressed JPEG), kept as the attachment of the entry's line. */
+data class TrackerEntry(val date: LocalDate?, val title: String, val rating: Int? = null, val photo: Attachment? = null)
 
 private const val SEP = " · "
 private val RATING = Regex("^★([1-5])$")
@@ -35,14 +36,14 @@ fun formatTrackerEntry(entry: TrackerEntry): String =
 
 /** The tracker's entries, newest first; undated ones last, in the order they were written. */
 fun trackerEntries(note: NoteEntity): List<TrackerEntry> =
-    sortEntries(note.blocks.drop(1).mapNotNull { parseTrackerEntry(it.text) })
+    sortEntries(note.blocks.drop(1).mapNotNull { b -> parseTrackerEntry(b.text)?.copy(photo = b.attachment?.takeIf { it.isImage }) })
 
 fun sortEntries(entries: List<TrackerEntry>): List<TrackerEntry> =
     entries.sortedWith(compareBy<TrackerEntry> { it.date == null }.thenByDescending { it.date })
 
 /** The tracker's blocks for [entries]: the title line, then one line per entry, newest first. */
 fun trackerBlocks(note: NoteEntity, entries: List<TrackerEntry>): List<Block> =
-    listOf(note.blocks.first()) + sortEntries(entries).map { Block(text = formatTrackerEntry(it)) }
+    listOf(note.blocks.first()) + sortEntries(entries).map { Block(text = formatTrackerEntry(it), attachment = it.photo) }
 
 fun List<TrackerEntry>.countInYear(year: Int) = count { it.date?.year == year }
 

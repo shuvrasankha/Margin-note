@@ -279,13 +279,13 @@ fun MarginRoot(
             }
             Screen.Trackers -> {
                 val all by folders.liveNotes.collectAsState()
-                TrackersScreen(all, onOpen = { nav.push(Screen.Tracker(it.id)) }, onAdd = folders::addTracker, onSave = folders::saveTracker, onBack = ::back)
+                TrackersScreen(all, onOpen = { nav.push(Screen.Tracker(it.id)) }, onAdd = folders::addTracker, onSave = folders::saveTracker, onBack = ::back, photos = folders.trackerPhotos)
             }
             is Screen.Tracker -> {
                 val all by folders.liveNotes.collectAsState()
                 TrackerScreen(
                     all, screen.id, backLabel = when (below) { Screen.Trackers -> "Trackers"; is Screen.Notes -> listName(below.folderId); else -> "Back" },
-                    onRename = folders::renameTracker, onDelete = folders::deleteTracker, onSave = folders::saveTracker, onBack = ::back,
+                    onRename = folders::renameTracker, onDelete = folders::deleteTracker, onSave = folders::saveTracker, onBack = ::back, photos = folders.trackerPhotos,
                 )
             }
             Screen.Todos -> {

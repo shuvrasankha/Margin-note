@@ -72,4 +72,15 @@ class TrackersTest {
         val blocks = trackerBlocks(n, listOf(TrackerEntry(LocalDate.of(2026, 1, 1), "A"), TrackerEntry(LocalDate.of(2026, 5, 1), "B", 2)))
         assertEquals(listOf("Movies", "2026-05-01 · B · ★2", "2026-01-01 · A"), blocks.map { it.text })
     }
+
+    @Test fun photosStayWithTheirEntry() {
+        val cover = Attachment("abc.jpg", "Dune.jpg", "image/jpeg")
+        val n = note()
+        val blocks = trackerBlocks(n, listOf(TrackerEntry(LocalDate.of(2026, 1, 1), "A"), TrackerEntry(LocalDate.of(2026, 5, 1), "Dune", 5, cover)))
+        assertEquals(listOf(null, cover, null), blocks.map { it.attachment })
+        val back = trackerEntries(n.copy(blocks = blocks))
+        assertEquals(TrackerEntry(LocalDate.of(2026, 5, 1), "Dune", 5, cover), back.first())
+        assertNull(back.last().photo)
+        assertEquals(listOf("Movies", "2026-05-01 · Dune · ★5", "2026-01-01 · A"), blocks.map { it.text })
+    }
 }

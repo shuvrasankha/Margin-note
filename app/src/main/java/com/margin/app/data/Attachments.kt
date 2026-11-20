@@ -134,6 +134,48 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         Attachment(stored, name, mime)
     }
 
+    /**
+     * The photo at [uri] made small, as a new JPEG: at most [maxSide] px on its long side, quality [quality], upright,
+     * with any transparency on white. A phone photo of several MB comes out around 100 to 250 KB.
+     */
+    suspend fun compressedPhoto(uri: Uri, name: String, maxSide: Int = 1080, quality: Int = 80): Attachment = withContext(Dispatchers.IO) {
+        val src = try { decodeUri(uri, maxSide) } catch (_: OutOfMemoryError) { null } ?: throw IOException("Couldn't read the photo")
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(src.width, src.height))
+        val w = (src.width * scale).toInt().coerceAtLeast(1)
+        val h = (src.height * scale).toInt().coerceAtLeast(1)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(out).apply {
+            drawColor(android.graphics.Color.WHITE)
+            drawBitmap(src, null, android.graphics.Rect(0, 0, w, h), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        }
+        src.recycle()
+        val bytes = java.io.ByteArrayOutputStream().also { out.compress(Bitmap.CompressFormat.JPEG, quality, it) }.toByteArray()
+        out.recycle()
+        write(bytes, "jpg", name, "image/jpeg")
+    }
+
+    /** Decodes [uri] at about [maxSide] px on its long side (never much bigger), upright on Android 9+. */
+    private fun decodeUri(uri: Uri, maxSide: Int): Bitmap? {
+        val resolver = context.contentResolver
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            return android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
+                val side = maxOf(info.size.width, info.size.height)
+                if (side > maxSide) decoder.setTargetSize(
+                    (info.size.width.toLong() * maxSide / side).toInt().coerceAtLeast(1),
+                    (info.size.height.toLong() * maxSide / side).toInt().coerceAtLeast(1),
+                )
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        }
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        return resolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+    }
+
     /** A new empty file in the attachments folder and its content URI, for the camera app to write a photo into. */
     fun newPhotoTarget(): Pair<File, Uri> {
         val f = File(dir, newId() + ".jpg")

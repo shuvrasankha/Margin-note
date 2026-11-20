@@ -70,7 +70,7 @@ internal val FEATURES: List<Pair<String, List<Feature>>> = listOf(
         Feature(Ico.BELL, "Reminders", "Remind me on a note, once or on repeat, with an optional alarm and full-screen alert.", Screen.Reminders),
         Feature(Ico.CALENDAR, "Journal", "A note for each day on a calendar, behind your passcode, with a daily reminder.", Screen.Journal),
         Feature(Ico.CHECK, "Habits", "Tick habits off each day and see your streaks.", Screen.Habits),
-        Feature(Ico.LINES, "Trackers", "Lists like “Movies watched”, counted year by year.", Screen.Trackers),
+        Feature(Ico.LINES, "Trackers", "Lists like “Movies watched”, counted year by year, with a photo or cover for each one.", Screen.Trackers),
     ),
     "Privacy" to listOf(
         Feature(Ico.LOCK, "Locked notes", "Lock a note with your passcode; it's encrypted on the phone and in your backups."),

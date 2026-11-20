@@ -27,11 +27,14 @@ fun noteMarkdown(
             b.table != null -> b.table.markdown()
             a != null -> {
                 val name = escapeInline(a.name)
-                when {
+                val file = when {
                     a.isLink -> linkUrl(a)?.let { "[$name](${it.replace(")", "%29").replace(" ", "%20")})" } ?: "*$name*"
                     a.isDrawing -> "*[Drawing]*"
                     else -> attachmentRef(a)?.let { if (a.isImage) "![$name]($it)" else "[$name]($it)" } ?: "*[${name}]*"
                 }
+                // A tracker entry keeps its text beside its photo.
+                val caption = b.text.trim().takeIf { it.isNotEmpty() && it != ATTACHMENT_CHAR.toString() }
+                if (caption != null) inlineMarkdown(caption, emptyList()) + "\n\n" + file else file
             }
             code -> b.text
             i == 0 -> "# " + inlineMarkdown(b.text, b.marks)

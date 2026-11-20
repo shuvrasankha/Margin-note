@@ -42,7 +42,27 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.ripple
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import com.margin.app.data.Attachment
+import com.margin.app.data.decodeImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -105,6 +125,16 @@ private const val NO_YEAR = 0
 /** An entry being added ([original] null) or edited, in the tracker [noteId]. Found by value, so a sync can't shift it. */
 private data class EntryEdit(val noteId: String, val original: TrackerEntry?)
 
+/**
+ * Where tracker photos go: [compress] stores a picked or taken photo as a small JPEG, [file] finds one to show, and
+ * [cameraTarget] is a new file (and its URI) for the camera app to write into.
+ */
+class TrackerPhotos(
+    val compress: suspend (Uri, String) -> Attachment,
+    val file: (Attachment) -> File,
+    val cameraTarget: () -> Pair<File, Uri>,
+)
+
 private fun liveTrackers(notes: List<NoteEntity>) = notes.filter { isTracker(it) && it.trashedAt == null && !it.deleted }.sortedBy { it.createdAt }
 
 /**
@@ -115,7 +145,7 @@ private fun liveTrackers(notes: List<NoteEntity>) = notes.filter { isTracker(it)
 @Composable
 fun TrackersScreen(
     notes: List<NoteEntity>, onOpen: (NoteEntity) -> Unit, onAdd: (String) -> Unit,
-    onSave: (NoteEntity, List<TrackerEntry>) -> Unit, onBack: () -> Unit,
+    onSave: (NoteEntity, List<TrackerEntry>) -> Unit, onBack: () -> Unit, photos: TrackerPhotos,
 ) {
     val today = LocalDate.now()
     val trackers = remember(notes) { liveTrackers(notes) }
@@ -123,7 +153,7 @@ fun TrackersScreen(
     var naming by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<EntryEdit?>(null) }
     if (naming) NameDialog("New tracker", "", onDismiss = { naming = false }, label = "Like Movies watched") { naming = false; onAdd(it) }
-    editing?.let { EntryEditor(trackers, it, onSave) { editing = null } }
+    editing?.let { EntryEditor(trackers, it, photos, onSave) { editing = null } }
 
     Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page) }) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
@@ -346,7 +376,7 @@ private fun MonthBars(counts: IntArray, highlight: Int, modifier: Modifier = Mod
 @Composable
 fun TrackerScreen(
     notes: List<NoteEntity>, id: String, backLabel: String, onRename: (NoteEntity, String) -> Unit, onDelete: (NoteEntity) -> Unit,
-    onSave: (NoteEntity, List<TrackerEntry>) -> Unit, onBack: () -> Unit,
+    onSave: (NoteEntity, List<TrackerEntry>) -> Unit, onBack: () -> Unit, photos: TrackerPhotos,
 ) {
     val trackers = remember(notes) { liveTrackers(notes) }
     val note = trackers.firstOrNull { it.id == id }
@@ -362,7 +392,7 @@ fun TrackerScreen(
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<EntryEdit?>(null) }
-    editing?.let { EntryEditor(trackers, it, onSave) { editing = null } }
+    editing?.let { EntryEditor(trackers, it, photos, onSave) { editing = null } }
     if (renaming) NameDialog("Rename tracker", note.title, onDismiss = { renaming = false }, label = "Tracker") { renaming = false; onRename(note, it) }
     if (deleting) MarginDialog(
         onDismissRequest = { deleting = false },
@@ -429,7 +459,7 @@ fun TrackerScreen(
                 }
                 item(key = "g$month") {
                     DividedCard(group, 76.dp) { entry ->
-                        EntryRow(entry) { editing = EntryEdit(note.id, entry) }
+                        EntryRow(entry, photos) { editing = EntryEdit(note.id, entry) }
                     }
                 }
             }
@@ -475,7 +505,7 @@ private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EntryRow(entry: TrackerEntry, onClick: () -> Unit) {
+private fun EntryRow(entry: TrackerEntry, photos: TrackerPhotos, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -483,7 +513,21 @@ private fun EntryRow(entry: TrackerEntry, onClick: () -> Unit) {
         DateBadge(entry.date)
         Text(entry.title.ifBlank { "Untitled" }, Modifier.weight(1f), style = JType.item, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         entry.rating?.let { Stars(it) }
+        entry.photo?.let { PhotoThumb(photos.file(it), Modifier.size(40.dp, 52.dp).clip(JShape.xs).background(jc.page)) }
     }
+}
+
+/** Whether the clipboard holds a photo, from its description alone (reading the clip itself shows a "pasted" notice). */
+private fun clipHasImage(clipboard: android.content.ClipboardManager?): Boolean =
+    runCatching { clipboard?.primaryClipDescription?.hasMimeType("image/*") == true }.getOrDefault(false)
+
+/** A photo cropped to fill [modifier], read small off the main thread. */
+@Composable
+private fun PhotoThumb(file: File, modifier: Modifier) {
+    val bitmap by produceState<ImageBitmap?>(null, file) {
+        value = withContext(Dispatchers.IO) { runCatching { decodeImage(file, 320)?.asImageBitmap() }.getOrNull() }
+    }
+    Box(modifier) { bitmap?.let { Image(it, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop) } }
 }
 
 /** The day of the month over its weekday, like a tear-off calendar. */
@@ -511,24 +555,59 @@ private fun Stars(rating: Int) {
 
 /** Shows the add or edit dialog for [edit], then saves the tracker's whole new list through [onSave]. */
 @Composable
-private fun EntryEditor(trackers: List<NoteEntity>, edit: EntryEdit, onSave: (NoteEntity, List<TrackerEntry>) -> Unit, onClose: () -> Unit) {
+private fun EntryEditor(trackers: List<NoteEntity>, edit: EntryEdit, photos: TrackerPhotos, onSave: (NoteEntity, List<TrackerEntry>) -> Unit, onClose: () -> Unit) {
     // The note as it is now, so a sync that landed while the dialog was open isn't overwritten.
     val note = trackers.firstOrNull { it.id == edit.noteId } ?: return
     EntryDialog(
-        if (edit.original == null) "Add to ${note.title}" else "Edit entry", edit.original, onDismiss = onClose,
+        if (edit.original == null) "Add to ${note.title}" else "Edit entry", edit.original, photos, onDismiss = onClose,
         onDelete = edit.original?.let { old -> { onClose(); onSave(note, trackerEntries(note).replacing(old, null)) } },
     ) { entry -> onClose(); onSave(note, trackerEntries(note).replacing(edit.original, entry)) }
 }
 
 private fun dayLabel(day: LocalDate): String = day.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
 
-/** Adds or edits one entry: what it is, when, and an optional rating out of 5. */
+/** Adds or edits one entry: what it is, when, an optional rating out of 5 and an optional photo. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun EntryDialog(title: String, initial: TrackerEntry?, onDismiss: () -> Unit, onDelete: (() -> Unit)?, onSave: (TrackerEntry) -> Unit) {
+private fun EntryDialog(title: String, initial: TrackerEntry?, photos: TrackerPhotos, onDismiss: () -> Unit, onDelete: (() -> Unit)?, onSave: (TrackerEntry) -> Unit) {
     var name by remember { mutableStateOf(initial?.title.orEmpty()) }
     var date by remember { mutableStateOf(if (initial == null) LocalDate.now() else initial.date) }
     var rating by remember { mutableStateOf(initial?.rating) }
     var picking by remember { mutableStateOf(false) }
+    var photo by remember { mutableStateOf(initial?.photo) }
+    var busy by remember { mutableStateOf(false) }
+    var shot by remember { mutableStateOf<Pair<File, Uri>?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // Every photo is stored small: a few MB from the camera becomes a JPEG of a few hundred KB at most.
+    fun store(uri: Uri, then: suspend () -> Unit = {}) {
+        busy = true
+        scope.launch {
+            try { photo = photos.compress(uri, name.trim().ifBlank { "Photo" } + ".jpg") }
+            catch (_: Exception) { Toast.makeText(context, "Couldn't add that photo.", Toast.LENGTH_SHORT).show() }
+            finally { then(); busy = false }
+        }
+    }
+    // Paste shows while the clipboard holds a photo (copied from a browser, Photos, a chat...). Only the clip's
+    // description is checked until Paste is tapped, so Android doesn't announce a paste that didn't happen.
+    val clipboard = remember { context.getSystemService(android.content.ClipboardManager::class.java) }
+    var canPaste by remember { mutableStateOf(clipHasImage(clipboard)) }
+    DisposableEffect(clipboard) {
+        val listener = android.content.ClipboardManager.OnPrimaryClipChangedListener { canPaste = clipHasImage(clipboard) }
+        clipboard?.addPrimaryClipChangedListener(listener)
+        onDispose { clipboard?.removePrimaryClipChangedListener(listener) }
+    }
+    fun paste() {
+        val uri = runCatching { clipboard?.primaryClip?.let { clip -> (0 until clip.itemCount).firstNotNullOfOrNull { clip.getItemAt(it).uri } } }.getOrNull()
+        if (uri == null) Toast.makeText(context, "There's no photo to paste.", Toast.LENGTH_SHORT).show() else store(uri)
+    }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { store(it) } }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val (file, uri) = shot ?: return@rememberLauncherForActivityResult
+        shot = null
+        // The camera's full-size file is only a step on the way: drop it once compressed.
+        if (ok) store(uri) { withContext(Dispatchers.IO) { file.delete() } } else file.delete()
+    }
     if (picking) EntryDateDialog(date ?: LocalDate.now(), onDismiss = { picking = false }) { date = it; picking = false }
     MarginDialog(
         onDismissRequest = onDismiss,
@@ -556,10 +635,44 @@ private fun EntryDialog(title: String, initial: TrackerEntry?, onDismiss: () -> 
                     Spacer(Modifier.weight(1f))
                     if (rating != null) TextAction("Clear", { rating = null }, color = jc.muted)
                 }
+                Row(
+                    Modifier.fillMaxWidth().clip(JShape.sm).background(jc.surface).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(Modifier.size(52.dp, 68.dp).clip(JShape.xs).background(jc.page), contentAlignment = Alignment.Center) {
+                        val p = photo
+                        when {
+                            busy -> CircularProgressIndicator(Modifier.size(22.dp), color = jc.accent, strokeWidth = 2.dp)
+                            p != null -> PhotoThumb(photos.file(p), Modifier.matchParentSize())
+                            else -> JIcon(Ico.CAMERA, jc.muted, size = 22.dp)
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            when { busy -> "Shrinking the photo…"; photo != null -> "Photo"; else -> "Add a cover or photo" },
+                            style = JType.secondary, color = jc.ink,
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextAction(if (photo == null) "Choose" else "Change", {
+                                gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }, enabled = !busy)
+                            TextAction("Camera", {
+                                val target = photos.cameraTarget()
+                                shot = target
+                                try { camera.launch(target.second) } catch (_: android.content.ActivityNotFoundException) {
+                                    shot = null; target.first.delete()
+                                    Toast.makeText(context, "No camera app on this phone.", Toast.LENGTH_SHORT).show()
+                                }
+                            }, enabled = !busy)
+                            if (canPaste) TextAction("Paste", ::paste, enabled = !busy)
+                            if (photo != null) TextAction("Remove", { photo = null }, color = jc.danger, enabled = !busy)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(TrackerEntry(date, name.trim(), rating)) }, enabled = name.isNotBlank()) { Text("Save", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = { onSave(TrackerEntry(date, name.trim(), rating, photo)) }, enabled = name.isNotBlank() && !busy) { Text("Save", fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
             Row {
