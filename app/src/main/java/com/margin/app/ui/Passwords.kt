@@ -1,5 +1,6 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -99,6 +100,9 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /** A key and a padlock's shackle: the Passwords list. */
 const val ICON_PASSWORDS = "M7 11V8a5 5 0 0 1 9.6-2M5 11h14v10H5zM12 15v2"
@@ -188,7 +192,7 @@ fun copySecret(context: Context, label: String, text: String, sensitive: Boolean
         }, 60_000)
     }
     // Android 13 and later shows its own "Copied" notice.
-    if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, if (sensitive) "$label copied. It clears in a minute." else "$label copied", Toast.LENGTH_SHORT).show()
+    if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, if (sensitive) context.getString(R.string.passwords_copied_it_clears_in_a, label) else context.getString(R.string.passwords_copied, label), Toast.LENGTH_SHORT).show()
 }
 
 /**
@@ -209,7 +213,7 @@ private fun connectWifi(context: Context, ssid: String, password: String, securi
         )
     }.isSuccess
     if (!added) {
-        if (password.isNotEmpty()) copySecret(context, "Wi-Fi password", password)
+        if (password.isNotEmpty()) copySecret(context, context.getString(R.string.passwords_wi_fi_password), password)
         runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)) }
     }
 }
@@ -240,11 +244,11 @@ private fun AutofillCard() {
     val supported = remember { context.getSystemService(android.view.autofill.AutofillManager::class.java)?.isAutofillSupported == true }
     if (!supported) return
     if (autofillOn()) Text(
-        "Autofill is on: Margin fills and saves passwords in apps and browsers.",
+        stringResource(R.string.passwords_autofill_is_on_margin_fills),
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), style = JType.small, color = jc.muted,
     ) else Card(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
         CardRow(
-            "Turn On Autofill", sub = "Fill passwords in apps and browsers, and save new or changed ones",
+            stringResource(R.string.passwords_turn_on_autofill), sub = stringResource(R.string.passwords_fill_passwords_in_apps_and),
             onClick = { turnOnAutofill(context) }, icon = ICON_PASSWORDS,
         ) { JIcon(Ico.CHEVRON, jc.muted, size = 18.dp, stroke = 2f) }
     }
@@ -270,7 +274,7 @@ private fun strengthOf(l: Login) = PasswordGen.strength(l.password, l.relatedWor
 private fun isWeak(l: Login) = l.password.isNotEmpty() && strengthOf(l) == Strength.WEAK
 
 @Composable
-fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = "Folders") {
+fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = stringResource(R.string.passwords_library)) {
     SecureWindow()
     val context = LocalContext.current
     val entries by vm.entries.collectAsState()
@@ -297,26 +301,26 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = 
             when (filter) { VaultFilter.ALL -> true; VaultFilter.REUSED -> e.id in reused; VaultFilter.WEAK -> e.id in weak }
         }.filter { e -> q.isEmpty() || listOf(e.title, e.login.username, e.login.url, e.login.notes).any { q in it.lowercase() } }
     }
-    val glass = rememberGlass()
+    val pageList = rememberLazyListState()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar(backLabel, onBack, color = jc.page, glass = glass) },
+        topBar = { NavBar(backLabel, onBack, color = jc.page) },
         bottomBar = {
-            if (list.isNotEmpty()) BottomBar(glass = glass) {
+            if (list.isNotEmpty()) BottomBar() {
                 Spacer(Modifier.size(44.dp))
                 Text(
-                    if (query.isBlank() && filter == VaultFilter.ALL) plural(list.size, "Password") else plural(shown.size, "Result"),
+                    if (query.isBlank() && filter == VaultFilter.ALL) pluralStringResource(R.plurals.passwords_count, list.size, list.size) else pluralStringResource(R.plurals.passwords_results_count, shown.size, shown.size),
                     style = JType.small, color = jc.muted,
                 )
-                IconAction(Ico.PLUS, "New password", { openId = "" }, size = 24.dp)
+                IconAction(Ico.PLUS, stringResource(R.string.passwords_new_password), { openId = "" }, size = 24.dp)
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
-            item { PageTitle("Passwords") }
+        LazyColumn(state = pageList, modifier = Modifier.padding(padding).fillMaxSize()) {
+            item { PageTitle(stringResource(R.string.passwords_passwords)) }
             when {
                 entries == null -> item {
-                    Text("Opening…", Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted)
+                    Text(stringResource(R.string.passwords_opening), Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted)
                 }
                 list.isEmpty() -> item {
                     VaultEmpty(onAdd = { openId = "" })
@@ -324,15 +328,15 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = 
                 }
                 else -> {
                     item {
-                        SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp), fill = jc.card)
+                        SearchField(query, { query = it }, stringResource(R.string.passwords_search_passwords), Modifier.padding(horizontal = 16.dp), fill = jc.card)
                         HealthCard(list.size, reused.size, weak.size, filter, { filter = if (filter == it) VaultFilter.ALL else it })
                         Spacer(Modifier.height(8.dp))
                         AutofillCard()
                     }
                     if (shown.isEmpty()) item {
                         Text(
-                            if (query.isNotBlank()) "No passwords match “${query.trim()}”."
-                            else if (filter == VaultFilter.REUSED) "No password is used twice." else "No weak passwords.",
+                            if (query.isNotBlank()) stringResource(R.string.passwords_no_passwords_match, query.trim())
+                            else if (filter == VaultFilter.REUSED) stringResource(R.string.passwords_no_password_is_used_twice) else stringResource(R.string.passwords_no_weak_passwords),
                             Modifier.padding(horizontal = 20.dp, vertical = 12.dp), style = JType.secondary, color = jc.muted,
                         )
                     }
@@ -340,7 +344,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = 
                         item(key = "h-$letter") { SectionLabel(letter.toString(), Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(top = 8.dp)) }
                         item(key = "g-$letter") {
                             DividedCard(group, 66.dp, Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick()).padding(horizontal = 16.dp).animateContentSize(JMotion.standard())) { e ->
-                                LoginRow(e, e.id in reused, e.id in weak, onOpen = { openId = e.id }, onCopy = { copySecret(context, "Password", e.login.password) })
+                                LoginRow(e, e.id in reused, e.id in weak, onOpen = { openId = e.id }, onCopy = { copySecret(context, context.getString(R.string.passwords_password), e.login.password) })
                             }
                         }
                     }
@@ -350,7 +354,7 @@ fun PasswordsScreen(vm: VaultViewModel, onBack: () -> Unit, backLabel: String = 
                             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
                         ) {
                             JIcon(Ico.LOCK, jc.muted, size = 14.dp, stroke = 2f)
-                            Text("Encrypted with your notes passcode", style = JType.small, color = jc.muted)
+                            Text(stringResource(R.string.passwords_encrypted_with_your_notes_passcode), style = JType.small, color = jc.muted)
                         }
                     }
                 }
@@ -366,24 +370,25 @@ private fun HealthCard(total: Int, reused: Int, weak: Int, filter: VaultFilter, 
         Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min)) {
             @Composable
             fun RowScopeStat(n: Int, label: String, f: VaultFilter, alert: Boolean) {
+    val context = androidx.compose.ui.platform.LocalContext.current
                 val selected = filter == f
                 Column(
                     Modifier.weight(1f).fillMaxSize()
                         .background(if (selected) jc.selected else androidx.compose.ui.graphics.Color.Transparent)
                         .clickable(role = Role.Button, enabled = f == VaultFilter.ALL || n > 0 || selected) { onFilter(f) }
                         .padding(vertical = 14.dp)
-                        .semantics { contentDescription = "$n $label" + if (selected) ", showing only these" else "" },
+                        .semantics { contentDescription = context.getString(if (selected) R.string.passwords_stat_desc_selected else R.string.passwords_stat_desc, n.toString(), label) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     CountText(n, JType.rowTitle.copy(fontSize = 24.sp, lineHeight = 28.sp), if (alert && n > 0) jc.danger else jc.ink)
                     Text(label, style = JType.small, color = jc.muted)
                 }
             }
-            RowScopeStat(total, "Saved", VaultFilter.ALL, alert = false)
+            RowScopeStat(total, stringResource(R.string.passwords_saved), VaultFilter.ALL, alert = false)
             androidx.compose.material3.VerticalDivider(Modifier.padding(vertical = 12.dp), color = jc.line)
-            RowScopeStat(reused, "Reused", VaultFilter.REUSED, alert = true)
+            RowScopeStat(reused, stringResource(R.string.passwords_reused), VaultFilter.REUSED, alert = true)
             androidx.compose.material3.VerticalDivider(Modifier.padding(vertical = 12.dp), color = jc.line)
-            RowScopeStat(weak, "Weak", VaultFilter.WEAK, alert = true)
+            RowScopeStat(weak, stringResource(R.string.passwords_weak), VaultFilter.WEAK, alert = true)
         }
     }
 }
@@ -397,12 +402,12 @@ private fun VaultEmpty(onAdd: () -> Unit) {
         Box(Modifier.size(72.dp).clip(JShape.md).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
             JIcon(ICON_PASSWORDS, jc.accent, size = 36.dp, stroke = 1.8f)
         }
-        Text("No passwords yet", Modifier.padding(top = 8.dp), style = JType.rowTitle, color = jc.ink)
+        Text(stringResource(R.string.passwords_no_passwords_yet), Modifier.padding(top = 8.dp), style = JType.rowTitle, color = jc.ink)
         Text(
-            "Save logins here. They're encrypted with your notes passcode and sync to your other devices.",
+            stringResource(R.string.passwords_save_logins_here_theyre_encrypted),
             style = JType.secondary, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        PrimaryButton("Add a Password", onAdd, Modifier.fillMaxWidth().padding(top = 12.dp))
+        PrimaryButton(stringResource(R.string.passwords_add_a_password), onAdd, Modifier.fillMaxWidth().padding(top = 12.dp))
     }
 }
 
@@ -415,16 +420,16 @@ private fun LoginRow(e: VaultEntry, reused: Boolean, weak: Boolean, onOpen: () -
         EntryIcon(e.login, e.title)
         Column(Modifier.weight(1f)) {
             Text(e.title, style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            (if (e.login.vaultKind == VaultKind.WIFI) "Wi-Fi · " + WifiSecurity.of(e.login.security).label else e.login.username).takeIf { it.isNotBlank() }?.let {
+            (if (e.login.vaultKind == VaultKind.WIFI) stringResource(R.string.passwords_wifi_security, stringResource(WifiSecurity.of(e.login.security).labelRes)) else e.login.username).takeIf { it.isNotBlank() }?.let {
                 Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (reused || weak) Text(
-            if (reused) "Reused" else "Weak",
+            if (reused) stringResource(R.string.passwords_reused) else stringResource(R.string.passwords_weak),
             Modifier.clip(RoundedCornerShape(50)).background(jc.danger.copy(alpha = 0.12f)).padding(horizontal = 8.dp, vertical = 2.dp),
             style = JType.small, color = jc.danger,
         )
-        if (e.login.password.isNotEmpty()) IconAction(Ico.COPY, "Copy password for ${e.title}", onCopy, color = jc.muted, size = 20.dp)
+        if (e.login.password.isNotEmpty()) IconAction(Ico.COPY, stringResource(R.string.passwords_copy_password_for, e.title), onCopy, color = jc.muted, size = 20.dp)
     }
 }
 
@@ -541,17 +546,17 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
     )
     if (confirmDiscard) MarginDialog(
         onDismissRequest = { confirmDiscard = false },
-        title = { Text(if (isNew) "Discard this password?" else "Discard your changes?") },
-        text = { Text(if (isNew) "It hasn't been saved." else "The saved login stays as it was.") },
-        confirmButton = { TextButton(onClick = { confirmDiscard = false; leaveEdit() }) { Text("Discard", color = jc.danger) } },
-        dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep Editing") } },
+        title = { Text(if (isNew) stringResource(R.string.passwords_discard_this_password) else stringResource(R.string.passwords_discard_your_changes)) },
+        text = { Text(if (isNew) stringResource(R.string.passwords_it_hasnt_been_saved) else stringResource(R.string.passwords_the_saved_login_stays_as)) },
+        confirmButton = { TextButton(onClick = { confirmDiscard = false; leaveEdit() }) { Text(stringResource(R.string.common_discard), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(R.string.passwords_keep_editing)) } },
     )
     if (confirmDelete) MarginDialog(
         onDismissRequest = { confirmDelete = false },
-        title = { Text("Delete “${entry.title}”?") },
-        text = { Text("It moves to Recently Deleted, still encrypted, and can be recovered from there.") },
-        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("Delete", color = jc.danger) } },
-        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+        title = { Text(stringResource(R.string.passwords_delete, entry.title)) },
+        text = { Text(stringResource(R.string.passwords_it_moves_to_recently_deleted)) },
+        confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text(stringResource(R.string.common_delete), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.common_cancel)) } },
     )
     BackHandler(onBack = close)
     val title = VaultEntry("", edited).title
@@ -561,18 +566,18 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
     ) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (editing) TextAction("Cancel", close) else TextAction("Done", onDismiss)
+                if (editing) TextAction(stringResource(R.string.common_cancel), close) else TextAction(stringResource(R.string.common_done), onDismiss)
                 Text(
-                    when { isNew -> "New ${if (kind == VaultKind.LOGIN) "Password" else kind.label}"; editing -> "Edit ${if (kind == VaultKind.LOGIN) "Password" else kind.label}"; else -> "" },
+                    when { isNew -> if (kind == VaultKind.LOGIN) stringResource(R.string.passwords_new_password_title) else stringResource(R.string.passwords_new_kind, stringResource(kind.labelRes)); editing -> if (kind == VaultKind.LOGIN) stringResource(R.string.passwords_edit_password) else stringResource(R.string.passwords_edit_kind, stringResource(kind.labelRes)); else -> "" },
                     Modifier.weight(1f).padding(horizontal = 8.dp),
                     style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
-                if (editing) TextAction("Save", {
+                if (editing) TextAction(stringResource(R.string.common_save), {
                     onSave(edited)
                     if (!isNew) { saved = edited; editing = false; generating = false }
                 }, bold = true, enabled = canSave && changed)
-                else TextAction("Edit", { editing = true })
+                else TextAction(stringResource(R.string.common_edit), { editing = true })
             }
             Column(
                 Modifier.fillMaxWidth().animateContentSize(JMotion.standard()).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -584,8 +589,8 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                         EntryIcon(edited, if (hasContent) title else "", 56.dp)
                         Text(
                             if (hasContent) title else when (kind) {
-                                VaultKind.LOGIN -> "Name it after the site or app"; VaultKind.WIFI -> "The network's name"
-                                VaultKind.DEVICE -> "The computer, drive or device"; VaultKind.OTHER -> "Name it"
+                                VaultKind.LOGIN -> stringResource(R.string.passwords_name_it_after_the_site); VaultKind.WIFI -> stringResource(R.string.passwords_the_networks_name)
+                                VaultKind.DEVICE -> stringResource(R.string.passwords_the_computer_drive_or_device); VaultKind.OTHER -> stringResource(R.string.passwords_name_it)
                             }, style = JType.small,
                             color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
@@ -594,54 +599,54 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                     if (isNew) Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                    ) { VaultKind.entries.forEach { k -> Pill(k.label, kind == k, { kind = k }) } }
+                    ) { VaultKind.entries.forEach { k -> Pill(stringResource(k.labelRes), kind == k, { kind = k }) } }
                     when (kind) {
                         VaultKind.LOGIN -> {
-                            FormLabel("Site")
+                            FormLabel(stringResource(R.string.passwords_site))
                             Card {
-                                InlineField(name, { name = it }, "Name", siteOf(url).ifBlank { "Bank, email, shop…" }, capitalize = true, focusFirst = isNew)
+                                InlineField(name, { name = it }, stringResource(R.string.passwords_name), siteOf(url).ifBlank { stringResource(R.string.passwords_bank_email_shop) }, capitalize = true, focusFirst = isNew)
                                 CardDivider()
-                                InlineField(url, { url = it }, "Website", "example.com", KeyboardType.Uri)
+                                InlineField(url, { url = it }, stringResource(R.string.passwords_website), "example.com", KeyboardType.Uri)
                             }
                         }
                         VaultKind.WIFI -> {
-                            FormLabel("Network")
+                            FormLabel(stringResource(R.string.passwords_network))
                             Card {
-                                InlineField(name, { name = it }, "Name", "Network name (SSID)", focusFirst = isNew)
+                                InlineField(name, { name = it }, stringResource(R.string.passwords_name), stringResource(R.string.passwords_network_name_ssid), focusFirst = isNew)
                                 CardDivider()
                                 Row(
                                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("Security", Modifier.width(88.dp), style = JType.item, color = jc.ink)
-                                    WifiSecurity.entries.forEach { w -> Pill(w.label, security == w, { security = w }) }
+                                    Text(stringResource(R.string.passwords_security), Modifier.width(88.dp), style = JType.item, color = jc.ink)
+                                    WifiSecurity.entries.forEach { w -> Pill(stringResource(w.labelRes), security == w, { security = w }) }
                                 }
                             }
                         }
                         VaultKind.DEVICE, VaultKind.OTHER -> {
-                            FormLabel(if (kind == VaultKind.DEVICE) "Device" else "Item")
+                            FormLabel(if (kind == VaultKind.DEVICE) stringResource(R.string.passwords_device) else stringResource(R.string.passwords_item))
                             Card {
                                 InlineField(
-                                    name, { name = it }, "Name", if (kind == VaultKind.DEVICE) "Laptop SSD, router, safe…" else "Licence key, door code…",
+                                    name, { name = it }, stringResource(R.string.passwords_name), if (kind == VaultKind.DEVICE) stringResource(R.string.passwords_laptop_ssd_router_safe) else stringResource(R.string.passwords_licence_key_door_code),
                                     capitalize = true, focusFirst = isNew,
                                 )
                             }
                         }
                     }
-                    FormLabel(if (kind == VaultKind.LOGIN) "Sign-in" else "Secret")
+                    FormLabel(if (kind == VaultKind.LOGIN) stringResource(R.string.passwords_sign_in) else stringResource(R.string.passwords_secret))
                     Card {
                         if (kind != VaultKind.WIFI && kind != VaultKind.OTHER) {
                             InlineField(
-                                username, { username = it }, if (kind == VaultKind.DEVICE) "Account" else "Username",
-                                if (kind == VaultKind.DEVICE) "User or account, if any" else "Email or username", KeyboardType.Email,
+                                username, { username = it }, if (kind == VaultKind.DEVICE) stringResource(R.string.passwords_account) else stringResource(R.string.passwords_username),
+                                if (kind == VaultKind.DEVICE) stringResource(R.string.passwords_user_or_account_if_any) else stringResource(R.string.passwords_email_or_username), KeyboardType.Email,
                             )
                             CardDivider()
                         }
                         InlineField(
-                            password, { password = it }, "Password", if (kind == VaultKind.DEVICE) "Password, PIN or key" else "Required", KeyboardType.Password, mono = true,
+                            password, { password = it }, stringResource(R.string.passwords_password), if (kind == VaultKind.DEVICE) stringResource(R.string.passwords_password_pin_or_key) else stringResource(R.string.passwords_required), KeyboardType.Password, mono = true,
                             transform = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
                         ) {
-                            if (password.isNotEmpty()) IconAction(if (reveal) Ico.EYE_OFF else Ico.EYE, if (reveal) "Hide password" else "Show password", { reveal = !reveal }, color = jc.muted, size = 20.dp)
+                            if (password.isNotEmpty()) IconAction(if (reveal) Ico.EYE_OFF else Ico.EYE, if (reveal) stringResource(R.string.passwords_hide_password) else stringResource(R.string.passwords_show_password), { reveal = !reveal }, color = jc.muted, size = 20.dp)
                         }
                         if (password.isNotEmpty()) Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
                             StrengthMeter(strengthOf(edited))
@@ -650,35 +655,35 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                     if (generating || password.isEmpty()) Generator(
                         replacing = password.isNotEmpty(),
                         onUse = { password = it; reveal = true; generating = false },
-                    ) else TextAction("Suggest a Strong Password", { generating = true })
+                    ) else TextAction(stringResource(R.string.passwords_suggest_a_strong_password), { generating = true })
                     if (kind == VaultKind.LOGIN) {
-                        FormLabel("Two-factor code")
+                        FormLabel(stringResource(R.string.passwords_two_factor_code))
                         Card {
-                            InlineField(otp, ::takeOtp, "Setup key", "Paste the key, or scan", KeyboardType.Password, mono = true) {
-                                IconAction(Ico.SCAN, "Scan the setup QR code", { scanOtp(context) { otp = ""; takeOtp(it) } }, color = jc.accent, size = 20.dp)
+                            InlineField(otp, ::takeOtp, stringResource(R.string.passwords_setup_key), stringResource(R.string.passwords_paste_the_key_or_scan), KeyboardType.Password, mono = true) {
+                                IconAction(Ico.SCAN, stringResource(R.string.passwords_scan_the_setup_qr_code), { scanOtp(context) { otp = ""; takeOtp(it) } }, color = jc.accent, size = 20.dp)
                             }
                             Text(
-                                if (otpBad) "Not a valid setup key" else "From the site's “set up authenticator app” page. Margin then shows the codes.",
+                                if (otpBad) stringResource(R.string.passwords_not_a_valid_setup_key) else stringResource(R.string.passwords_from_the_sites_set_up),
                                 Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), style = JType.small, color = if (otpBad) jc.danger else jc.muted,
                             )
                         }
                     }
                     if (kind == VaultKind.LOGIN && apps.isNotEmpty()) {
-                        FormLabel("Fills in apps")
+                        FormLabel(stringResource(R.string.passwords_fills_in_apps))
                         Card {
                             apps.forEachIndexed { i, pkg ->
                                 if (i > 0) CardDivider()
                                 CardRow(VaultIcons.appLabel(context, pkg) ?: pkg, sub = pkg) {
-                                    IconAction(Ico.CLOSE, "Stop filling in ${VaultIcons.appLabel(context, pkg) ?: pkg}", { apps = apps - pkg }, color = jc.muted, size = 20.dp)
+                                    IconAction(Ico.CLOSE, stringResource(R.string.passwords_stop_filling_in, VaultIcons.appLabel(context, pkg) ?: pkg), { apps = apps - pkg }, color = jc.muted, size = 20.dp)
                                 }
                             }
                         }
                     }
-                    FormLabel("Notes")
+                    FormLabel(stringResource(R.string.passwords_notes))
                     Card {
                         InlineField(
                             notes, { notes = it }, null,
-                            when (kind) { VaultKind.DEVICE -> "Recovery key, encryption details…"; VaultKind.WIFI -> "Router admin login, where it is…"; else -> "Security questions, PINs, recovery codes…" },
+                            when (kind) { VaultKind.DEVICE -> stringResource(R.string.passwords_recovery_key_encryption_details); VaultKind.WIFI -> stringResource(R.string.passwords_router_admin_login_where_it); else -> stringResource(R.string.passwords_security_questions_pins_recovery_codes) },
                             singleLine = false, capitalize = true,
                         )
                     }
@@ -691,30 +696,30 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                     }
                     Card {
                         if (wifi) {
-                            DetailRow("Network", name.ifBlank { "None" }, dim = name.isBlank()) {
-                                if (name.isNotBlank()) IconAction(Ico.COPY, "Copy network name", { copySecret(context, "Network name", name, sensitive = false) }, color = jc.accent, size = 20.dp)
+                            DetailRow(stringResource(R.string.passwords_network), name.ifBlank { stringResource(R.string.passwords_none) }, dim = name.isBlank()) {
+                                if (name.isNotBlank()) IconAction(Ico.COPY, stringResource(R.string.passwords_copy_network_name), { copySecret(context, context.getString(R.string.passwords_network_name), name, sensitive = false) }, color = jc.accent, size = 20.dp)
                             }
                             CardDivider()
-                            DetailRow("Security", security.label)
+                            DetailRow(stringResource(R.string.passwords_security), stringResource(security.labelRes))
                             CardDivider()
                         } else if (kind != VaultKind.OTHER) {
-                            DetailRow(if (kind == VaultKind.DEVICE) "Account" else "Username", username.ifBlank { "None" }, dim = username.isBlank()) {
-                                if (username.isNotBlank()) IconAction(Ico.COPY, "Copy username", { copySecret(context, "Username", username, sensitive = false) }, color = jc.accent, size = 20.dp)
+                            DetailRow(if (kind == VaultKind.DEVICE) stringResource(R.string.passwords_account) else stringResource(R.string.passwords_username), username.ifBlank { stringResource(R.string.passwords_none) }, dim = username.isBlank()) {
+                                if (username.isNotBlank()) IconAction(Ico.COPY, stringResource(R.string.passwords_copy_username), { copySecret(context, context.getString(R.string.passwords_username), username, sensitive = false) }, color = jc.accent, size = 20.dp)
                             }
                             CardDivider()
                         }
                         DetailRow(
-                            "Password", if (password.isEmpty()) "None" else if (reveal) password else "•".repeat(minOf(password.length, 16)),
+                            stringResource(R.string.passwords_password), if (password.isEmpty()) stringResource(R.string.passwords_none) else if (reveal) password else "•".repeat(minOf(password.length, 16)),
                             dim = password.isEmpty(), mono = reveal,
                         ) {
                             if (password.isNotEmpty()) {
-                                IconAction(if (reveal) Ico.EYE_OFF else Ico.EYE, if (reveal) "Hide password" else "Show password", { reveal = !reveal }, color = jc.muted, size = 20.dp)
-                                IconAction(Ico.COPY, "Copy password", { copySecret(context, "Password", password) }, color = jc.accent, size = 20.dp)
+                                IconAction(if (reveal) Ico.EYE_OFF else Ico.EYE, if (reveal) stringResource(R.string.passwords_hide_password) else stringResource(R.string.passwords_show_password), { reveal = !reveal }, color = jc.muted, size = 20.dp)
+                                IconAction(Ico.COPY, stringResource(R.string.passwords_copy_password), { copySecret(context, context.getString(R.string.passwords_password), password) }, color = jc.accent, size = 20.dp)
                             }
                         }
                         if (password.isNotEmpty()) Row(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             StrengthMeter(strengthOf(edited))
-                            if (reused) Text("  ·  Used on another login too", style = JType.small, color = jc.danger)
+                            if (reused) Text(stringResource(R.string.passwords_used_on_another_login_too), style = JType.small, color = jc.danger)
                         }
                         if (kind == VaultKind.LOGIN && otpSpec != null) {
                             CardDivider()
@@ -722,9 +727,9 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                         }
                         if (url.isNotBlank()) {
                             CardDivider()
-                            DetailRow("Website", url) {
+                            DetailRow(stringResource(R.string.passwords_website), url) {
                                 normalizeUrl(url)?.let { target ->
-                                    IconAction(Ico.GLOBE, "Open website", {
+                                    IconAction(Ico.GLOBE, stringResource(R.string.passwords_open_website), {
                                         runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(target))) }
                                     }, color = jc.accent, size = 20.dp)
                                 }
@@ -732,40 +737,40 @@ private fun LoginSheet(entry: VaultEntry, isNew: Boolean, reused: Boolean, onSav
                         }
                         if (apps.isNotEmpty()) {
                             CardDivider()
-                            DetailRow("Fills in", apps.joinToString { VaultIcons.appLabel(context, it) ?: it }, singleLine = false)
+                            DetailRow(stringResource(R.string.passwords_fills_in), apps.joinToString { VaultIcons.appLabel(context, it) ?: it }, singleLine = false)
                         }
                         if (notes.isNotBlank()) {
                             CardDivider()
-                            DetailRow("Notes", notes, singleLine = false)
+                            DetailRow(stringResource(R.string.passwords_notes), notes, singleLine = false)
                         }
                     }
                     if (wifi && name.isNotBlank()) Card {
-                        CardRow("Connect This Phone", sub = "Adds the network to Wi-Fi settings", onClick = { connectWifi(context, name, password, security) }, icon = ICON_WIFI)
+                        CardRow(stringResource(R.string.passwords_connect_this_phone), sub = stringResource(R.string.passwords_adds_the_network_to_wi), onClick = { connectWifi(context, name, password, security) }, icon = ICON_WIFI)
                     }
                     if (saved.passwordChangedAt > 0) Text(
-                        "Password changed " + fullTime(context, saved.passwordChangedAt),
+                        stringResource(R.string.passwords_password_changed, fullTime(context, saved.passwordChangedAt)),
                         Modifier.fillMaxWidth(), style = JType.small, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                     if (saved.history.isNotEmpty()) {
                         Card(Modifier.animateContentSize(JMotion.standard())) {
                             CardRow(
-                                "Previous Passwords", sub = plural(saved.history.size, "password"),
+                                stringResource(R.string.passwords_previous_passwords), sub = pluralStringResource(R.plurals.passwords_previous_count, saved.history.size, saved.history.size),
                                 onClick = { showHistory = !showHistory; revealedPast = null }, icon = Ico.CLOCK,
                             ) { Box(Modifier.rotate(if (showHistory) 270f else 90f)) { JIcon(Ico.CHEVRON, jc.muted, size = 18.dp, stroke = 2f) } }
                             if (showHistory) saved.history.forEachIndexed { i, past ->
                                 CardDivider()
                                 val shownPast = revealedPast == i
                                 DetailRow(
-                                    "Until " + fullTime(context, past.replacedAt),
+                                    stringResource(R.string.passwords_until, fullTime(context, past.replacedAt)),
                                     if (shownPast) past.password else "•".repeat(minOf(past.password.length, 16)), mono = shownPast,
                                 ) {
-                                    IconAction(if (shownPast) Ico.EYE_OFF else Ico.EYE, if (shownPast) "Hide old password" else "Show old password", { revealedPast = if (shownPast) null else i }, color = jc.muted, size = 20.dp)
-                                    IconAction(Ico.COPY, "Copy old password", { copySecret(context, "Old password", past.password) }, color = jc.accent, size = 20.dp)
+                                    IconAction(if (shownPast) Ico.EYE_OFF else Ico.EYE, if (shownPast) stringResource(R.string.passwords_hide_old_password) else stringResource(R.string.passwords_show_old_password), { revealedPast = if (shownPast) null else i }, color = jc.muted, size = 20.dp)
+                                    IconAction(Ico.COPY, stringResource(R.string.passwords_copy_old_password), { copySecret(context, context.getString(R.string.passwords_old_password), past.password) }, color = jc.accent, size = 20.dp)
                                 }
                             }
                         }
                     }
-                    Card { CardRow(if (kind == VaultKind.LOGIN) "Delete Password" else "Delete ${kind.label}", onClick = { confirmDelete = true }, labelColor = jc.danger, icon = Ico.TRASH) }
+                    Card { CardRow(if (kind == VaultKind.LOGIN) stringResource(R.string.passwords_delete_password) else stringResource(R.string.passwords_delete_kind, stringResource(kind.labelRes)), onClick = { confirmDelete = true }, labelColor = jc.danger, icon = Ico.TRASH) }
                 }
                 Spacer(Modifier.height(16.dp))
             }
@@ -786,8 +791,8 @@ private fun OtpRow(spec: OtpSpec) {
     }
     val code = Totp.code(spec, now)
     val left = Totp.secondsLeft(spec, now)
-    DetailRow("Verification code · ${left}s", Totp.grouped(code), mono = true) {
-        IconAction(Ico.COPY, "Copy verification code", { copySecret(context, "Code", Totp.code(spec, System.currentTimeMillis())) }, color = jc.accent, size = 20.dp)
+    DetailRow(stringResource(R.string.passwords_verification_code_s, left), Totp.grouped(code), mono = true) {
+        IconAction(Ico.COPY, stringResource(R.string.passwords_copy_verification_code), { copySecret(context, context.getString(R.string.passwords_code), Totp.code(spec, System.currentTimeMillis())) }, color = jc.accent, size = 20.dp)
     }
 }
 
@@ -799,9 +804,9 @@ private fun scanOtp(context: Context, onKey: (String) -> Unit) {
         .addOnSuccessListener { code ->
             val raw = code.rawValue.orEmpty()
             if (Totp.parse(raw) != null) onKey(raw)
-            else Toast.makeText(context, "That QR code isn't a 2FA setup code", Toast.LENGTH_SHORT).show()
+            else Toast.makeText(context, context.getString(R.string.passwords_that_qr_code_isnt_a), Toast.LENGTH_SHORT).show()
         }
-        .addOnFailureListener { Toast.makeText(context, "Couldn't open the scanner", Toast.LENGTH_SHORT).show() }
+        .addOnFailureListener { Toast.makeText(context, context.getString(R.string.passwords_couldnt_open_the_scanner), Toast.LENGTH_SHORT).show() }
 }
 
 /** A field in the read-only view: a small grey label over the value, actions on the right. */
@@ -866,10 +871,11 @@ private fun InlineField(
 /** Four bars, filled up to the password's strength. */
 @Composable
 private fun StrengthMeter(s: Strength, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val color = when (s) { Strength.WEAK -> jc.danger; Strength.FAIR -> jc.accent; else -> androidx.compose.ui.graphics.Color(0xFF2E8B57) }
-    Row(modifier.semantics { contentDescription = "Strength: ${s.label}" }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    Row(modifier.semantics { contentDescription = context.getString(R.string.passwords_strength_desc, context.getString(s.labelRes)) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (k in 0..3) Box(Modifier.size(22.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(if (k <= s.ordinal) color else jc.line))
-        Text(s.label, Modifier.padding(start = 6.dp), style = JType.small, color = color)
+        Text(stringResource(s.labelRes), Modifier.padding(start = 6.dp), style = JType.small, color = color)
     }
 }
 
@@ -889,9 +895,9 @@ private fun Generator(replacing: Boolean, onUse: (String) -> Unit) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 JIcon(Ico.SPARKLE, jc.accent, size = 16.dp, stroke = 2f)
-                Text("Suggested password", Modifier.weight(1f), style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.passwords_suggested_password), Modifier.weight(1f), style = JType.small, color = jc.muted)
                 StrengthMeter(PasswordGen.strength(candidate))
-                IconAction(Ico.ROTATE, "Suggest another", { nonce++ }, color = jc.muted, size = 20.dp)
+                IconAction(Ico.ROTATE, stringResource(R.string.passwords_suggest_another), { nonce++ }, color = jc.muted, size = 20.dp)
             }
             Text(
                 candidate, Modifier.padding(end = 8.dp, top = 2.dp, bottom = 4.dp),
@@ -899,16 +905,16 @@ private fun Generator(replacing: Boolean, onUse: (String) -> Unit) {
                 color = jc.ink,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextAction(if (options) "Fewer Options" else "Options", { options = !options }, color = jc.muted)
+                TextAction(if (options) stringResource(R.string.passwords_fewer_options) else stringResource(R.string.passwords_options), { options = !options }, color = jc.muted)
                 Spacer(Modifier.weight(1f))
-                TextAction(if (replacing) "Replace Password" else "Use Password", { onUse(candidate) }, bold = true)
+                TextAction(if (replacing) stringResource(R.string.passwords_replace_password) else stringResource(R.string.passwords_use_password), { onUse(candidate) }, bold = true)
             }
         }
         if (options) {
             CardDivider()
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Length", Modifier.weight(1f), style = JType.item, color = jc.ink)
+                    Text(stringResource(R.string.passwords_length), Modifier.weight(1f), style = JType.item, color = jc.ink)
                     Text("${length.toInt()}", style = JType.item.copy(fontWeight = FontWeight.SemiBold), color = jc.accent)
                 }
                 Slider(
@@ -917,9 +923,9 @@ private fun Generator(replacing: Boolean, onUse: (String) -> Unit) {
                 )
             }
             CardDivider()
-            CardRow("Numbers", sub = "2–9") { JSwitch(digits, { digits = it }) }
+            CardRow(stringResource(R.string.passwords_numbers), sub = "2–9") { JSwitch(digits, { digits = it }) }
             CardDivider()
-            CardRow("Symbols", sub = "! @ # $ % and more") { JSwitch(symbols, { symbols = it }) }
+            CardRow(stringResource(R.string.passwords_symbols), sub = stringResource(R.string.passwords_and_more)) { JSwitch(symbols, { symbols = it }) }
         }
     }
 }

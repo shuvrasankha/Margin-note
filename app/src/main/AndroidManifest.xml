@@ -129,6 +129,30 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_list_info" />
         </receiver>
+        <!-- One note on the home screen, picked with ListWidgetConfigActivity. -->
+        <receiver
+            android:name=".ui.NoteWidget"
+            android:exported="false"
+            android:label="@string/note_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_note_info" />
+        </receiver>
+        <!-- Today: to-dos, habits and journal at a glance. -->
+        <receiver
+            android:name=".ui.TodayWidget"
+            android:exported="false"
+            android:label="@string/today_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
         <activity
             android:name=".ui.ListWidgetConfigActivity"
             android:exported="true"

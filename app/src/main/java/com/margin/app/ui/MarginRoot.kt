@@ -2,6 +2,17 @@ package com.margin.app.ui
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
@@ -48,6 +59,9 @@ import com.margin.app.data.isSmart
 import com.margin.app.data.newId
 import com.margin.app.data.isTracker
 import kotlinx.coroutines.launch
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 // ---------- Root ----------
 
@@ -75,15 +89,14 @@ fun MarginRoot(
     if (legacy && !skipSwitch) {
         PasscodeDialog(
             PasswordMode.CREATE, onDismiss = { skipSwitch = true },
-            intro = "Locked notes now use a 6-digit passcode. Choose one and your locked notes will be re-encrypted with it. " +
-                "Other devices will need the new passcode too.",
+            intro = stringResource(R.string.root_legacy_passcode_intro),
         ) { code ->
             skipSwitch = true
             rootScope.launch {
                 editor.saveNow() // an open locked note is saved with the old key before the notes are re-sealed
                 settings.changePassword(code).join()
                 editor.rekeyed()
-                Toast.makeText(context, settings.message ?: "Passcode set", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, settings.message ?: context.getString(R.string.margin_root_passcode_set), Toast.LENGTH_LONG).show()
             }
             null
         }
@@ -110,14 +123,13 @@ fun MarginRoot(
         val name = listMatch.note.title.ifBlank { listMatch.list.title }
         MarginDialog(
             onDismissRequest = { nav.incoming = null },
-            title = { Text(if (m.changed) "Update “$name”?" else "“$name” is up to date") },
+            title = { Text(if (m.changed) stringResource(R.string.margin_root_update, name) else stringResource(R.string.margin_root_is_up_to_date, name)) },
             text = {
                 Text(
-                    if (!m.changed) "It already has everything on the shared list."
-                    else listOfNotNull(
-                        m.added.takeIf { it > 0 }?.let { if (it == 1) "Adds 1 item" else "Adds $it items" },
-                        m.ticked.takeIf { it > 0 }?.let { "ticks off $it" },
-                    ).joinToString(" and ").replaceFirstChar { it.uppercase() } + ". Nothing is removed.",
+                    if (!m.changed) stringResource(R.string.margin_root_it_already_has_everything_on)
+                    else if (m.added > 0 && m.ticked > 0) pluralStringResource(R.plurals.root_share_adds_ticks, m.added, m.added, m.ticked.toString())
+                    else if (m.added > 0) pluralStringResource(R.plurals.root_share_adds, m.added, m.added)
+                    else pluralStringResource(R.plurals.root_share_ticks, m.ticked, m.ticked),
                 )
             },
             confirmButton = {
@@ -127,15 +139,15 @@ fun MarginRoot(
                         if (nav.current is Screen.Editor) editor.close()
                         nav.push(Screen.Editor(id, folderId))
                     }
-                }) { Text(if (m.changed) "Update List" else "Open List") }
+                }) { Text(if (m.changed) stringResource(R.string.margin_root_update_list) else stringResource(R.string.margin_root_open_list)) }
             },
-            dismissButton = { TextButton(onClick = { nav.incoming = share.copy(asNote = true) }) { Text("Save as New Note") } },
+            dismissButton = { TextButton(onClick = { nav.incoming = share.copy(asNote = true) }) { Text(stringResource(R.string.margin_root_save_as_new_note)) } },
         )
     } else nav.incoming?.takeIf { !it.open }?.let { share ->
         FolderSheet(
-            title = "Save to Margin",
-            subject = share.subject?.takeIf { it.isNotBlank() } ?: share.text?.lineSequence()?.firstOrNull { it.isNotBlank() } ?: if (share.pdf) "PDF" else "Photo",
-            subjectNote = if (share.image != null) (if (share.pdf) "With a PDF" else "With a photo") else null,
+            title = stringResource(R.string.margin_root_save_to_margin),
+            subject = share.subject?.takeIf { it.isNotBlank() } ?: share.text?.lineSequence()?.firstOrNull { it.isNotBlank() } ?: if (share.pdf) stringResource(R.string.margin_root_pdf) else stringResource(R.string.margin_root_photo),
+            subjectNote = if (share.image != null) (if (share.pdf) stringResource(R.string.margin_root_with_a_pdf) else stringResource(R.string.margin_root_with_a_photo)) else null,
             rows = rows.filter { !it.folder.isSmart }, currentId = null,
             onDismiss = { nav.incoming = null },
         ) { folderId ->
@@ -163,16 +175,20 @@ fun MarginRoot(
         nav.pop()
     }
     fun listName(folderId: String) = when {
-        folderId == TRASH_ID -> "Recently Deleted"
-        folderId == ALL_ID -> "All Notes"
-        folderId == PINNED_ID -> "Pinned"
+        folderId == TRASH_ID -> context.getString(R.string.margin_root_recently_deleted)
+        folderId == ALL_ID -> context.getString(R.string.margin_root_all_notes)
+        folderId == PINNED_ID -> context.getString(R.string.margin_root_pinned)
+        folderId == ARCHIVE_ID -> context.getString(R.string.common_archive)
         folderId.startsWith(TAG_PREFIX) -> "#" + (tags.firstOrNull { TAG_PREFIX + it.key == folderId }?.name ?: folderId.removePrefix(TAG_PREFIX))
-        else -> rows.firstOrNull { it.folder.id == folderId }?.folder?.name ?: "Notes"
+        else -> rows.firstOrNull { it.folder.id == folderId }?.folder?.name ?: context.getString(R.string.margin_root_notes)
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(jc.bg)) {
     // Tablets and unfolded foldables: the list on the left, the open note beside it. A phone on its side is too
     // short for that and keeps one screen at a time.
     val wide = maxWidth >= 640.dp && maxHeight >= 480.dp
+    // A phone on its side: the tabs go down the left so the short height is all content.
+    val rail = maxHeight < 480.dp && maxWidth > maxHeight
+    val readable = maxWidth >= 640.dp
     val listWidth = (maxWidth * 0.38f).coerceIn(300.dp, 400.dp)
     /** In two panes: where the list on the left is in the stack (under any notes opened from it); null for one pane. */
     val listAt: Int? = if (!wide) null else {
@@ -197,6 +213,10 @@ fun MarginRoot(
     val seek = remember { SeekableTransitionState(entry) }
     val transition = rememberTransition(seek, label = "screen")
     LaunchedEffect(entry) { seek.animateTo(entry) }
+    // Back on another tab goes to Notes first; Back on Notes leaves the app.
+    androidx.activity.compose.BackHandler(enabled = nav.stack.size == 1 && Tab.of(nav.current).let { it != null && it != Tab.NOTES }) {
+        nav.switchTo(Tab.NOTES.root)
+    }
     androidx.activity.compose.PredictiveBackHandler(enabled = nav.stack.size > 1) { progress ->
         val previous = nav.stack[nav.stack.lastIndex - 1]
         // No peeking at a screen that shares this one's view model (it would load its own note or folder into it),
@@ -215,15 +235,26 @@ fun MarginRoot(
     /** One screen of the stack. */
     @Composable
     fun Content(shown: NavEntry) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     /** The screen under this one. */
     val below = nav.stack.getOrNull(shown.depth - 2)
-    /** A Library screen's back label: the list it was opened from (the home screen's cards), else Folders. */
-    fun backTo(below: Screen?) = when (below) { is Screen.Notes -> listName(below.folderId); Screen.Features -> "Features"; else -> "Folders" }
+    /** A Library screen's back label: the list it was opened from (the home screen's cards), else Library. */
+    fun backTo(below: Screen?) = when (below) {
+        is Screen.Notes -> listName(below.folderId); Screen.Features -> context.getString(R.string.margin_root_features)
+        Screen.Todos -> if (shown.depth == 2) context.getString(R.string.common_today) else context.getString(R.string.margin_root_to_dos); else -> context.getString(R.string.margin_root_library)
+    }
+        CompositionLocalProvider(LocalTabRoot provides (shown.depth == 1 && Tab.of(shown.screen) != null)) {
         when (val screen = shown.screen) {
             Screen.Folders -> FoldersScreen(
                 folders,
                 // All Notes is the screen underneath; go back to it rather than stacking another.
-                onOpen = { if (it == ALL_ID && nav.stack.size == 2 && nav.stack[0] == Screen.Notes(ALL_ID)) back() else nav.push(Screen.Notes(it)) },
+                onOpen = {
+                    when {
+                        it == ALL_ID && nav.stack.size == 1 -> nav.switchTo(Tab.NOTES.root)
+                        it == ALL_ID && nav.stack.size == 2 && nav.stack[0] == Screen.Notes(ALL_ID) -> back()
+                        else -> nav.push(Screen.Notes(it))
+                    }
+                },
                 onSearch = { nav.push(Screen.Notes(ALL_ID, search = true)) },
                 onNew = { nav.push(Screen.Editor(newId(), DEFAULT_FOLDER_ID)) },
                 onEdit = { nav.push(Screen.EditFolders) },
@@ -270,11 +301,11 @@ fun MarginRoot(
             }
             Screen.Passwords -> JournalGate(
                 editor, fingerprint, onCancel = ::back,
-                intro = "Passwords are locked. Choose a passcode to open them; locked notes use the same one.",
+                intro = stringResource(R.string.margin_root_passwords_are_locked_choose_a),
             ) { PasswordsScreen(vault, onBack = ::back, backLabel = backTo(below)) }
             Screen.Habits -> {
                 val all by folders.liveNotes.collectAsState()
-                HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onDelete = folders::deleteHabit, onBack = ::back,
+                HabitsScreen(all, onToggle = folders::toggleHabit, onAdd = folders::addHabit, onRename = folders::renameHabit, onIcon = folders::setHabitIcon, onSchedule = folders::setHabitSchedule, onDelete = folders::deleteHabit, onBack = ::back, backLabel = backTo(below),
                     reminders = folders.reminders.collectAsState().value, onRemind = folders::setHabitReminder)
             }
             Screen.Trackers -> {
@@ -284,15 +315,27 @@ fun MarginRoot(
             is Screen.Tracker -> {
                 val all by folders.liveNotes.collectAsState()
                 TrackerScreen(
-                    all, screen.id, backLabel = when (below) { Screen.Trackers -> "Trackers"; is Screen.Notes -> listName(below.folderId); else -> "Back" },
+                    all, screen.id, backLabel = when (below) { Screen.Trackers -> stringResource(R.string.margin_root_trackers); is Screen.Notes -> listName(below.folderId); else -> stringResource(R.string.common_back) },
                     onRename = folders::renameTracker, onDelete = folders::deleteTracker, onSave = folders::saveTracker, onBack = ::back, photos = folders.trackerPhotos,
                 )
             }
             Screen.Todos -> {
                 val all by folders.liveNotes.collectAsState()
+                val reminders by folders.reminders.collectAsState()
+                // As the Today tab: habits, the journal and reminders too.
+                val extras = if (shown.depth != 1) null else remember(all, reminders) {
+                    val zone = java.time.ZoneId.systemDefault()
+                    val day = java.time.LocalDate.now()
+                    val g = todayGlance(all, reminders, day, zone, {}, {}, {})
+                    TodayExtras(
+                        habits = all.filter(::isHabit).sortedBy { it.createdAt }, onToggleHabit = folders::toggleHabit, onHabits = { nav.push(Screen.Habits) },
+                        journaled = g.journaled, onJournal = { nav.push(Screen.Journal) },
+                        remindersToday = g.remindersToday, nextReminder = g.nextReminderDay, onReminders = { nav.push(Screen.Reminders) },
+                    )
+                }
                 TodosScreen(
                     all, onOpen = { openNote(Screen.Editor(it.id, it.folderId)) }, onBack = ::back, backLabel = backTo(below),
-                    onToggle = folders::toggleTask, onAdd = folders::addTask, onNewList = folders::newTodoList,
+                    onToggle = folders::toggleTask, onAdd = folders::addTask, onNewList = folders::newTodoList, extras = extras,
                 )
             }
             is Screen.Notes -> NoteListScreen(
@@ -306,11 +349,11 @@ fun MarginRoot(
                 onGrid = { settings.setAppearance(appearance.copy(gridView = it)) },
                 onOpen = {
                     // A saved password opens in Passwords; one in Recently Deleted is recovered first.
-                    if (isLogin(it)) Toast.makeText(context, if (it.trashedAt == null) "Open it in Passwords" else "Recover it to see it in Passwords", Toast.LENGTH_SHORT).show()
+                    if (isLogin(it)) Toast.makeText(context, if (it.trashedAt == null) context.getString(R.string.margin_root_open_it_in_passwords) else context.getString(R.string.margin_root_recover_it_to_see_it), Toast.LENGTH_SHORT).show()
                     // A tracker's lines have a format the plain editor could break, so it opens in Trackers.
                     else if (isTracker(it)) {
                         if (it.trashedAt == null) nav.push(Screen.Tracker(it.id))
-                        else Toast.makeText(context, "Recover it to see it in Trackers", Toast.LENGTH_SHORT).show()
+                        else Toast.makeText(context, context.getString(R.string.margin_root_recover_it_to_see_it_2), Toast.LENGTH_SHORT).show()
                     }
                     else openNote(Screen.Editor(it.id, it.folderId))
                 },
@@ -323,14 +366,14 @@ fun MarginRoot(
                 onSettings = { nav.push(Screen.Settings) },
                 backLabel = if (shown.depth == 1) null else when (val previous = below) {
                     is Screen.Notes -> listName(previous.folderId)
-                    is Screen.Editor -> "Back"
-                    Screen.Todos -> "To-dos"
-                    Screen.Reminders -> "Reminders"
-                    Screen.Journal -> "Journal"
-                    Screen.Habits -> "Habits"
-                    Screen.Trackers -> "Trackers"
-                    Screen.Settings -> "Settings"
-                    else -> "Folders"
+                    is Screen.Editor -> stringResource(R.string.common_back)
+                    Screen.Todos -> if (shown.depth == 2) stringResource(R.string.common_today) else stringResource(R.string.margin_root_to_dos)
+                    Screen.Reminders -> stringResource(R.string.margin_root_reminders)
+                    Screen.Journal -> stringResource(R.string.margin_root_journal)
+                    Screen.Habits -> stringResource(R.string.margin_root_habits)
+                    Screen.Trackers -> stringResource(R.string.margin_root_trackers)
+                    Screen.Settings -> stringResource(R.string.common_settings)
+                    else -> stringResource(R.string.margin_root_library)
                 },
                 onFolders = { nav.push(Screen.Folders) },
                 onBack = ::back,
@@ -340,8 +383,8 @@ fun MarginRoot(
                     remember(all, reminders) {
                         todayGlance(
                             all, reminders, java.time.LocalDate.now(), java.time.ZoneId.systemDefault(),
-                            onTodos = { nav.push(Screen.Todos) }, onReminders = { nav.push(Screen.Reminders) }, onJournal = { nav.push(Screen.Journal) },
-                            onPasswords = { nav.push(Screen.Passwords) },
+                            onTodos = { nav.switchTo(Tab.TODAY.root) }, onReminders = { nav.push(Screen.Reminders) }, onJournal = { nav.push(Screen.Journal) },
+                            onHabits = { nav.push(Screen.Habits) },
                         )
                     }
                 } else null,
@@ -349,13 +392,13 @@ fun MarginRoot(
             is Screen.Editor -> {
                 val backLabel = when (below) {
                     is Screen.Notes -> listName(below.folderId)
-                    is Screen.Editor -> "Back" // came here through a link
-                    Screen.Todos -> "To-dos"
-                    Screen.Reminders -> "Reminders"
-                    Screen.Journal -> "Journal"
-                    Screen.Habits -> "Habits"
-                    Screen.Trackers -> "Trackers"
-                    else -> "Folders"
+                    is Screen.Editor -> stringResource(R.string.common_back) // came here through a link
+                    Screen.Todos -> if (shown.depth == 2) stringResource(R.string.common_today) else stringResource(R.string.margin_root_to_dos)
+                    Screen.Reminders -> stringResource(R.string.margin_root_reminders)
+                    Screen.Journal -> stringResource(R.string.margin_root_journal)
+                    Screen.Habits -> stringResource(R.string.margin_root_habits)
+                    Screen.Trackers -> stringResource(R.string.margin_root_trackers)
+                    else -> stringResource(R.string.margin_root_library)
                 }
                 EditorScreen(
                     editor, screen.noteId, screen.folderId, rows, fingerprint, backLabel, onBack = ::back,
@@ -369,10 +412,22 @@ fun MarginRoot(
             Screen.Settings -> SettingsScreen(settings, backups, onBack = ::back, onFeatures = { nav.push(Screen.Features) })
             Screen.Features -> FeaturesScreen(onBack = ::back, onOpen = { nav.push(it) })
         }
+        }
     }
 
+    // A tab's root screen: the tab bar sits under it and takes the navigation bar's inset.
+    val tab = Tab.of(entry.screen)?.takeIf { entry.depth == 1 }
+    Row(Modifier.fillMaxSize()) {
+    if (rail) AnimatedVisibility(tab != null, enter = slideInHorizontally { -it }, exit = slideOutHorizontally { -it }) {
+        var shownTab by remember { mutableStateOf(Tab.NOTES) }
+        if (tab != null) shownTab = tab
+        TabBar(shownTab, onSelect = { nav.switchTo(it.root) }, onNew = { nav.push(Screen.Editor(newId(), DEFAULT_FOLDER_ID)) }, vertical = true)
+    }
+    Column(Modifier.weight(1f).fillMaxHeight()) {
     transition.AnimatedContent(
-        modifier = Modifier.fillMaxSize().background(jc.bg),
+        modifier = Modifier.weight(1f).fillMaxWidth().background(jc.bg)
+            .then(if (tab != null && !rail) Modifier.consumeWindowInsets(WindowInsets.navigationBars) else Modifier)
+            .then(if (tab != null && rail) Modifier.consumeWindowInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Start)) else Modifier),
         transitionSpec = {
             val from = initialState
             val to = targetState
@@ -385,7 +440,7 @@ fun MarginRoot(
             }.apply { targetContentZIndex = to.depth.toFloat() }
         },
     ) { shown ->
-    Box(Modifier.fillMaxSize().backdrop(if (shown.screen == Screen.Settings || shown.screen == Screen.Features) jc.page else jc.bg)) {
+    Box(Modifier.fillMaxSize().background(if (shown.screen == Screen.Settings || shown.screen == Screen.Features) jc.page else jc.bg)) {
         when {
             shown.split -> Row(Modifier.fillMaxSize()) {
                 Box(Modifier.width(listWidth).fillMaxHeight()) { Content(shown) }
@@ -405,13 +460,24 @@ fun MarginRoot(
                 }
             }
             // Other screens on a wide window keep a readable width, centred.
-            wide -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            readable -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.widthIn(max = 760.dp).fillMaxHeight()) { Content(shown) }
             }
             else -> Content(shown)
         }
     // A screen on its way in or out takes no taps: a second tap on a note mustn't open it twice.
     if (shown != entry) Box(Modifier.fillMaxSize().pointerInput(Unit) {})
+    }
+    }
+    AnimatedVisibility(tab != null && !rail, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+        // Keeps the last tab lit while the bar slides away.
+        var shownTab by remember { mutableStateOf(Tab.NOTES) }
+        if (tab != null) shownTab = tab
+        TabBar(
+            shownTab, onSelect = { nav.switchTo(it.root) },
+            onNew = { nav.push(Screen.Editor(newId(), DEFAULT_FOLDER_ID)) },
+        )
+    }
     }
     }
     }
@@ -428,8 +494,8 @@ internal fun NoNoteOpen(onNew: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         JIcon(Ico.EMPTY_NOTE, jc.muted, size = 40.dp)
-        Text("No note open", style = JType.subheading, color = jc.ink)
-        Text("Pick a note from the list, or start a new one.", style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
-        TextAction("New Note", onNew, bold = true)
+        Text(stringResource(R.string.margin_root_no_note_open), style = JType.subheading, color = jc.ink)
+        Text(stringResource(R.string.margin_root_pick_a_note_from_the), style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
+        TextAction(stringResource(R.string.margin_root_new_note), onNew, bold = true)
     }
 }

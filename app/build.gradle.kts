@@ -67,8 +67,8 @@ android {
     }
 
     androidResources {
-        // The app is in English; libraries' translations of their own strings aren't needed.
-        localeFilters += listOf("en")
+        // The app's own languages; libraries' translations into others aren't needed.
+        localeFilters += listOf("en", "bn")
         // PdfBox's CJK character maps (~3 MB): only for Chinese, Japanese and Korean PDFs without their own
         // text mapping. Identity-H/V (used by almost every PDF with embedded fonts) and H/V are kept.
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~" +
@@ -105,7 +105,6 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.haze) // frosted glass bars, Android 12+
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

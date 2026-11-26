@@ -1,5 +1,4 @@
 [versions]
-haze = "1.7.2"
 agp = "9.4.1"
 kotlin = "2.2.10"
 ksp = "2.3.12"
@@ -27,7 +26,6 @@ playServicesLocation = "21.3.0"
 pdfbox = "2.0.27.0"
 
 [libraries]
-haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version = "4.12.0" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-core-remoteviews = { module = "androidx.core:core-remoteviews", version.ref = "coreRemoteviews" }

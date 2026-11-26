@@ -64,6 +64,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Voice commands over the home screen: "Remind me to call Sam tomorrow at 5", "Add milk and eggs to my
@@ -117,19 +119,20 @@ class VoiceCommandActivity : ComponentActivity() {
 }
 
 /** One line saying what Save will do. */
-internal fun describe(c: VoiceCommand?, now: LocalDateTime = LocalDateTime.now()): String = when (c) {
-    null -> "Say or type what to do"
-    is VoiceCommand.Remind -> "Reminder · ${whenText(c.at, now)}" + if (c.repeat != Repeat.NEVER) " · ${c.repeat.label}" else ""
-    is VoiceCommand.AddToList -> "Add to ${c.list}"
-    is VoiceCommand.Note -> "New note"
+internal fun describe(context: android.content.Context, c: VoiceCommand?, now: LocalDateTime = LocalDateTime.now()): String = when (c) {
+    null -> context.getString(R.string.voice_say_or_type)
+    is VoiceCommand.Remind -> if (c.repeat != Repeat.NEVER) context.getString(R.string.voice_reminder_when_repeat, whenText(context, c.at, now), context.getString(c.repeat.labelRes))
+        else context.getString(R.string.voice_reminder_when, whenText(context, c.at, now))
+    is VoiceCommand.AddToList -> context.getString(R.string.voice_add_to, c.list)
+    is VoiceCommand.Note -> context.getString(R.string.voice_new_note)
 }
 
-private fun whenText(at: LocalDateTime, now: LocalDateTime): String {
+private fun whenText(context: android.content.Context, at: LocalDateTime, now: LocalDateTime): String {
     val time = at.format(DateTimeFormatter.ofPattern("h:mm a"))
     return when (at.toLocalDate()) {
-        now.toLocalDate() -> "Today, $time"
-        now.toLocalDate().plusDays(1) -> "Tomorrow, $time"
-        else -> at.format(DateTimeFormatter.ofPattern(if (at.year == LocalDate.now().year) "EEE d MMM" else "EEE d MMM yyyy")) + ", $time"
+        now.toLocalDate() -> context.getString(R.string.voice_today_at, time)
+        now.toLocalDate().plusDays(1) -> context.getString(R.string.voice_tomorrow_at, time)
+        else -> context.getString(R.string.voice_date_at, at.format(DateTimeFormatter.ofPattern(if (at.year == LocalDate.now().year) "EEE d MMM" else "EEE d MMM yyyy")), time)
     }
 }
 
@@ -165,7 +168,7 @@ private fun VoiceCommandCard(given: String?, list: String?, typed: Boolean, acti
         listen.launch(
             Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_PROMPT, if (list != null) "What should go on $list?" else "Try “Remind me to call Sam at 6”"),
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, if (list != null) context.getString(R.string.voice_what_goes_on, list) else context.getString(R.string.voice_try_prompt)),
         )
     } catch (_: ActivityNotFoundException) {
         noRecogniser = true; listened = true
@@ -200,12 +203,12 @@ private fun VoiceCommandCard(given: String?, list: String?, typed: Boolean, acti
         ) {
             val finished = done
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextAction(if (finished != null) "Done" else "Cancel", onClose, bold = finished != null)
+                TextAction(if (finished != null) stringResource(R.string.common_done) else stringResource(R.string.common_cancel), onClose, bold = finished != null)
                 Spacer(Modifier.weight(1f))
-                Text(if (finished != null) "Saved" else if (list != null) list else "Voice command", style = JType.rowTitle, color = jc.ink)
+                Text(if (finished != null) stringResource(R.string.voice_command_saved) else if (list != null) list else stringResource(R.string.voice_command_voice_command), style = JType.rowTitle, color = jc.ink)
                 Spacer(Modifier.weight(1f))
-                if (finished != null) TextAction("Open", { onOpen(finished) })
-                else TextAction("Save", ::onSave, bold = true, enabled = command != null && !saving)
+                if (finished != null) TextAction(stringResource(R.string.common_open), { onOpen(finished) })
+                else TextAction(stringResource(R.string.common_save), ::onSave, bold = true, enabled = command != null && !saving)
             }
             if (finished == null) {
                 Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.Top) {
@@ -215,26 +218,26 @@ private fun VoiceCommandCard(given: String?, list: String?, typed: Boolean, acti
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                         decorationBox = { inner ->
                             Box {
-                                if (said.isEmpty()) Text(if (typed) "Milk, eggs and bread" else if (noRecogniser) "Type a command" else "Listening…", style = JType.body, color = jc.muted)
+                                if (said.isEmpty()) Text(if (typed) stringResource(R.string.voice_command_milk_eggs_and_bread) else if (noRecogniser) stringResource(R.string.voice_command_type_a_command) else stringResource(R.string.voice_command_listening), style = JType.body, color = jc.muted)
                                 inner()
                             }
                         },
                     )
                     if (!noRecogniser) Box(
                         Modifier.padding(start = 8.dp).size(44.dp).clip(CircleShape).background(jc.accent)
-                            .clickable(role = Role.Button, onClickLabel = "Speak again") { startListening() },
+                            .clickable(role = Role.Button, onClickLabel = stringResource(R.string.voice_command_speak_again)) { startListening() },
                         contentAlignment = Alignment.Center,
                     ) { JIcon(Ico.MIC, jc.bg, size = 22.dp) }
                 }
             }
             Column(Modifier.padding(top = 12.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(describe(command), style = JType.section, color = jc.accent)
+                Text(describe(LocalContext.current, command), style = JType.section, color = jc.accent)
                 details(command).take(8).forEach { Text(if (command is VoiceCommand.AddToList) "• $it" else it, style = JType.row, color = jc.ink) }
                 if (command is VoiceCommand.Remind && !actions.remindersOnTime) {
-                    Text("Reminders may ring a few minutes late: allow alarms in Settings.", style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.voice_command_reminders_may_ring_a_few), style = JType.small, color = jc.muted)
                 }
                 if (finished == null && said.isEmpty()) {
-                    Text("“Add milk and eggs to my shopping list” · “Remind me every day at 8 am to take vitamins” · “Take a note…”", style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.voice_command_add_milk_and_eggs_to), style = JType.small, color = jc.muted)
                 }
             }
         }

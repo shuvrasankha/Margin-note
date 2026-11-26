@@ -1,5 +1,7 @@
 package com.margin.app.sync
 
+import com.margin.app.R
+
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -193,6 +195,7 @@ interface BackupDestination {
 
 /** A folder picked through the file picker (Storage Access Framework). */
 class FolderDestination(context: Context, private val tree: Uri) : BackupDestination {
+    private val app = context.applicationContext
     private val resolver = context.contentResolver
     private val root = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
     private val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -202,7 +205,7 @@ class FolderDestination(context: Context, private val tree: Uri) : BackupDestina
         val cols = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME)
         resolver.query(children, cols, null, null, null)?.use { c ->
             while (c.moveToNext()) out[c.getString(1)] = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0))
-        } ?: throw IOException("Can't open the backup folder. Pick it again in Settings.")
+        } ?: throw IOException(app.getString(R.string.backup_cant_open_folder))
         return out
     }
 
@@ -214,7 +217,7 @@ class FolderDestination(context: Context, private val tree: Uri) : BackupDestina
         // Written under a .part name and renamed once whole, so a cut-off copy never looks like a backup.
         // Some cloud apps can't rename; those get the final name from the start.
         val doc = DocumentsContract.createDocument(resolver, root, "application/zip", part)
-            ?: throw IOException("The backup folder didn't accept a new file")
+            ?: throw IOException(app.getString(R.string.backup_folder_refused_file))
         try {
             copyInto(doc, file)
         } catch (e: Exception) {
@@ -225,19 +228,19 @@ class FolderDestination(context: Context, private val tree: Uri) : BackupDestina
         if (renamed == null) {
             runCatching { DocumentsContract.deleteDocument(resolver, doc) }
             val direct = DocumentsContract.createDocument(resolver, root, "application/zip", name)
-                ?: throw IOException("The backup folder didn't accept a new file")
+                ?: throw IOException(app.getString(R.string.backup_folder_refused_file))
             try { copyInto(direct, file) } catch (e: Exception) { runCatching { DocumentsContract.deleteDocument(resolver, direct) }; throw e }
         }
         Unit
     }
 
     private fun copyInto(doc: Uri, file: File) {
-        (resolver.openOutputStream(doc, "w") ?: throw IOException("Can't write to the backup folder")).use { out -> file.inputStream().use { it.copyTo(out) } }
+        (resolver.openOutputStream(doc, "w") ?: throw IOException(app.getString(R.string.backup_cant_write_folder))).use { out -> file.inputStream().use { it.copyTo(out) } }
     }
 
     override suspend fun <T> read(name: String, reader: (InputStream) -> T): T = withContext(Dispatchers.IO) {
-        val uri = files()[name] ?: throw IOException("$name isn't in the backup folder any more")
-        (resolver.openInputStream(uri) ?: throw IOException("Can't read $name")).use(reader)
+        val uri = files()[name] ?: throw IOException(app.getString(R.string.backup_not_in_folder, name))
+        (resolver.openInputStream(uri) ?: throw IOException(app.getString(R.string.backup_cant_read, name))).use(reader)
     }
 
     override suspend fun delete(name: String) = withContext(Dispatchers.IO) {
@@ -249,7 +252,8 @@ class FolderDestination(context: Context, private val tree: Uri) : BackupDestina
 class WebDavException(val code: Int, message: String) : IOException(message)
 
 /** A WebDAV folder: PROPFIND to list, PUT to write (to a .part name, then MOVE), GET and DELETE. */
-class WebDavDestination(url: String, user: String, password: String) : BackupDestination {
+class WebDavDestination(context: Context, url: String, user: String, password: String) : BackupDestination {
+    private val app = context.applicationContext
     private val base = url.trim().trimEnd('/') + "/"
     private val auth = Credentials.basic(user, password, Charsets.UTF_8)
     private val http = OkHttpClient.Builder()
@@ -262,10 +266,10 @@ class WebDavDestination(url: String, user: String, password: String) : BackupDes
         if (!ok(res.code)) {
             res.close()
             throw WebDavException(res.code, when (res.code) {
-                401, 403 -> "The server refused the username or password"
-                404 -> "The server has no folder at that address"
-                507 -> "The server is out of space"
-                else -> "The server answered ${res.code}"
+                401, 403 -> app.getString(R.string.backup_server_refused_login)
+                404 -> app.getString(R.string.backup_server_no_folder)
+                507 -> app.getString(R.string.backup_server_full)
+                else -> app.getString(R.string.backup_server_answered, res.code.toString())
             })
         }
         return res
@@ -277,8 +281,8 @@ class WebDavDestination(url: String, user: String, password: String) : BackupDes
         when (probe.code) {
             in 200..299 -> Unit
             404 -> call(request().method("MKCOL", null).build()).close()
-            401, 403 -> throw WebDavException(probe.code, "The server refused the username or password")
-            else -> throw WebDavException(probe.code, "That address didn't answer as a WebDAV folder (${probe.code})")
+            401, 403 -> throw WebDavException(probe.code, app.getString(R.string.backup_server_refused_login))
+            else -> throw WebDavException(probe.code, app.getString(R.string.backup_not_webdav, probe.code.toString()))
         }
     }
 
@@ -305,7 +309,7 @@ class WebDavDestination(url: String, user: String, password: String) : BackupDes
     }
 
     override suspend fun <T> read(name: String, reader: (InputStream) -> T): T = withContext(Dispatchers.IO) {
-        call(request(enc(name)).get().build()).use { res -> reader(res.body?.byteStream() ?: throw IOException("Empty answer")) }
+        call(request(enc(name)).get().build()).use { res -> reader(res.body?.byteStream() ?: throw IOException(app.getString(R.string.backup_empty_answer))) }
     }
 
     override suspend fun delete(name: String) = withContext(Dispatchers.IO) {
@@ -334,7 +338,7 @@ class BackupManager @Inject constructor(
 
     fun destination(t: BackupTarget): BackupDestination = when (t) {
         is BackupTarget.Folder -> FolderDestination(context, Uri.parse(t.tree))
-        is BackupTarget.WebDav -> WebDavDestination(t.url, t.user, prefs.password(t.id) ?: throw IOException("The password for ${t.label} is missing. Add the server again."))
+        is BackupTarget.WebDav -> WebDavDestination(context, t.url, t.user, prefs.password(t.id) ?: throw IOException(context.getString(R.string.backup_password_missing, t.label)))
     }
 
     /** Newest change to any note or folder: unchanged since a place's last backup means nothing to do there. */
@@ -379,7 +383,7 @@ class BackupManager @Inject constructor(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    prefs.record(t.id, (prefs.status.value[t.id] ?: BackupStatus()).copy(lastError = e.message ?: e.javaClass.simpleName))
+                    prefs.record(t.id, (prefs.status.value[t.id] ?: BackupStatus()).copy(lastError = com.margin.app.ui.errorText(context, e) ?: e.javaClass.simpleName))
                     failed++
                 }
             }
@@ -412,7 +416,7 @@ class BackupManager @Inject constructor(
         val tmp = File(context.cacheDir, "backup-in.zip")
         try {
             withContext(Dispatchers.IO) {
-                (context.contentResolver.openInputStream(uri) ?: throw IOException("Can't open that file")).use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                (context.contentResolver.openInputStream(uri) ?: throw IOException(context.getString(R.string.backup_cant_open_file))).use { input -> tmp.outputStream().use { input.copyTo(it) } }
             }
             return restoreFile(tmp, password)
         } finally { tmp.delete() }

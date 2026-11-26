@@ -56,8 +56,8 @@ class PinReceiver : BroadcastReceiver() {
 
         fun post(c: Context, noteId: String, folderId: String, content: PinContent) {
             c.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "Pinned notes", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Notes you keep in the notification shade"
+                NotificationChannel(CHANNEL, c.getString(R.string.pin_receiver_pinned_notes), NotificationManager.IMPORTANCE_LOW).apply {
+                    description = c.getString(R.string.pin_receiver_notes_you_keep_in_the)
                     setShowBadge(false)
                 },
             )
@@ -91,7 +91,7 @@ class PinReceiver : BroadcastReceiver() {
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .apply { content.next?.let { (block, text) -> addAction(0, "✓ " + text.take(30), broadcast(ACTION_TICK, 13, block)) } }
-                .addAction(0, "Unpin", unpin)
+                .addAction(0, c.getString(R.string.common_unpin), unpin)
                 .build()
             runCatching { NotificationManagerCompat.from(c).notify(noteId, ID, n) }
         }

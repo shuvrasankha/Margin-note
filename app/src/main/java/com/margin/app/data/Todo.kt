@@ -75,7 +75,7 @@ fun epochDay(millis: Long, zone: ZoneId): Long = Instant.ofEpochMilli(millis).at
  */
 fun todoReport(notes: List<NoteEntity>, today: Long, zone: ZoneId): TodoReport = TodoReport(
     notes.asSequence()
-        .filter { !it.deleted && it.trashedAt == null && !it.isLocked }
+        .filter { !it.deleted && it.trashedAt == null && !it.archived && !it.isLocked }
         .mapNotNull { n ->
             val count = todoCount(n.blocks)
             if (count.total == 0 && n.targetDate == null) null

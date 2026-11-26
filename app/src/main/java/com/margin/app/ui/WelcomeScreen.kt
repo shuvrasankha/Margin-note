@@ -35,42 +35,52 @@ import androidx.compose.ui.unit.sp
 import com.margin.app.data.color
 import com.margin.app.data.invoke
 import kotlinx.coroutines.launch
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 // ---------- Launch ----------
 
 /**
- * The full logo on a cold start: the icon beside the "Margin" wordmark (Inter Bold, -4.5% tracking) with the
- * tagline under it. Sized in dp, not sp, so the lockup keeps its proportions at any font size.
+ * The logo on a cold start, centred: the mark writes itself in (the amber rule, then its three lines), then the
+ * "Margin" wordmark (Inter Bold, -4.5% tracking) and the tagline rise in under it. Sized in dp, not sp, so the
+ * lockup keeps its proportions at any font size. Under a second in all; system animation scale applies.
  */
 @Composable
 fun LaunchScreen() {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val px = LocalDensity.current
-    val icon = 56.dp
-    val word = with(px) { (icon * 1.06f).toSp() } // the icon is about 1.3x the wordmark's capital height
-    val tagline = with(px) { (icon * 0.3f).toSp() }
+    val icon = 76.dp
+    val word = with(px) { 40.dp.toSp() }
+    val tagline = with(px) { 16.dp.toSp() }
+    val mark = remember { androidx.compose.animation.core.Animatable(0f) }
+    val words = remember { androidx.compose.animation.core.Animatable(0f) }
+    val line = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        launch { mark.animateTo(1f, tween(520, easing = JMotion.ease)) }
+        launch { words.animateTo(1f, tween(360, delayMillis = 220, easing = JMotion.ease)) }
+        launch { line.animateTo(1f, tween(360, delayMillis = 340, easing = JMotion.ease)) }
+    }
+    // Fades up from a little below.
+    fun Modifier.rise(a: androidx.compose.animation.core.Animatable<Float, *>) = graphicsLayer {
+        alpha = a.value
+        translationY = (1f - a.value) * 10.dp.toPx()
+    }
     Box(
-        Modifier.fillMaxSize().background(jc.bg).semantics { contentDescription = "Margin. Write first. Organise later." },
+        Modifier.fillMaxSize().background(jc.bg).semantics { contentDescription = context.getString(R.string.welcome_margin_write_first_organise_later) },
         contentAlignment = Alignment.Center,
     ) {
-        // The lockup fades up and settles from slightly smaller.
-        val shown = remember { androidx.compose.animation.core.Animatable(0f) }
-        LaunchedEffect(Unit) { shown.animateTo(1f, tween(420, easing = JMotion.ease)) }
-        Column(Modifier.graphicsLayer {
-            alpha = shown.value
-            val k = 0.94f + 0.06f * shown.value
-            scaleX = k; scaleY = k
-            translationY = (1f - shown.value) * 12.dp.toPx()
-        }) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(icon * 0.32f)) {
-                MarginMark(icon)
-                Text(
-                    "Margin",
-                    style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = word, lineHeight = word, letterSpacing = (-0.045).em),
-                    color = jc.ink,
-                )
-            }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            MarginMark(icon, Modifier.graphicsLayer {
+                val k = 0.92f + 0.08f * mark.value.coerceAtMost(0.5f) * 2f
+                scaleX = k; scaleY = k
+            }, drawn = { mark.value })
             Text(
-                "Write first. Organise later.", Modifier.padding(top = icon * 0.36f),
+                "Margin", Modifier.padding(top = 24.dp).rise(words),
+                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = word, lineHeight = word, letterSpacing = (-0.045).em),
+                color = jc.ink,
+            )
+            Text(
+                stringResource(R.string.welcome_write_first_organise_later), Modifier.padding(top = 10.dp).rise(line),
                 style = TextStyle(fontFamily = Inter, fontSize = tagline, lineHeight = tagline * 1.3f), color = jc.muted,
             )
         }
@@ -87,12 +97,12 @@ fun WelcomeScreen(onStart: () -> Unit, onBackup: () -> Unit) {
     ) {
         MarginMark(72.dp)
         Text("Margin", Modifier.padding(top = 28.dp, bottom = 8.dp), style = JType.pageTitle.copy(fontSize = 40.sp, lineHeight = 46.sp, letterSpacing = (-0.03).em), color = jc.ink)
-        Text("Write first. Organise later.", Modifier.padding(bottom = 48.dp), style = JType.body.copy(fontSize = 20.sp, lineHeight = 28.sp), color = jc.muted)
+        Text(stringResource(R.string.welcome_write_first_organise_later), Modifier.padding(bottom = 48.dp), style = JType.body.copy(fontSize = 20.sp, lineHeight = 28.sp), color = jc.muted)
         Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
             listOf(
-                Triple("M5 3h10l4 4v14H5zM9 12h6M9 16h4", "Opens to a blank page", "Tap Start writing and type. The first line becomes the title."),
-                Triple("M4 12a8 8 0 0 1 14-5l2-2v6h-6l2-2a5 5 0 1 0 1 6", "Syncs quietly", "Every change is saved and backs up to your Google Drive when you turn it on."),
-                Triple("M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z", "Private by default", "Lock any note with your passcode. Nothing is shared unless you share it."),
+                Triple("M5 3h10l4 4v14H5zM9 12h6M9 16h4", stringResource(R.string.welcome_opens_to_a_blank_page), stringResource(R.string.welcome_tap_start_writing_and_type)),
+                Triple("M4 12a8 8 0 0 1 14-5l2-2v6h-6l2-2a5 5 0 1 0 1 6", stringResource(R.string.welcome_syncs_quietly), stringResource(R.string.welcome_every_change_is_saved_and)),
+                Triple("M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5z", stringResource(R.string.welcome_private_by_default), stringResource(R.string.welcome_lock_any_note_with_your)),
             ).forEach { (icon, title, text) ->
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) { JIcon(icon, jc.accent, size = 24.dp) }
@@ -104,10 +114,10 @@ fun WelcomeScreen(onStart: () -> Unit, onBackup: () -> Unit) {
             }
         }
         Spacer(Modifier.weight(1f))
-        PrimaryButton("Start writing", onStart, Modifier.fillMaxWidth())
+        PrimaryButton(stringResource(R.string.welcome_start_writing), onStart, Modifier.fillMaxWidth())
         Box(
             Modifier.fillMaxWidth().padding(top = 8.dp).height(44.dp).clickable(role = Role.Button, onClick = onBackup),
             contentAlignment = Alignment.Center,
-        ) { Text("Turn on backup", style = JType.secondary.copy(fontWeight = FontWeight.Medium), color = jc.accent) }
+        ) { Text(stringResource(R.string.welcome_turn_on_backup), style = JType.secondary.copy(fontWeight = FontWeight.Medium), color = jc.accent) }
     }
 }

@@ -67,6 +67,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Autofill's own screen, over the app being signed in to. It unlocks the vault (fingerprint or passcode) with
@@ -134,6 +136,7 @@ class AutofillActivity : FragmentActivity() {
      */
     @Composable
     private fun Unlock(creating: Boolean, onUnlocked: () -> Unit) {
+        val context = androidx.compose.ui.platform.LocalContext.current
         var mode by remember { mutableStateOf<PasswordMode?>(null) }
         var sample by remember { mutableStateOf<String?>(null) }
         LaunchedEffect(Unit) {
@@ -158,13 +161,13 @@ class AutofillActivity : FragmentActivity() {
         mode?.let { m ->
             PasscodeDialog(
                 m, onDismiss = ::cancel,
-                intro = "Choose a passcode to keep your passwords encrypted. Locked notes use the same one.",
-                enterTitle = "Unlock Margin", enterSub = "Enter your notes passcode to use your passwords.",
+                intro = stringResource(R.string.autofill_choose_a_passcode_to_keep),
+                enterTitle = stringResource(R.string.autofill_unlock_margin), enterSub = stringResource(R.string.autofill_enter_your_notes_passcode_to),
             ) { code ->
                 val s = sample
                 val ok = if (s == null) { session.startWith(code); true } else session.unlock(code, s) != null
                 code.fill('\u0000')
-                if (ok) { step = Step.Working; onUnlocked(); null } else "Wrong passcode"
+                if (ok) { step = Step.Working; onUnlocked(); null } else context.getString(R.string.autofill_wrong_passcode)
             }
         }
     }
@@ -174,17 +177,17 @@ class AutofillActivity : FragmentActivity() {
         var query by remember { mutableStateOf("") }
         BackHandler(onBack = ::cancel)
         Column(Modifier.fillMaxSize().background(jc.page).systemBarsPadding()) {
-            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) { TextAction("Cancel", ::cancel) }
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) { TextAction(stringResource(R.string.common_cancel), ::cancel) }
             Text(s.title, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = JType.heading, color = jc.ink)
-            SearchField(query, { query = it }, "Search passwords", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fill = jc.card)
+            SearchField(query, { query = it }, stringResource(R.string.autofill_search_passwords), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fill = jc.card)
             val q = query.trim().lowercase()
             val shown = s.entries.filter { e -> q.isEmpty() || listOf(e.title, e.login.username, e.login.url).any { q in it.lowercase() } }
             LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 if (s.fresh) item {
-                    Card(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { com.margin.app.ui.CardRow("Save as a New Login", onClick = { s.onPick(null) }) }
+                    Card(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { com.margin.app.ui.CardRow(stringResource(R.string.autofill_save_as_a_new_login), onClick = { s.onPick(null) }) }
                 }
                 item {
-                    if (shown.isEmpty()) Text("No passwords match.", Modifier.padding(20.dp), style = JType.secondary, color = jc.muted)
+                    if (shown.isEmpty()) Text(stringResource(R.string.autofill_no_passwords_match), Modifier.padding(20.dp), style = JType.secondary, color = jc.muted)
                     else Card(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         shown.forEachIndexed { i, e ->
                             if (i > 0) CardDivider()
@@ -206,7 +209,7 @@ class AutofillActivity : FragmentActivity() {
         val matches = all.filter { it.second.fills(form.pkg, domain) }
         if (matches.isNotEmpty()) return reply(form, matches.map { it.second })
         val label = domain?.let(::siteOf) ?: VaultIcons.appLabel(this, form.pkg) ?: form.pkg
-        step = Step.Pick("Fill in $label", all.map { VaultEntry(it.first, it.second) }.sortedBy { it.title.lowercase() }, fresh = false) { e ->
+        step = Step.Pick(getString(R.string.autofill_fill_in, label), all.map { VaultEntry(it.first, it.second) }.sortedBy { it.title.lowercase() }, fresh = false) { e ->
             if (e == null) return@Pick cancel()
             lifecycleScope.launch {
                 step = Step.Working
@@ -229,7 +232,7 @@ class AutofillActivity : FragmentActivity() {
             val title = VaultEntry("", l).title
             val spec = Totp.parse(l.otp)
             val codeOnly = form.username.isEmpty() && form.password.isEmpty()
-            val sub = if (codeOnly) "Verification code" else l.username.ifBlank { null }
+            val sub = if (codeOnly) getString(R.string.autofill_verification_code) else l.username.ifBlank { null }
             val ds = Dataset.Builder(MarginAutofillService.item(this, title, sub, VaultIcons.decode(l.icon)))
             var values = 0
             if (l.username.isNotBlank()) form.username.forEach { ds.setValue(it, AutofillValue.forText(l.username)); values++ }
@@ -252,22 +255,22 @@ class AutofillActivity : FragmentActivity() {
             if (domain == null) VaultIcons.ofApp(this, p.pkg).orEmpty()
             else withTimeoutOrNull(3_000) { VaultIcons.ofSite(domain) }.orEmpty() // else fetched when Passwords next opens
         }
-        suspend fun create(login: Login) { store.save(session, null, login.copy(icon = icon(login))); done("Saved to Margin") }
+        suspend fun create(login: Login) { store.save(session, null, login.copy(icon = icon(login))); done(getString(R.string.autofill_saved)) }
         when (val plan = planAutofillSave(all, p.pkg, domain, p.username, p.password, label)) {
             is AutofillSave.Create -> create(plan.login)
             is AutofillSave.Update -> {
                 val old = all.first { it.first == plan.id }.second
                 store.save(session, plan.id, plan.login.copy(icon = icon(plan.login)))
-                done(if (old.password != plan.login.password) "Password updated in Margin" else "Saved to Margin")
+                done(getString(if (old.password != plan.login.password) R.string.autofill_updated else R.string.autofill_saved))
             }
-            is AutofillSave.Unchanged -> done("Already saved in Margin")
+            is AutofillSave.Unchanged -> done(getString(R.string.autofill_already_saved))
             is AutofillSave.Choose -> step = Step.Pick(
-                "Which login changed?", all.filter { it.first in plan.ids }.map { VaultEntry(it.first, it.second) }, fresh = true,
+                getString(R.string.autofill_which_login), all.filter { it.first in plan.ids }.map { VaultEntry(it.first, it.second) }, fresh = true,
             ) { e ->
                 lifecycleScope.launch {
                     step = Step.Working
                     if (e == null) create(Login(name = label, username = p.username, password = p.password, url = domain?.let(::siteOf).orEmpty(), apps = listOfNotNull(p.pkg.takeIf { domain == null })))
-                    else { store.save(session, e.id, e.login.copy(password = p.password)); done("Password updated in Margin") }
+                    else { store.save(session, e.id, e.login.copy(password = p.password)); done(getString(R.string.autofill_updated)) }
                 }
             }
         }

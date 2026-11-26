@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * One key: what it shows, what it types (spaces around an operator are dropped where there already is one),
@@ -54,6 +56,7 @@ private class MathKey(
     val types: String = label,
     val back: Int = 0,
     val spoken: String = label,
+    @androidx.annotation.StringRes val spokenRes: Int = 0,
     val strong: Boolean = false,
     val action: KeyAction? = null,
     val weight: Float = 1f,
@@ -61,23 +64,23 @@ private class MathKey(
 
 private enum class KeyAction { DELETE, ENTER, LEFT, RIGHT, LETTERS, PAGE }
 
-private fun op(label: String, types: String, spoken: String) = MathKey(label, types, spoken = spoken, strong = true)
-private fun fn(name: String, spoken: String = name) = MathKey(name, "$name()", back = 1, spoken = spoken)
+private fun op(label: String, types: String, @androidx.annotation.StringRes spoken: Int) = MathKey(label, types, spokenRes = spoken, strong = true)
+private fun fn(name: String, @androidx.annotation.StringRes spoken: Int = 0) = MathKey(name, "$name()", back = 1, spokenRes = spoken)
 
-private val DELETE = MathKey("⌫", spoken = "Delete", action = KeyAction.DELETE)
+private val DELETE = MathKey("⌫", spokenRes = R.string.math_delete, action = KeyAction.DELETE)
 
 private val NUMBERS = listOf(
-    listOf(MathKey("7"), MathKey("8"), MathKey("9"), op("÷", " ÷ ", "Divide"), MathKey("("), MathKey(")")),
-    listOf(MathKey("4"), MathKey("5"), MathKey("6"), op("×", " × ", "Times"), MathKey("x"), MathKey("^", spoken = "Power")),
-    listOf(MathKey("1"), MathKey("2"), MathKey("3"), op("−", " - ", "Minus"), MathKey("y"), MathKey("√", spoken = "Square root")),
-    listOf(MathKey("0"), MathKey("."), MathKey("π", spoken = "Pi"), op("+", " + ", "Plus"), op("=", " = ", "Equals"), DELETE),
+    listOf(MathKey("7"), MathKey("8"), MathKey("9"), op("÷", " ÷ ", R.string.math_divide), MathKey("("), MathKey(")")),
+    listOf(MathKey("4"), MathKey("5"), MathKey("6"), op("×", " × ", R.string.math_times), MathKey("x"), MathKey("^", spokenRes = R.string.math_power)),
+    listOf(MathKey("1"), MathKey("2"), MathKey("3"), op("−", " - ", R.string.math_minus), MathKey("y"), MathKey("√", spokenRes = R.string.math_square_root)),
+    listOf(MathKey("0"), MathKey("."), MathKey("π", spokenRes = R.string.math_pi), op("+", " + ", R.string.math_plus), op("=", " = ", R.string.math_equals), DELETE),
 )
 
 private val FUNCTIONS = listOf(
-    listOf(fn("sin", "Sine"), fn("cos", "Cosine"), fn("tan", "Tangent"), fn("ln", "Natural log"), fn("log", "Log"), MathKey("e")),
-    listOf(MathKey("²", spoken = "Squared"), MathKey("!", spoken = "Factorial"), MathKey("°", spoken = "Degrees"), MathKey("%", spoken = "Percent"), MathKey("|", spoken = "Absolute value bar"), MathKey("at", " at ")),
-    listOf(op("<", " < ", "Less than"), op(">", " > ", "Greater than"), op("≤", " ≤ ", "At most"), op("≥", " ≥ ", "At least"), MathKey(",", ", ", spoken = "Comma"), MathKey("mod", " mod ")),
-    listOf(MathKey("d/dx", "d/dx ", spoken = "Derivative"), MathKey("∫", "∫ ", spoken = "Integral"), MathKey("dx", " dx"), MathKey("from", " from "), MathKey("to", " to "), DELETE),
+    listOf(fn("sin", R.string.math_sine), fn("cos", R.string.math_cosine), fn("tan", R.string.math_tangent), fn("ln", R.string.math_natural_log), fn("log", R.string.math_log), MathKey("e")),
+    listOf(MathKey("²", spokenRes = R.string.math_squared), MathKey("!", spokenRes = R.string.math_factorial), MathKey("°", spokenRes = R.string.math_degrees), MathKey("%", spokenRes = R.string.math_percent), MathKey("|", spokenRes = R.string.math_absolute_value_bar), MathKey("at", " at ")),
+    listOf(op("<", " < ", R.string.math_less_than), op(">", " > ", R.string.math_greater_than), op("≤", " ≤ ", R.string.math_at_most), op("≥", " ≥ ", R.string.math_at_least), MathKey(",", ", ", spokenRes = R.string.math_comma), MathKey("mod", " mod ")),
+    listOf(MathKey("d/dx", "d/dx ", spokenRes = R.string.math_derivative), MathKey("∫", "∫ ", spokenRes = R.string.math_integral), MathKey("dx", " dx"), MathKey("from", " from "), MathKey("to", " to "), DELETE),
 )
 
 /** Greek letters, sub- and superscript digits and the arrows science notes need (H₂O, x², A → B). */
@@ -86,7 +89,7 @@ private val SYMBOLS = listOf(
     listOf(MathKey("Δ"), MathKey("Σ"), MathKey("Ω"), MathKey("ρ"), MathKey("σ"), MathKey("φ"), MathKey("ε"), MathKey("ν")),
     listOf(MathKey("₀"), MathKey("₁"), MathKey("₂"), MathKey("₃"), MathKey("₄"), MathKey("⁰"), MathKey("¹"), MathKey("²")),
     listOf(MathKey("₅"), MathKey("₆"), MathKey("₇"), MathKey("₈"), MathKey("₉"), MathKey("³"), MathKey("⁴"), MathKey("⁵")),
-    listOf(MathKey("→", spoken = "Arrow"), MathKey("⇌", spoken = "Equilibrium"), MathKey("±"), MathKey("≈"), MathKey("∝"), MathKey("∞"), MathKey("·"), DELETE),
+    listOf(MathKey("→", spokenRes = R.string.math_arrow), MathKey("⇌", spokenRes = R.string.math_equilibrium), MathKey("±"), MathKey("≈"), MathKey("∝"), MathKey("∞"), MathKey("·"), DELETE),
 )
 
 /**
@@ -129,12 +132,12 @@ fun MathKeyboard(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, onLe
         }
     }
     val bottom = listOf(
-        MathKey("ABC", spoken = "Letters keyboard", action = KeyAction.LETTERS),
-        MathKey(listOf("f(x)", "αβ", "123")[page], spoken = listOf("Functions", "Symbols", "Numbers")[page], action = KeyAction.PAGE),
-        MathKey("←", spoken = "Move left", action = KeyAction.LEFT),
-        MathKey("space", " ", spoken = "Space", weight = 2f),
-        MathKey("→", spoken = "Move right", action = KeyAction.RIGHT),
-        MathKey("↵", spoken = "New line", action = KeyAction.ENTER, strong = true),
+        MathKey("ABC", spokenRes = R.string.math_letters_keyboard, action = KeyAction.LETTERS),
+        MathKey(listOf("f(x)", "αβ", "123")[page], spokenRes = listOf(R.string.math_functions, R.string.math_symbols, R.string.math_numbers)[page], action = KeyAction.PAGE),
+        MathKey("←", spokenRes = R.string.math_move_left, action = KeyAction.LEFT),
+        MathKey("space", " ", spokenRes = R.string.math_space, weight = 2f),
+        MathKey("→", spokenRes = R.string.math_move_right, action = KeyAction.RIGHT),
+        MathKey("↵", spokenRes = R.string.math_new_line, action = KeyAction.ENTER, strong = true),
     )
     HorizontalDivider(color = jc.line)
     Column(
@@ -151,6 +154,7 @@ fun MathKeyboard(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, onLe
 
 @Composable
 private fun Key(key: MathKey, modifier: Modifier, onPress: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val press by rememberUpdatedState(onPress)
@@ -166,7 +170,7 @@ private fun Key(key: MathKey, modifier: Modifier, onPress: () -> Unit) {
         modifier.height(46.dp).clip(JShape.xs).background(face)
             .semantics {
                 role = Role.Button
-                contentDescription = key.spoken
+                contentDescription = if (key.spokenRes != 0) context.getString(key.spokenRes) else key.spoken
                 onClick { press(); true }
             }
             .pointerInput(Unit) {

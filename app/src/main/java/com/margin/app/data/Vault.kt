@@ -2,6 +2,7 @@ package com.margin.app.data
 
 import kotlinx.serialization.Serializable
 import java.security.SecureRandom
+import com.margin.app.R
 
 /**
  * The password vault. Each saved login is a locked note with an id starting [LOGIN_PREFIX]: it is encrypted
@@ -33,13 +34,13 @@ data class Login(
 )
 
 /** What a vault entry holds. Only logins are offered for autofill. */
-enum class VaultKind(val label: String) {
-    LOGIN("Login"), WIFI("Wi-Fi"), DEVICE("Device or drive"), OTHER("Other");
+enum class VaultKind(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    LOGIN("Login", R.string.vault_kind_login), WIFI("Wi-Fi", R.string.vault_kind_wifi), DEVICE("Device or drive", R.string.vault_kind_device), OTHER("Other", R.string.vault_kind_other);
     companion object { fun of(name: String) = entries.firstOrNull { it.name == name } ?: LOGIN }
 }
 
-enum class WifiSecurity(val label: String) {
-    WPA("WPA/WPA2"), WPA3("WPA3"), WEP("WEP"), OPEN("None");
+enum class WifiSecurity(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    WPA("WPA/WPA2", R.string.wifi_security_wpa), WPA3("WPA3", R.string.wifi_security_wpa3), WEP("WEP", R.string.wifi_security_wep), OPEN("None", R.string.wifi_security_open);
     companion object { fun of(name: String) = entries.firstOrNull { it.name == name } ?: WPA }
 }
 
@@ -144,7 +145,7 @@ fun planAutofillSave(
     return if (updated == old) AutofillSave.Unchanged else AutofillSave.Update(id, updated)
 }
 
-enum class Strength(val label: String) { WEAK("Weak"), FAIR("Fair"), GOOD("Good"), STRONG("Strong") }
+enum class Strength(val label: String, @androidx.annotation.StringRes val labelRes: Int) { WEAK("Weak", R.string.strength_weak), FAIR("Fair", R.string.strength_fair), GOOD("Good", R.string.strength_good), STRONG("Strong", R.string.strength_strong) }
 
 object PasswordGen {
     private val random = SecureRandom()

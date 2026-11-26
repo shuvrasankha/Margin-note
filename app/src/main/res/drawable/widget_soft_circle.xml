@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A quiet companion to the amber action: a 44dp circle in the widget's line colour. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="2dp">
+    <shape android:shape="oval">
+        <solid android:color="@color/widget_line" />
+    </shape>
+</inset>

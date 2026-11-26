@@ -58,6 +58,8 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /** A colour per curve, in order; they repeat after the fifth. */
 private val CURVES = listOf(Color(0xFFE8890C), Color(0xFF3B82F6), Color(0xFF22A06B), Color(0xFFE5487A), Color(0xFF8B5CF6))
@@ -73,6 +75,7 @@ fun GraphDialog(
     /** Where the graph opens: the maths point at the middle, and how many units fit across for a view this wide for its height. */
     centre: Offset = Offset.Zero, unitsAcross: (aspect: Float) -> Float = { 20f },
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     // The view: the maths point at the middle of the canvas, and how many pixels one unit is.
     var cx by remember { mutableFloatStateOf(centre.x) }
     var cy by remember { mutableFloatStateOf(centre.y) }
@@ -87,18 +90,18 @@ fun GraphDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(bg).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Reset", { cx = centre.x; cy = centre.y; scale = null })
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text("Graph", style = JType.rowTitle, color = jc.ink) }
-                if (onAdd != null) TextAction("Add to note", {
+                TextAction(stringResource(R.string.common_reset), { cx = centre.x; cy = centre.y; scale = null })
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(stringResource(R.string.graph_graph), style = JType.rowTitle, color = jc.ink) }
+                if (onAdd != null) TextAction(stringResource(R.string.graph_add_to_note), {
                     val s = scale ?: return@TextAction
                     // The same part of the plane as on screen, stretched to the picture's shape.
                     onAdd(graphImage(plots, cx, cy, s * GRAPH_IMAGE_WIDTH / canvasSize.width, s * GRAPH_IMAGE_HEIGHT / canvasSize.height, measurer))
                 }, enabled = scale != null && canvasSize.width > 0 && canvasSize.height > 0)
-                TextAction("Done", onDismiss, bold = true)
+                TextAction(stringResource(R.string.common_done), onDismiss, bold = true)
             }
             Canvas(
                 Modifier.weight(1f).fillMaxWidth().clipToBounds().onSizeChanged { canvasSize = it }
-                    .semantics { contentDescription = "Graph of " + plots.joinToString(", ") { it.label } }
+                    .semantics { contentDescription = context.getString(R.string.graph_of_desc, plots.joinToString(", ") { it.label }) }
                     .pointerInput(Unit) {
                         detectTransformGestures { centroid, pan, zoom, _ ->
                             val s = scale ?: return@detectTransformGestures

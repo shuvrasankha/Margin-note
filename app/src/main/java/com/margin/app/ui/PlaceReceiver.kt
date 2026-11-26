@@ -52,7 +52,7 @@ class PlaceReceiver : BroadcastReceiver() {
                             places.clear(id)
                             // A note deleted since rings no more.
                             val note = repo.getNote(id)?.takeIf { it.trashedAt == null && !it.deleted } ?: continue
-                            val body = if (note.isLocked) "Locked note" else note.searchText.lineSequence().map { it.trim() }
+                            val body = if (note.isLocked) context.getString(R.string.place_receiver_locked_note) else note.searchText.lineSequence().map { it.trim() }
                                 .firstOrNull { it.isNotEmpty() && it != note.title.trim() }
                             notify(context, id, note.folderId, note.displayTitle, body, place)
                         }
@@ -70,8 +70,8 @@ class PlaceReceiver : BroadcastReceiver() {
 
         private fun notify(c: Context, noteId: String, folderId: String, title: String, body: String?, place: Place) {
             c.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "Place reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Note reminders for when you arrive at or leave a place"
+                NotificationChannel(CHANNEL, c.getString(R.string.place_receiver_place_reminders), NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = c.getString(R.string.place_receiver_note_reminders_for_when_you)
                 },
             )
             val open = PendingIntent.getActivity(
@@ -86,7 +86,7 @@ class PlaceReceiver : BroadcastReceiver() {
                 Intent(c, ReminderReceiver::class.java).setAction(ReminderReceiver.ACTION_DONE).putExtra(ReminderReceiver.EXTRA_NOTE, noteId),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            val where = place.phrase
+            val where = place.phraseText(c)
             val n = NotificationCompat.Builder(c, CHANNEL)
                 .setSmallIcon(R.drawable.ic_reminder)
                 .setContentTitle(title)
@@ -97,7 +97,7 @@ class PlaceReceiver : BroadcastReceiver() {
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-                .addAction(0, "Done", doneIntent)
+                .addAction(0, c.getString(R.string.common_done), doneIntent)
                 .build()
             // Same tag and id as a time reminder, so the note's Done clears it either way.
             runCatching { NotificationManagerCompat.from(c).notify(noteId, ReminderReceiver.NOTIFICATION_ID, n) }

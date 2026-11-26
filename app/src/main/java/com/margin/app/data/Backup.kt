@@ -83,6 +83,9 @@ private fun safeEntry(id: String) = id.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
 class NotABackupException : Exception("That file isn't a Margin backup")
 
+/** A backup from a newer version of Margin, which this one can't read. */
+class NewerBackupException : Exception("This backup was made by a newer version of Margin. Update the app to restore it.")
+
 /** What a backup holds; its files were handed to the reader's [onFile] as they were read. */
 data class BackupContents(val info: BackupInfo, val notes: List<NoteEntity>)
 
@@ -106,7 +109,7 @@ fun readBackup(input: InputStream, onFile: (String, InputStream) -> Unit): Backu
         }
     }
     val found = info ?: throw NotABackupException()
-    if (found.format > BACKUP_FORMAT) throw Exception("This backup was made by a newer version of Margin. Update the app to restore it.")
+    if (found.format > BACKUP_FORMAT) throw NewerBackupException()
     return BackupContents(found, notes)
 }
 

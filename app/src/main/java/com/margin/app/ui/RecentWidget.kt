@@ -59,7 +59,7 @@ class RecentWidget : AppWidgetProvider() {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, RecentWidget::class.java))
             if (ids.isEmpty()) return
-            val latest = notes.sortedByDescending { it.lastEdited }.take(ROWS.size)
+            val latest = notes.filter { !it.archived }.sortedByDescending { it.lastEdited }.take(ROWS.size)
             val v = RemoteViews(context.packageName, R.layout.widget_recent)
             // + writes a note in a popup over the home screen; the app stays closed.
             v.setOnClickPendingIntent(R.id.new_note, PendingIntent.getActivity(
@@ -74,7 +74,7 @@ class RecentWidget : AppWidgetProvider() {
                 if (n == null) return@forEachIndexed
                 v.setTextViewText(title, n.displayTitle)
                 // The same second line as the note list.
-                v.setTextViewText(body, if (n.isLocked) "Locked" else n.searchText.lineSequence().firstOrNull { it.isNotBlank() } ?: "No additional text")
+                v.setTextViewText(body, if (n.isLocked) context.getString(R.string.widget_recent_locked) else n.searchText.lineSequence().firstOrNull { it.isNotBlank() } ?: context.getString(R.string.notes_snippet_no_text))
                 v.setOnClickPendingIntent(row, open(context, i + 1, Intent(ACTION_OPEN).putExtra(EXTRA_NOTE, n.id).putExtra(EXTRA_FOLDER, n.folderId)))
             }
             manager.updateAppWidget(ids, v)

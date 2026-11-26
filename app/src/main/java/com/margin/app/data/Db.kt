@@ -54,7 +54,7 @@ interface FolderDao {
 
 @Dao
 interface NoteDao {
-    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' AND id NOT LIKE 'login-%' ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC")
+    @Query("SELECT * FROM notes WHERE folderId = :folderId AND deleted = 0 AND trashedAt IS NULL AND archived = 0 AND id NOT LIKE 'template-%' AND id NOT LIKE 'login-%' ORDER BY isPinned DESC, CASE WHEN editedAt > 0 THEN editedAt ELSE updatedAt END DESC")
     fun observeInFolder(folderId: String): Flow<List<NoteEntity>>
 
     @Query("SELECT * FROM notes WHERE deleted = 0 AND trashedAt IS NOT NULL ORDER BY trashedAt DESC")
@@ -68,7 +68,7 @@ interface NoteDao {
     )
     fun observeSearch(pattern: String): Flow<List<NoteEntity>>
 
-    @Query("SELECT folderId, COUNT(*) AS count FROM notes WHERE deleted = 0 AND trashedAt IS NULL AND id NOT LIKE 'template-%' AND id NOT LIKE 'login-%' GROUP BY folderId")
+    @Query("SELECT folderId, COUNT(*) AS count FROM notes WHERE deleted = 0 AND trashedAt IS NULL AND archived = 0 AND id NOT LIKE 'template-%' AND id NOT LIKE 'login-%' GROUP BY folderId")
     fun observeCounts(): Flow<List<FolderCount>>
 
     @Query("SELECT COUNT(*) FROM notes WHERE deleted = 0 AND trashedAt IS NOT NULL")
@@ -158,7 +158,7 @@ interface NoteVersionDao {
     suspend fun allBlocks(): List<String>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 12, exportSchema = true)
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 14, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class MarginDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
@@ -192,6 +192,22 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE notes ADD COLUMN streak INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v14: archive, and folders in your own order. */
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE notes ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE folders ADD COLUMN manualOrder INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v13: note colours. Existing notes have none. */
+val MIGRATION_12_13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN color TEXT")
     }
 }
 

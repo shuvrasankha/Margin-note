@@ -1,5 +1,7 @@
 package com.margin.app.data
 
+import com.margin.app.R
+
 /** Saved templates are notes with this id prefix, kept in the Notes folder but listed nowhere. */
 const val TEMPLATE_PREFIX = "template-"
 
@@ -12,8 +14,8 @@ fun templateKey(t: NoteTemplate) = "builtin:" + t.name
 fun builtInTemplate(key: String) = NoteTemplate.entries.firstOrNull { templateKey(it) == key }
 
 /** Ready-made skeletons from "Add to note": headings with empty lines, lists and tables to fill in. */
-enum class NoteTemplate(val label: String) {
-    LAB("Lab note"), MEETING("Meeting"), LECTURE("Lecture"), DAILY("Daily plan"), RECIPE("Recipe"), TRIP("Trip");
+enum class NoteTemplate(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    LAB("Lab note", R.string.template_lab), MEETING("Meeting", R.string.template_meeting), LECTURE("Lecture", R.string.template_lecture), DAILY("Daily plan", R.string.template_daily), RECIPE("Recipe", R.string.template_recipe), TRIP("Trip", R.string.template_trip);
 
     fun blocks(): List<Block> = buildList {
         fun heading(name: String) = add(Block(type = BlockType.HEADING, text = name))

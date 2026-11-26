@@ -46,12 +46,6 @@ data class MarginColors(
     /** Tint behind a selected choice. */
     val selected: Color,
     val switchOff: Color,
-    /** [page] as a solid colour, for small fills (thumbnails, day cells, tiles) that must not turn see-through. */
-    val well: Color = page,
-    /** [card] as a solid colour, for menus and sheets that sit over other content. */
-    val solidCard: Color = card,
-    /** Small fills set into a card (thumbnails, day cells, chips): [page], or a faint shade of the glass under frosted glass. */
-    val inset: Color = page,
 )
 
 private val Light = MarginColors(
@@ -63,7 +57,7 @@ private val Light = MarginColors(
 private val Dark = MarginColors(
     bg = Color(0xFF0B0B0C), surface = Color(0xFF1C1C1E), ink = Color(0xFFF5F5F7), muted = Color(0xFFA1A1A8),
     line = Color(0xFF2A2A2E), accent = Color(0xFFFFB340), danger = Color(0xFFFF6B5E), success = Color(0xFF4CD964),
-    page = Color(0xFF000000), card = Color(0xFF1C1C1E), selected = Color(0xFF2E2416), switchOff = Color(0xFF3A3A3E),
+    page = Color(0xFF0B0B0C), card = Color(0xFF1C1C1E), selected = Color(0xFF2E2416), switchOff = Color(0xFF3A3A3E),
 )
 
 private val LocalMarginColors = staticCompositionLocalOf { Light }
@@ -81,7 +75,7 @@ val Inter = FontFamily(
 )
 
 object JType {
-    val pageTitle = TextStyle(fontFamily = Inter, fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em)
+    val pageTitle = TextStyle(fontFamily = Inter, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em)
     val noteTitle = TextStyle(fontFamily = Inter, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em)
     val heading = TextStyle(fontFamily = Inter, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
     val subheading = TextStyle(fontFamily = Inter, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
@@ -91,6 +85,8 @@ object JType {
     val secondary = TextStyle(fontFamily = Inter, fontSize = 15.sp, lineHeight = 20.sp)
     val small = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp)
     val section = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    /** A group heading above a card or list ("BACKUPS", "PINNED"): small capitals, spaced out. Pass the text uppercased. */
+    val groupLabel = TextStyle(fontFamily = Inter, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.06.em)
     /** A denser row (cards, grid titles, options). */
     val item = TextStyle(fontFamily = Inter, fontSize = 16.sp, lineHeight = 22.sp)
     val itemTitle = TextStyle(fontFamily = Inter, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
@@ -142,16 +138,7 @@ fun isDark(theme: ThemeMode) = when (theme) {
 @Composable
 fun MarginTheme(appearance: Appearance = Appearance(), content: @Composable () -> Unit) {
     val dark = isDark(appearance.theme)
-    val glass = appearance.glass && glassSupported()
-    // Frosted glass: pages go clear to show the backdrop (see [backdrop]) and cards turn to frosted panes over it.
-    val c = (if (dark) Dark else Light).let {
-        if (!glass) it else it.copy(
-            page = Color.Transparent, card = Color.White.copy(alpha = if (dark) 0.09f else 0.5f),
-            // Dividers etched into the glass rather than drawn on it.
-            line = if (dark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.07f),
-            inset = if (dark) Color.Black.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.05f),
-        )
-    }
+    val c = if (dark) Dark else Light
     val base = if (dark) darkColorScheme() else lightColorScheme()
     val scheme = base.copy(
         primary = c.accent, onPrimary = c.bg, secondary = c.accent,
@@ -183,7 +170,7 @@ fun MarginTheme(appearance: Appearance = Appearance(), content: @Composable () -
     val density = LocalDensity.current
     // Text size scales every sp in the app on top of the system font size.
     val scaled = Density(density.density, density.fontScale * appearance.textSize.scale)
-    CompositionLocalProvider(LocalMarginColors provides c, LocalDensity provides scaled, LocalGlass provides glass, LocalDark provides dark) {
+    CompositionLocalProvider(LocalMarginColors provides c, LocalDensity provides scaled) {
         MaterialTheme(colorScheme = scheme, typography = typography, content = content)
     }
 }

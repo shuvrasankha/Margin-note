@@ -104,6 +104,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 const val ICON_PDF = "M6 3h8l4 4v14H6zM14 3v4h4M8.5 17v-4h1.3a1.2 1.2 0 0 1 0 2.4H8.5M12.5 13v4h.8a2 2 0 0 0 0-4zM16.5 17v-4h-1.5M15 15h1.3"
 private const val ICON_SPLIT = "M4 4h7v16H4zM13 4h7v16h-7"
@@ -122,7 +125,7 @@ fun PdfCard(a: Attachment, file: File, onOpen: () -> Unit, onRemove: (() -> Unit
     }
     Box(
         modifier.clip(JShape.sm).background(jc.surface).clickable(role = Role.Button, onClick = onOpen)
-            .semantics { contentDescription = a.name + ", PDF" },
+            .semantics { contentDescription = context.getString(R.string.pdf_name_desc, a.name) },
     ) {
         Row(Modifier.fillMaxSize().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
@@ -136,10 +139,10 @@ fun PdfCard(a: Attachment, file: File, onOpen: () -> Unit, onRemove: (() -> Unit
                 Text(a.name, style = JType.rowTitle, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
                     when {
-                        !file.exists() -> "Not downloaded yet. It arrives with the next sync."
-                        info == null -> "PDF"
-                        info!!.locked -> "Password protected · tap to unlock"
-                        else -> "PDF · " + plural(info!!.pages, "page")
+                        !file.exists() -> stringResource(R.string.pdf_not_downloaded_yet_it_arrives)
+                        info == null -> stringResource(R.string.pdf_pdf)
+                        info!!.locked -> stringResource(R.string.pdf_password_protected_tap_to_unlock)
+                        else -> pluralStringResource(R.plurals.pdf_info_pages, info!!.pages, info!!.pages)
                     },
                     style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
@@ -148,7 +151,7 @@ fun PdfCard(a: Attachment, file: File, onOpen: () -> Unit, onRemove: (() -> Unit
         if (onRemove != null) {
             Box(
                 Modifier.align(Alignment.TopEnd).padding(6.dp).size(28.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f))
-                    .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = "Remove ${a.name}" },
+                    .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = context.getString(R.string.pdf_remove, a.name) },
                 contentAlignment = Alignment.Center,
             ) { JIcon(Ico.CLOSE, Color.White, size = 12.dp, stroke = 2.6f) }
         }
@@ -234,25 +237,25 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconAction(Ico.BACK, "Close", onClose)
+                IconAction(Ico.BACK, stringResource(R.string.common_close), onClose)
                 Column(
                     Modifier.weight(1f).clip(JShape.xs)
-                        .clickable(enabled = sizes.size > 1, role = Role.Button, onClickLabel = "Go to page") { jumping = true },
+                        .clickable(enabled = sizes.size > 1, role = Role.Button, onClickLabel = stringResource(R.string.pdf_go_to_page)) { jumping = true },
                 ) {
                     Text(a.name, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (sizes.isNotEmpty()) Text("Page ${page + 1} of ${sizes.size}" + if (sizes.size > 1) "  ›" else "", style = JType.small, color = jc.muted)
+                    if (sizes.isNotEmpty()) Text(stringResource(if (sizes.size > 1) R.string.pdf_page_of_jump else R.string.pdf_page_of, (page + 1).toString(), sizes.size.toString()), style = JType.small, color = jc.muted)
                 }
-                if (info?.locked == false && sizes.isNotEmpty()) IconAction(Ico.SEARCH, "Find in PDF", { finding = !finding }, color = if (finding) jc.accent else jc.ink)
+                if (info?.locked == false && sizes.isNotEmpty()) IconAction(Ico.SEARCH, stringResource(R.string.pdf_find_in_pdf), { finding = !finding }, color = if (finding) jc.accent else jc.ink)
                 if (info?.locked == false) Box {
-                    IconAction(Ico.MORE, "PDF tools", { menu = true }, fill = true)
+                    IconAction(Ico.MORE, stringResource(R.string.pdf_pdf_tools), { menu = true }, fill = true)
                     PdfMenu(
                         open = menu, onDismiss = { menu = false }, canEdit = canEdit,
                         items = buildList {
                             if (canEdit) {
-                                add(Triple("Edit text", ICON_EDIT_TEXT) { editingText = page })
-                                add(Triple("Draw on page ${page + 1}", Ico.PEN) {
+                                add(Triple(stringResource(R.string.pdf_edit_text), ICON_EDIT_TEXT) { editingText = page })
+                                add(Triple(stringResource(R.string.pdf_draw_on_page, page + 1), Ico.PEN) {
                                     scope.launch {
                                         val (w, h) = sizes.getOrNull(page) ?: return@launch
                                         val px = 1400
@@ -261,22 +264,22 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
                                         if (w <= 0 || h <= 0) drawingOn = null
                                     }
                                 })
-                                add(Triple("Edit pages", ICON_PAGES) { editing = true })
-                                add(Triple("Split…", ICON_SPLIT) { splitting = true })
-                                add(Triple("Merge with…", ICON_MERGE) { merging = true })
-                                add(Triple("Add text to note", Ico.TEXT) {
-                                    vm.pdfTool(context, lineId, "Reading text…", toast, onDone = onClose) { ctx, _, f ->
+                                add(Triple(stringResource(R.string.pdf_edit_pages), ICON_PAGES) { editing = true })
+                                add(Triple(stringResource(R.string.pdf_split), ICON_SPLIT) { splitting = true })
+                                add(Triple(stringResource(R.string.pdf_merge_with), ICON_MERGE) { merging = true })
+                                add(Triple(stringResource(R.string.pdf_add_text_to_note), Ico.TEXT) {
+                                    vm.pdfTool(context, lineId, context.getString(R.string.pdf_reading_text), toast, onDone = onClose) { ctx, _, f ->
                                         val text = Pdf.text(ctx, f)
-                                        if (text.isBlank()) throw java.io.IOException("No text found. It may be scanned pages: try Scan text on a photo of it.")
+                                        if (text.isBlank()) throw java.io.IOException(context.getString(R.string.pdf_no_text_found_it_may))
                                         EditorViewModel.PdfOutcome(text = text)
                                     }
                                 })
                             }
-                            add(Triple("Share PDF", Ico.SHARE) {
+                            add(Triple(stringResource(R.string.pdf_share_pdf), Ico.SHARE) {
                                 runCatching { context.startActivity(Intent.createChooser(vm.files.sendIntent(file, PDF_MIME, a.name), null)) }
                             })
-                            add(Triple("Open in another app", ICON_OPEN) {
-                                try { context.startActivity(vm.files.viewIntent(a)) } catch (_: android.content.ActivityNotFoundException) { toast("No other app on this phone opens PDFs.") }
+                            add(Triple(stringResource(R.string.pdf_open_in_another_app), ICON_OPEN) {
+                                try { context.startActivity(vm.files.viewIntent(a)) } catch (_: android.content.ActivityNotFoundException) { toast(context.getString(R.string.pdf_no_other_app_on_this)) }
                             })
                         },
                     )
@@ -288,23 +291,23 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
                     Modifier.fillMaxWidth().background(jc.bg).padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    SearchField(query, { query = it }, "Find in PDF", Modifier.weight(1f), autoFocus = true)
+                    SearchField(query, { query = it }, stringResource(R.string.pdf_find_in_pdf), Modifier.weight(1f), autoFocus = true)
                     val n = matches.size
                     Text(
                         when {
                             texts == null -> "…"
                             query.isBlank() -> ""
-                            n == 0 -> "None"
-                            else -> "${current + 1} of $n${if (n >= 2000) "+" else ""}"
+                            n == 0 -> stringResource(R.string.pdf_none)
+                            else -> stringResource(if (n >= 2000) R.string.pdf_match_of_more else R.string.pdf_match_of, (current + 1).toString(), n.toString())
                         },
                         Modifier.widthIn(min = 44.dp).padding(horizontal = 4.dp), style = JType.small, color = jc.muted, textAlign = TextAlign.Center,
                     )
-                    IconAction(Ico.ARROW_UP, "Previous match", { current = (current - 1 + n) % n }, enabled = n > 1)
-                    IconAction(Ico.ARROW_DOWN, "Next match", { current = (current + 1) % n }, enabled = n > 1)
-                    IconAction(Ico.CLOSE, "Close find", { finding = false; query = "" }, color = jc.muted)
+                    IconAction(Ico.ARROW_UP, stringResource(R.string.pdf_previous_match), { current = (current - 1 + n) % n }, enabled = n > 1)
+                    IconAction(Ico.ARROW_DOWN, stringResource(R.string.pdf_next_match), { current = (current + 1) % n }, enabled = n > 1)
+                    IconAction(Ico.CLOSE, stringResource(R.string.pdf_close_find), { finding = false; query = "" }, color = jc.muted)
                 }
                 if (texts?.all { it.text.isBlank() } == true) Text(
-                    "This PDF has no text to search. It may be scanned pages.",
+                    stringResource(R.string.pdf_this_pdf_has_no_text),
                     Modifier.fillMaxWidth().background(jc.bg).padding(horizontal = 16.dp, vertical = 6.dp), style = JType.small, color = jc.muted,
                 )
                 Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
@@ -312,10 +315,10 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
             vm.pdfBusy?.let { Text(it, Modifier.fillMaxWidth().background(jc.accent.copy(alpha = 0.12f)).padding(10.dp), style = JType.small, color = jc.ink, textAlign = TextAlign.Center) }
             when {
                 info == null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(if (file.exists()) "Opening…" else "This PDF isn't downloaded yet.", style = JType.secondary, color = jc.muted)
+                    Text(if (file.exists()) stringResource(R.string.pdf_opening) else stringResource(R.string.pdf_this_pdf_isnt_downloaded_yet), style = JType.secondary, color = jc.muted)
                 }
                 info!!.locked -> LockedPdf(canEdit, Modifier.weight(1f)) { password ->
-                    vm.pdfTool(context, lineId, "Unlocking…", toast) { ctx, _, f -> EditorViewModel.PdfOutcome(replace = Pdf.unlock(ctx, f, password)) }
+                    vm.pdfTool(context, lineId, context.getString(R.string.pdf_unlocking), toast) { ctx, _, f -> EditorViewModel.PdfOutcome(replace = Pdf.unlock(ctx, f, password)) }
                 }
                 else -> BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     val pageWidth = (maxWidth - 24.dp) * zoom
@@ -357,7 +360,7 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
                                 Box(
                                     Modifier.width(pageWidth).aspectRatio(w.toFloat() / h.coerceAtLeast(1)).background(Color.White)
                                         .border(1.dp, jc.line).pointerInput(Unit) { detectTapGestures(onDoubleTap = { zoom = if (zoom > 1.05f) 1f else 2.5f }) }
-                                        .semantics { contentDescription = "Page ${i + 1}" }
+                                        .semantics { contentDescription = context.getString(R.string.pdf_page, i + 1) }
                                         .drawWithContent {
                                             drawContent()
                                             // Found words: all of them in yellow, the one being looked at in orange.
@@ -395,16 +398,16 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
     if (editing) PageEditor(file, sizes, onCancel = { editing = false }, onExtract = { pages ->
         editing = false
         val label = pages.joinToString(", ") { (it + 1).toString() }
-        vm.pdfTool(context, lineId, "Extracting pages…", toast) { ctx, att, f ->
+        vm.pdfTool(context, lineId, context.getString(R.string.pdf_extracting_pages), toast) { ctx, att, f ->
             EditorViewModel.PdfOutcome(add = listOf("${att.name.removeSuffix(".pdf")} (page${if (pages.size > 1) "s" else ""} $label).pdf" to Pdf.extract(ctx, f, pages)))
         }
     }) { edits ->
         editing = false
-        vm.pdfTool(context, lineId, "Saving pages…", toast) { ctx, _, f -> EditorViewModel.PdfOutcome(replace = Pdf.edit(ctx, f, edits)) }
+        vm.pdfTool(context, lineId, context.getString(R.string.pdf_saving_pages), toast) { ctx, _, f -> EditorViewModel.PdfOutcome(replace = Pdf.edit(ctx, f, edits)) }
     }
     if (splitting) SplitDialog(sizes.size, onDismiss = { splitting = false }) { groups ->
         splitting = false
-        vm.pdfTool(context, lineId, "Splitting…", toast) { ctx, att, f ->
+        vm.pdfTool(context, lineId, context.getString(R.string.pdf_splitting), toast) { ctx, att, f ->
             val base = att.name.removeSuffix(".pdf").removeSuffix(".PDF")
             EditorViewModel.PdfOutcome(add = if (groups == null) Pdf.splitEach(ctx, f).mapIndexed { i, b -> "$base (page ${i + 1}).pdf" to b }
             else groups.map { (label, pages) -> "$base (page${if (pages.size > 1) "s" else ""} $label).pdf" to Pdf.extract(ctx, f, pages) })
@@ -412,7 +415,7 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
     }
     if (merging) MergeDialog(vm, vm.otherPdfs(context, lineId), onDismiss = { merging = false }) { other ->
         merging = false
-        vm.pdfTool(context, lineId, "Merging…", toast) { ctx, att, f ->
+        vm.pdfTool(context, lineId, context.getString(R.string.pdf_merging), toast) { ctx, att, f ->
             val o = other()
             EditorViewModel.PdfOutcome(add = listOf("${att.name.removeSuffix(".pdf")} + ${o.first.name}".let { if (it.endsWith(".pdf", true)) it else "$it.pdf" } to Pdf.merge(ctx, listOf(f, o.second))))
         }
@@ -420,7 +423,7 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
     editingText?.let { start ->
         PdfTextEditor(file, sizes, start, onCancel = { editingText = null }) { edits ->
             editingText = null
-            vm.pdfTool(context, lineId, "Saving your text…", toast) { ctx, _, f -> EditorViewModel.PdfOutcome(replace = Pdf.editText(ctx, f, edits)) }
+            vm.pdfTool(context, lineId, context.getString(R.string.pdf_saving_your_text), toast) { ctx, _, f -> EditorViewModel.PdfOutcome(replace = Pdf.editText(ctx, f, edits)) }
         }
     }
     drawingOn?.let { (index, bg) ->
@@ -429,20 +432,18 @@ fun PdfViewer(vm: EditorViewModel, lineId: String, onClose: () -> Unit) {
             onDone = { d ->
                 drawingOn = null
                 if (d == null || d.strokes.none { !it.erase }) return@DrawingScreen
-                vm.pdfTool(context, lineId, "Adding your drawing…", toast) { ctx, _, f ->
+                vm.pdfTool(context, lineId, context.getString(R.string.pdf_adding_your_drawing), toast) { ctx, _, f ->
                     EditorViewModel.PdfOutcome(replace = Pdf.stamp(ctx, f, index, renderInk(d, bg.width, bg.height)))
                 }
             },
-            background = bg, title = "Page ${index + 1}",
+            background = bg, title = stringResource(R.string.pdf_page, index + 1),
         )
     }
 }
 
 @Composable
 private fun PdfMenu(open: Boolean, onDismiss: () -> Unit, canEdit: Boolean, items: List<Triple<String, String, () -> Unit>>) {
-    androidx.compose.material3.DropdownMenu(
-        expanded = open, onDismissRequest = onDismiss, modifier = Modifier.width(250.dp), shape = JShape.md, containerColor = jc.bg,
-    ) {
+    JMenu(expanded = open, onDismissRequest = onDismiss, width = 250.dp) {
         items.forEach { (label, icon, onClick) ->
             androidx.compose.material3.DropdownMenuItem(
                 text = { Text(label, style = JType.item, color = jc.ink) },
@@ -462,18 +463,18 @@ private fun LockedPdf(canEdit: Boolean, modifier: Modifier, onUnlock: (String) -
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
     ) {
         Box(Modifier.size(64.dp).clip(CircleShape).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) { JIcon(Ico.LOCK, jc.accent, size = 30.dp) }
-        Text("Password protected", style = JType.rowTitle.copy(fontSize = 19.sp), color = jc.ink)
+        Text(stringResource(R.string.pdf_password_protected), style = JType.rowTitle.copy(fontSize = 19.sp), color = jc.ink)
         Text(
-            if (canEdit) "Enter its password to unlock it. Margin keeps an unlocked copy in this note, so you won't need the password again."
-            else "Unlock this note to unlock the PDF.",
+            if (canEdit) stringResource(R.string.pdf_enter_its_password_to_unlock)
+            else stringResource(R.string.pdf_unlock_this_note_to_unlock),
             style = JType.secondary, color = jc.muted, textAlign = TextAlign.Center,
         )
         if (canEdit) {
             OutlinedTextField(
-                password, { password = it }, Modifier.widthIn(max = 360.dp).fillMaxWidth(), label = { Text("PDF password") }, singleLine = true,
+                password, { password = it }, Modifier.widthIn(max = 360.dp).fillMaxWidth(), label = { Text(stringResource(R.string.pdf_pdf_password)) }, singleLine = true,
                 visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             )
-            PrimaryButton("Unlock", { onUnlock(password) }, Modifier.widthIn(max = 360.dp).fillMaxWidth(), enabled = password.isNotEmpty())
+            PrimaryButton(stringResource(R.string.pdf_unlock), { onUnlock(password) }, Modifier.widthIn(max = 360.dp).fillMaxWidth(), enabled = password.isNotEmpty())
         }
     }
 }
@@ -484,6 +485,7 @@ private fun LockedPdf(canEdit: Boolean, modifier: Modifier, onUnlock: (String) -
  */
 @Composable
 private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> Unit, onExtract: (List<Int>) -> Unit, onSave: (List<PageEdit>) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val pages = remember { mutableStateListOf<PageEdit>().apply { addAll(sizes.indices.map { PageEdit(it) }) } }
     val picked = remember { mutableStateListOf<Int>() } // positions in [pages]
     val changed = pages.toList() != sizes.indices.map { PageEdit(it) }
@@ -497,14 +499,14 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
     }
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Cancel", onCancel)
-                Text("Edit pages", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
-                TextAction("Save", { onSave(pages.toList()) }, bold = true, enabled = changed && pages.isNotEmpty())
+                TextAction(stringResource(R.string.common_cancel), onCancel)
+                Text(stringResource(R.string.pdf_edit_pages), Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
+                TextAction(stringResource(R.string.common_save), { onSave(pages.toList()) }, bold = true, enabled = changed && pages.isNotEmpty())
             }
             Text(
-                if (picked.isEmpty()) "Tap pages to pick them." else plural(picked.size, "page") + " picked",
+                if (picked.isEmpty()) stringResource(R.string.pdf_tap_pages_to_pick) else pluralStringResource(R.plurals.pdf_pages_picked, picked.size, picked.size),
                 Modifier.fillMaxWidth().background(jc.bg).padding(horizontal = 16.dp, vertical = 6.dp), style = JType.small, color = jc.muted,
             )
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
@@ -521,7 +523,7 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
                                 .border(if (on) 3.dp else 1.dp, if (on) jc.accent else jc.line, JShape.xs)
                                 .background(if (on) jc.accent.copy(alpha = 0.10f) else Color.Transparent)
                                 .clickable(role = Role.Checkbox) { if (on) picked.remove(pos) else picked.add(pos) }
-                                .semantics { contentDescription = "Page ${p.index + 1}"; selected = on }.padding(8.dp),
+                                .semantics { contentDescription = context.getString(R.string.pdf_page, p.index + 1); selected = on }.padding(8.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             thumb?.let {
@@ -538,11 +540,11 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
             val any = picked.isNotEmpty()
             Row(Modifier.fillMaxWidth().background(jc.bg).padding(4.dp)) {
-                PageTool(Ico.ROTATE, "Rotate", any) { picked.forEach { i -> pages[i] = pages[i].copy(rotation = (pages[i].rotation + 90) % 360) } }
-                PageTool(Ico.BACK, "Earlier", any && picked.min() > 0) { move(-1) }
-                PageTool(Ico.CHEVRON, "Later", any && picked.max() < pages.lastIndex) { move(1) }
-                PageTool(Ico.COPY, "Extract", any) { onExtract(picked.sorted().map { pages[it].index }) }
-                PageTool(Ico.TRASH, "Delete", any && picked.size < pages.size, danger = true) {
+                PageTool(Ico.ROTATE, stringResource(R.string.pdf_rotate), any) { picked.forEach { i -> pages[i] = pages[i].copy(rotation = (pages[i].rotation + 90) % 360) } }
+                PageTool(Ico.BACK, stringResource(R.string.pdf_earlier), any && picked.min() > 0) { move(-1) }
+                PageTool(Ico.CHEVRON, stringResource(R.string.pdf_later), any && picked.max() < pages.lastIndex) { move(1) }
+                PageTool(Ico.COPY, stringResource(R.string.pdf_extract), any) { onExtract(picked.sorted().map { pages[it].index }) }
+                PageTool(Ico.TRASH, stringResource(R.string.common_delete), any && picked.size < pages.size, danger = true) {
                     picked.sortedDescending().forEach { pages.removeAt(it) }; picked.clear()
                 }
             }
@@ -553,13 +555,14 @@ private fun PageEditor(file: File, sizes: List<Pair<Int, Int>>, onCancel: () -> 
 /** Go to page: every page as a picture, the one you're on ringed; tap one to go there. */
 @Composable
 private fun PageJump(file: File, sizes: List<Pair<Int, Int>>, at: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val grid = androidx.compose.foundation.lazy.grid.rememberLazyGridState(initialFirstVisibleItemIndex = (at - 3).coerceAtLeast(0))
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding()) {
+        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Cancel", onDismiss)
-                Text("Go to page", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
+                TextAction(stringResource(R.string.common_cancel), onDismiss)
+                Text(stringResource(R.string.pdf_go_to_page), Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
                 Spacer(Modifier.width(64.dp))
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
@@ -572,7 +575,7 @@ private fun PageJump(file: File, sizes: List<Pair<Int, Int>>, at: Int, onDismiss
                     val (w, h) = sizes[i]
                     val thumb by produceState<ImageBitmap?>(null, file, i) { value = Pdf.render(file, i, 240)?.asImageBitmap() }
                     Column(
-                        Modifier.clip(JShape.xs).clickable(role = Role.Button) { onPick(i) }.semantics { contentDescription = "Page ${i + 1}"; selected = on },
+                        Modifier.clip(JShape.xs).clickable(role = Role.Button) { onPick(i) }.semantics { contentDescription = context.getString(R.string.pdf_page, i + 1); selected = on },
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Box(
@@ -610,19 +613,19 @@ private fun SplitDialog(count: Int, onDismiss: () -> Unit, onSplit: (List<Pair<S
     val valid = groups.isNotEmpty() && groups.all { it.second != null }
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Split PDF") },
+        title = { Text(stringResource(R.string.pdf_split_pdf)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Each part is added to the note as a new PDF, under this one.", style = JType.small, color = jc.muted)
-                ChoiceLine("Every page on its own (${plural(count, "PDF")})", each) { each = true }
-                ChoiceLine("By page ranges", !each) { each = false }
+                Text(stringResource(R.string.pdf_each_part_is_added_to), style = JType.small, color = jc.muted)
+                ChoiceLine(pluralStringResource(R.plurals.pdf_every_page_own, count, count), each) { each = true }
+                ChoiceLine(stringResource(R.string.pdf_by_page_ranges), !each) { each = false }
                 if (!each) {
                     OutlinedTextField(
-                        ranges, { ranges = it }, Modifier.fillMaxWidth(), label = { Text(if (count >= 3) "Ranges, e.g. 1-2, 3-$count" else "Ranges, e.g. 1, 2") }, singleLine = true,
+                        ranges, { ranges = it }, Modifier.fillMaxWidth(), label = { Text(if (count >= 3) stringResource(R.string.pdf_ranges_e_g_1_2, count) else stringResource(R.string.pdf_ranges_e_g_1_2_2)) }, singleLine = true,
                         isError = ranges.isNotBlank() && !valid,
                     )
                     Text(
-                        if (ranges.isBlank()) "One PDF per range, from $count pages." else if (valid) "Makes ${plural(groups.size, "PDF")}." else "Use page numbers from 1 to $count.",
+                        if (ranges.isBlank()) pluralStringResource(R.plurals.pdf_one_per_range, count, count) else if (valid) pluralStringResource(R.plurals.pdf_makes, groups.size, groups.size) else stringResource(R.string.pdf_use_page_numbers, count.toString()),
                         style = JType.small, color = if (ranges.isNotBlank() && !valid) jc.danger else jc.muted,
                     )
                 }
@@ -630,10 +633,10 @@ private fun SplitDialog(count: Int, onDismiss: () -> Unit, onSplit: (List<Pair<S
         },
         confirmButton = {
             TextButton(onClick = { onSplit(if (each) null else groups.map { it.first to it.second!! }) }, enabled = each || valid) {
-                Text("Split", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.pdf_split_2), fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -661,16 +664,16 @@ private fun MergeDialog(vm: EditorViewModel, others: List<Attachment>, onDismiss
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val a = try { vm.importForMerge(uri) } catch (e: Exception) { Toast.makeText(context, e.message ?: "Couldn't open that file", Toast.LENGTH_LONG).show(); return@launch }
+            val a = try { vm.importForMerge(uri) } catch (e: Exception) { Toast.makeText(context, errorText(context, e) ?: context.getString(R.string.pdf_couldnt_open_that_file), Toast.LENGTH_LONG).show(); return@launch }
             onMerge { a to vm.fileOf(a) }
         }
     }
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Merge with…") },
+        title = { Text(stringResource(R.string.pdf_merge_with)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("The other PDF's pages go after this one's, in a new PDF added to the note.", style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.pdf_the_other_pdfs_pages_go), style = JType.small, color = jc.muted)
                 Spacer(Modifier.height(4.dp))
                 others.forEach { o ->
                     Row(
@@ -686,11 +689,11 @@ private fun MergeDialog(vm: EditorViewModel, others: List<Attachment>, onDismiss
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     JIcon(Ico.FILE, jc.accent, size = 22.dp)
-                    Text("Choose a PDF on this phone…", style = JType.item, color = jc.accent)
+                    Text(stringResource(R.string.pdf_choose_a_pdf_on_this), style = JType.item, color = jc.accent)
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }

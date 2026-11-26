@@ -1,5 +1,7 @@
 package com.margin.app.data
 
+import com.margin.app.R
+
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -67,7 +69,10 @@ fun providerForKey(key: String): AiProvider? {
 fun aiProvider(id: String?) = AI_PROVIDERS.firstOrNull { it.id == id } ?: AI_PROVIDERS.first()
 
 /** What the user reads when a request fails. Never the provider's body or the key. */
-class AiException(message: String) : Exception(message)
+/** A failure in words: [res] (with [arg]) in the app's language, [message] in English for logs and tests. */
+class AiException(message: String, @androidx.annotation.StringRes val res: Int = 0, val arg: String? = null) : Exception(message) {
+    fun text(context: android.content.Context): String = if (res == 0) message.orEmpty() else context.getString(res, arg)
+}
 
 class AiRequest(val url: String, val headers: Map<String, String>, val body: String)
 
@@ -157,15 +162,15 @@ fun plainAnswer(s: String): String = s.lines()
             .replace(Regex("`([^`]+)`"), "$1")
     }.trim()
 
-/** An error reply in words. The body only steers the wording; it is never shown. */
-fun aiErrorText(status: Int, body: String): String = when {
-    status == 401 || status == 403 -> "API key rejected. Check the key."
+/** An error reply in words (a string resource; [R.string.ai_err_provider] takes the status). The body only steers the wording; it is never shown. */
+fun aiErrorRes(status: Int, body: String): Int = when {
+    status == 401 || status == 403 -> R.string.ai_err_key_rejected
     // Gemini answers a bad key with a 400
-    status == 400 && (body.contains("API key", ignoreCase = true) || body.contains("API_KEY_INVALID")) -> "API key rejected. Check the key."
-    status == 404 || status == 410 || (status == 400 && body.contains("model", ignoreCase = true)) -> "Model unavailable. Check the model name."
-    status == 429 -> "Provider limit reached. Check your provider account or try later."
-    status == 503 || status == 529 -> "Provider is busy. Try again shortly."
-    else -> "Provider error ($status). Try again later."
+    status == 400 && (body.contains("API key", ignoreCase = true) || body.contains("API_KEY_INVALID")) -> R.string.ai_err_key_rejected
+    status == 404 || status == 410 || (status == 400 && body.contains("model", ignoreCase = true)) -> R.string.ai_err_model
+    status == 429 -> R.string.ai_err_limit
+    status == 503 || status == 529 -> R.string.ai_err_busy
+    else -> R.string.ai_err_provider
 }
 
 /** Sends [r] and returns the reply's status and body. Blocking; call off the main thread. */
@@ -250,7 +255,7 @@ class AiKeys @Inject constructor(private val prefs: AppPrefs) {
 
     /** The provider's answer to [user]. Throws [AiException] with words for the user. */
     suspend fun ask(system: String, user: String, history: List<Pair<String, String>> = emptyList()): String =
-        send(system, user, 4096, history) ?: throw AiException("The provider sent back an empty answer. Try again, or another model.")
+        send(system, user, 4096, history) ?: throw AiException("The provider sent back an empty answer.", R.string.ai_err_empty)
 
     /** One token of answer: enough to prove the key and model work. Throws [AiException] when they don't. */
     suspend fun test() { send("", "Hi", 1) }
@@ -262,9 +267,9 @@ class AiKeys @Inject constructor(private val prefs: AppPrefs) {
     suspend fun connect(key: String) {
         val k = key.trim()
         providerForKey(k)?.let { setProvider(it.id) }
-        if (!save(k)) throw AiException("That doesn't look like an API key.")
+        if (!save(k)) throw AiException("That doesn't look like an API key.", R.string.ai_err_not_a_key)
         try { test() } catch (e: AiException) {
-            if (e.message?.startsWith("API key rejected") == true) remove()
+            if (e.res == R.string.ai_err_key_rejected) remove()
             throw e
         }
     }
@@ -272,21 +277,21 @@ class AiKeys @Inject constructor(private val prefs: AppPrefs) {
     private suspend fun send(system: String, user: String, maxTokens: Int, history: List<Pair<String, String>> = emptyList()): String? = withContext(Dispatchers.IO) {
         val cfg = config.value
         val p = aiProvider(cfg.provider)
-        val key = key() ?: throw AiException(if (cfg.key == null) "Add your API key in Settings first." else "Your saved key couldn't be read, so it was removed. Add it again in Settings.")
+        val key = key() ?: throw AiException(if (cfg.key == null) "No API key." else "Saved key unreadable.", if (cfg.key == null) R.string.ai_err_add_key else R.string.ai_err_key_unreadable)
         val (status, body) = try {
             post(aiRequest(p, key, cfg.model.ifBlank { p.defaultModel }, system, user, maxTokens, history))
         } catch (e: SocketTimeoutException) {
-            throw AiException("Provider took too long. Try again.")
+            throw AiException("Provider took too long.", R.string.ai_err_timeout)
         } catch (e: IOException) {
-            throw AiException("Could not connect. Check your internet.")
+            throw AiException("Could not connect.", R.string.ai_err_offline)
         }
-        if (status !in 200..299) throw AiException(aiErrorText(status, body))
+        if (status !in 200..299) throw AiException("Provider error ($status).", aiErrorRes(status, body), status.toString())
         val reply = aiReply(p, body)
         when (aiStop(p, body)) {
-            "refusal" -> throw AiException("${p.name} declined to answer this.")
+            "refusal" -> throw AiException("${p.name} declined to answer this.", R.string.ai_err_declined, p.name)
             // A test asks for one token, so running out is expected there.
             "length" -> if (maxTokens > 1) return@withContext reply?.let { "$it …" }
-                ?: throw AiException("The answer ran out of room before it started. Try a shorter note or another model.")
+                ?: throw AiException("The answer ran out of room.", R.string.ai_err_no_room)
         }
         reply
     }

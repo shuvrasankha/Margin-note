@@ -1,5 +1,6 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,72 +23,74 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /** One thing Margin can do. [opens]: the screen it lives on, when it has one of its own. */
-internal data class Feature(val icon: String, val title: String, val text: String, val opens: Screen? = null)
+internal data class Feature(val icon: String, @androidx.annotation.StringRes val title: Int, @androidx.annotation.StringRes val text: Int, val opens: Screen? = null)
 
 /** Every feature, grouped as the page shows them. Keep this in step with the app when features change. */
-internal val FEATURES: List<Pair<String, List<Feature>>> = listOf(
-    "Writing" to listOf(
-        Feature(Ico.TEXT, "Rich notes", "The first line is the title. Lines can be headings, body, monospaced, quotes, bulleted, dashed or numbered lists, and checklists."),
-        Feature(Ico.TEXT_SIZE, "Note fonts and paper", "Pick a font for each note (serif, mono, handwriting…) and a paper: ruled, squares, graph or four-line."),
-        Feature(ICON_TEMPLATE, "Templates", "Start from Meeting, Lecture, Lab note, Recipe, Trip or Daily plan, save your own, or give a folder a default template."),
-        Feature(Ico.LINK, "Linked notes", "Type [[ to link another note, and see every note that links back."),
-        Feature(Ico.GRAMMAR, "Spelling and grammar", "Mistakes are underlined as you type; tap one to see why and fix it. Works offline, with an optional fuller online check."),
-        Feature(Ico.SEARCH, "Find and replace", "Find in a note and replace words in it."),
-        Feature(ICON_HISTORY, "Version history", "Go back to an earlier version of a note."),
-        Feature(Ico.PEN, "Writing stats", "Word count, reading time and a daily word goal with a streak."),
+internal val FEATURES: List<Pair<Int, List<Feature>>> = listOf(
+    R.string.features_writing to listOf(
+        Feature(Ico.TEXT, R.string.features_rich_notes, R.string.features_the_first_line_is_the),
+        Feature(Ico.TEXT_SIZE, R.string.features_note_fonts_and_paper, R.string.features_pick_a_font_for_each),
+        Feature(ICON_TEMPLATE, R.string.features_templates, R.string.features_start_from_meeting_lecture_lab),
+        Feature(Ico.LINK, R.string.features_linked_notes, R.string.features_type_to_link_another_note),
+        Feature(Ico.GRAMMAR, R.string.features_spelling_and_grammar, R.string.features_mistakes_are_underlined_as_you),
+        Feature(Ico.SEARCH, R.string.features_find_and_replace, R.string.features_find_in_a_note_and),
+        Feature(ICON_HISTORY, R.string.features_version_history, R.string.features_go_back_to_an_earlier),
+        Feature(Ico.PEN, R.string.features_writing_stats, R.string.features_word_count_reading_time_and),
     ),
-    "Math" to listOf(
-        Feature(Ico.NUMBERS, "Answers as you type", "End a line with = to get the answer: sums, percentages, powers, roots, trig, logs and factorials."),
-        Feature(Ico.EDIT, "Variables and equations", "Name values and functions (rent = 1200, f(x) = x^2) and use them below, or solve an equation for its unknown."),
-        Feature(Ico.GRID, "Graphs", "Plot every y = … in a note, zoom and pan, then add the graph to the note as a picture."),
-        Feature(Ico.TEXT_SIZE, "Math keyboard", "Symbols like √, π, ^ and ° one tap away."),
+    R.string.features_math to listOf(
+        Feature(Ico.NUMBERS, R.string.features_answers_as_you_type, R.string.features_end_a_line_with_to),
+        Feature(Ico.EDIT, R.string.features_variables_and_equations, R.string.features_name_values_and_functions_rent),
+        Feature(Ico.GRID, R.string.features_graphs, R.string.features_plot_every_y_in_a),
+        Feature(Ico.TEXT_SIZE, R.string.features_math_keyboard, R.string.features_symbols_like_and_one_tap),
     ),
-    "Attach and create" to listOf(
-        Feature(Ico.CAMERA, "Photos and files", "Add photos, files and PDFs. The photo editor crops, rotates, flips and resizes."),
-        Feature(Ico.PEN, "Drawings", "Sketch in a note with pens, colours, line weights and an eraser."),
-        Feature(Ico.HANDWRITING, "Handwriting to text", "Turn handwriting into typed text in English or বাংলা, on the phone."),
-        Feature(Ico.SCAN, "Text from photos", "Scan a page, or pick a photo in a note, and get its text. Runs on the phone."),
-        Feature(ICON_SCAN_DOC, "Document scanner", "Scan paper documents straight into a note."),
-        Feature(Ico.MIC, "Voice notes", "Record audio in a note and play it back with its waveform."),
-        Feature(ICON_TABLE, "Tables", "Add a table and edit it cell by cell."),
-        Feature(Ico.GLOBE, "Web links", "Paste a web address to get a preview card."),
-        Feature(ICON_PDF, "PDF tools", "Open PDFs with Margin, find text in them and edit their text."),
+    R.string.features_attach_and_create to listOf(
+        Feature(Ico.CAMERA, R.string.features_photos_and_files, R.string.features_add_photos_files_and_pdfs),
+        Feature(Ico.PEN, R.string.features_drawings, R.string.features_sketch_in_a_note_with),
+        Feature(Ico.HANDWRITING, R.string.features_handwriting_to_text, R.string.features_turn_handwriting_into_typed_text),
+        Feature(Ico.SCAN, R.string.features_text_from_photos, R.string.features_scan_a_page_or_pick),
+        Feature(ICON_SCAN_DOC, R.string.features_document_scanner, R.string.features_scan_paper_documents_straight_into),
+        Feature(Ico.MIC, R.string.features_voice_notes, R.string.features_record_audio_in_a_note),
+        Feature(ICON_TABLE, R.string.features_tables, R.string.features_add_a_table_and_edit),
+        Feature(Ico.GLOBE, R.string.features_web_links, R.string.features_paste_a_web_address_to),
+        Feature(ICON_PDF, R.string.features_pdf_tools, R.string.features_open_pdfs_with_margin_find),
     ),
-    "AI" to listOf(
-        Feature(Ico.SPARKLE, "Ask AI", "Summarise, rewrite, translate or ask about a note or the text you selected, and keep chatting. Use your own key from Gemini, OpenAI, Claude, Groq or NVIDIA."),
+    R.string.features_ai to listOf(
+        Feature(Ico.SPARKLE, R.string.features_ask_ai, R.string.features_summarise_rewrite_translate_or_ask),
     ),
-    "Organise" to listOf(
-        Feature(Ico.FOLDER, "Folders inside folders", "Nest folders, move notes between them, and sort each folder its own way."),
-        Feature(Ico.SMART_FOLDER, "Smart folders", "Show every note with certain tags, a checklist, a pin, or a recent edit."),
-        Feature(Ico.PIN, "Pins and tags", "Pin notes to the top, and type #word to tag a note."),
-        Feature(Ico.SEARCH, "Search everything", "Search titles, bodies and the text inside attachments."),
-        Feature(Ico.TRASH, "Recently Deleted", "Deleted notes wait here so you can bring them back."),
+    R.string.features_organise to listOf(
+        Feature(Ico.FOLDER, R.string.features_folders_inside_folders, R.string.features_nest_folders_move_notes_between),
+        Feature(Ico.SMART_FOLDER, R.string.features_smart_folders, R.string.features_show_every_note_with_certain),
+        Feature(Ico.PIN, R.string.features_pins_and_tags, R.string.features_pin_notes_to_the_top),
+        Feature(Ico.SEARCH, R.string.features_search_everything, R.string.features_search_titles_bodies_and_the),
+        Feature(Ico.TRASH, R.string.features_recently_deleted, R.string.features_deleted_notes_wait_here_so),
     ),
-    "Plan your days" to listOf(
-        Feature(Ico.CHECKLIST, "To-dos", "Every checklist in one place: tick and add tasks there, see your progress, and start a new list.", Screen.Todos),
-        Feature(Ico.BELL, "Reminders", "Remind me on a note, once or on repeat, with an optional alarm and full-screen alert.", Screen.Reminders),
-        Feature(Ico.CALENDAR, "Journal", "A note for each day on a calendar, behind your passcode, with a daily reminder.", Screen.Journal),
-        Feature(Ico.CHECK, "Habits", "Tick habits off each day and see your streaks.", Screen.Habits),
-        Feature(Ico.LINES, "Trackers", "Lists like “Movies watched”, counted year by year, with a photo or cover for each one.", Screen.Trackers),
+    R.string.features_plan_your_days to listOf(
+        Feature(Ico.CHECKLIST, R.string.features_to_dos, R.string.features_every_checklist_in_one_place, Screen.Todos),
+        Feature(Ico.BELL, R.string.features_reminders, R.string.features_remind_me_on_a_note, Screen.Reminders),
+        Feature(Ico.CALENDAR, R.string.features_journal, R.string.features_a_note_for_each_day, Screen.Journal),
+        Feature(Ico.CHECK, R.string.features_habits, R.string.features_tick_habits_off_each_day, Screen.Habits),
+        Feature(Ico.LINES, R.string.features_trackers, R.string.features_lists_like_movies_watched_counted, Screen.Trackers),
     ),
-    "Privacy" to listOf(
-        Feature(Ico.LOCK, "Locked notes", "Lock a note with your passcode; it's encrypted on the phone and in your backups."),
-        Feature(Ico.FINGERPRINT, "App lock", "Ask for your passcode or fingerprint whenever Margin opens."),
-        Feature(Ico.KEY, "Passwords", "A password vault with a generator, strength check and history.", Screen.Passwords),
+    R.string.features_privacy to listOf(
+        Feature(Ico.LOCK, R.string.features_locked_notes, R.string.features_lock_a_note_with_your),
+        Feature(Ico.FINGERPRINT, R.string.features_app_lock, R.string.features_ask_for_your_passcode_or),
+        Feature(Ico.KEY, R.string.features_passwords, R.string.features_a_password_vault_with_a, Screen.Passwords),
     ),
-    "Sync, backup and sharing" to listOf(
-        Feature(Ico.SYNC, "Google Drive sync", "Optional. Notes sync through hidden app storage in your Drive."),
-        Feature(Ico.CLOUD, "Backups anywhere", "Password-sealed backups to any cloud folder or a WebDAV server."),
-        Feature(Ico.ARROW_DOWN, "Import", "Bring notes in from Google Keep, Evernote, Markdown, text or HTML."),
-        Feature(Ico.ARCHIVE, "Export", "Export every note as Markdown, with its photos and files."),
-        Feature(Ico.SHARE, "Share as image", "Turn a note into a styled card in many designs, sizes and fonts, or share it as text, PDF or Markdown, or print it."),
+    R.string.features_sync_backup_and_sharing to listOf(
+        Feature(Ico.SYNC, R.string.features_google_drive_sync, R.string.features_optional_notes_sync_through_hidden),
+        Feature(Ico.CLOUD, R.string.features_backups_anywhere, R.string.features_password_sealed_backups_to_any),
+        Feature(Ico.ARROW_DOWN, R.string.common_import, R.string.features_bring_notes_in_from_google),
+        Feature(Ico.ARCHIVE, R.string.common_export, R.string.features_export_every_note_as_markdown),
+        Feature(Ico.SHARE, R.string.features_share_as_image, R.string.features_turn_a_note_into_a),
     ),
-    "Around your phone" to listOf(
-        Feature(Ico.COMPOSE, "Widget and quick note", "A home screen widget, a Quick Settings tile and app shortcuts for writing a note fast."),
-        Feature(Ico.MOON, "Light and dark", "Follows your phone's theme, or choose one. Text size and list previews are yours to set."),
-        Feature(Ico.RESIZE, "Tablets", "On a wide screen the list and the note sit side by side."),
+    R.string.features_around_your_phone to listOf(
+        Feature(Ico.COMPOSE, R.string.features_widget_and_quick_note, R.string.features_a_home_screen_widget_a),
+        Feature(Ico.MOON, R.string.features_light_and_dark, R.string.features_follows_your_phones_theme_or),
+        Feature(Ico.RESIZE, R.string.features_tablets, R.string.features_on_a_wide_screen_the),
     ),
 )
 
@@ -96,33 +99,34 @@ internal val FEATURES: List<Pair<String, List<Feature>>> = listOf(
 fun FeaturesScreen(onBack: () -> Unit, onOpen: (Screen) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val q = query.trim()
+    val context = androidx.compose.ui.platform.LocalContext.current
     val groups = remember(q) {
         if (q.isEmpty()) FEATURES
         else FEATURES.mapNotNull { (name, list) ->
-            list.filter { it.title.contains(q, true) || it.text.contains(q, true) || name.contains(q, true) }
+            list.filter { context.getString(it.title).contains(q, true) || context.getString(it.text).contains(q, true) || context.getString(name).contains(q, true) }
                 .takeIf { it.isNotEmpty() }?.let { name to it }
         }
     }
-    val glass = rememberGlass()
+    val pageList = rememberLazyListState()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar("Settings", onBack, color = jc.page, glass = glass) },
+        topBar = { NavBar(stringResource(R.string.common_settings), onBack, color = jc.page) },
     ) { padding ->
-        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
+        LazyColumn(state = pageList, modifier = Modifier.padding(padding).fillMaxSize()) {
             item {
-                PageTitle("What Margin can do")
+                PageTitle(stringResource(R.string.features_what_margin_can_do))
                 Text(
-                    "${FEATURES.sumOf { it.second.size }} features, all in one app. Tap one with an arrow to go there.",
+                    stringResource(R.string.features_count_intro, FEATURES.sumOf { it.second.size }.toString()),
                     Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), style = JType.para, color = jc.muted,
                 )
-                SearchField(query, { query = it }, "Search features", Modifier.padding(horizontal = 16.dp), fill = jc.card)
+                SearchField(query, { query = it }, stringResource(R.string.features_search_features), Modifier.padding(horizontal = 16.dp), fill = jc.card)
             }
             if (groups.isEmpty()) item {
-                Text("No features match “$q”.", Modifier.padding(20.dp), style = JType.para, color = jc.muted)
+                Text(stringResource(R.string.features_no_features_match, q), Modifier.padding(20.dp), style = JType.para, color = jc.muted)
             }
             groups.forEach { (name, list) ->
                 item(key = name) {
-                    SettingsLabel(name)
+                    SettingsLabel(stringResource(name))
                     DividedCard(list, inset = 58.dp) { f -> FeatureRow(f, onOpen) }
                 }
             }
@@ -142,8 +146,8 @@ private fun FeatureRow(f: Feature, onOpen: (Screen) -> Unit) {
     ) {
         IconTile(f.icon)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(f.title, style = JType.item, color = jc.ink)
-            Text(f.text, style = JType.small, color = jc.muted)
+            Text(stringResource(f.title), style = JType.item, color = jc.ink)
+            Text(stringResource(f.text), style = JType.small, color = jc.muted)
         }
         if (f.opens != null) JIcon(Ico.CHEVRON, jc.muted, size = 18.dp)
     }

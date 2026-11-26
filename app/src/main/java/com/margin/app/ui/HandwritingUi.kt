@@ -48,6 +48,8 @@ import com.margin.app.data.PenStroke
 import com.margin.app.data.recognizeHandwriting
 import kotlinx.coroutines.CancellationException
 import java.util.Locale
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 private sealed interface InkState {
     data object Downloading : InkState
@@ -82,13 +84,13 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
         state = InkState.Reading
         state = try {
             val found = recognizeHandwriting(strokes, language) { state = InkState.Downloading }
-            if (found.isBlank()) InkState.Failed("No writing found. Write a little larger, one line at a time.")
+            if (found.isBlank()) InkState.Failed(context.getString(R.string.handwriting_no_writing_found_write_a))
             else InkState.Found(found).also { text = found }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             InkState.Failed(
-                if (state == InkState.Downloading) "Couldn't get the ${language.label} handwriting model. Connect to the internet once and try again."
-                else "Couldn't read the handwriting: " + (e.message ?: "unknown error"),
+                if (state == InkState.Downloading) context.getString(R.string.handwriting_model_failed, language.label)
+                else context.getString(R.string.handwriting_read_failed, e.message ?: context.getString(R.string.view_models_unknown_error)),
             )
         }
     }
@@ -99,7 +101,7 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
                 .padding(top = 18.dp, bottom = 8.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Handwriting to text", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink)
+                Text(stringResource(R.string.handwriting_handwriting_to_text), Modifier.weight(1f), style = JType.rowTitle, color = jc.ink)
             }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InkLanguage.entries.forEach { l ->
@@ -108,7 +110,7 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
                         Modifier.clip(CircleShape).background(if (on) jc.selected else jc.surface)
                             .border(1.dp, if (on) jc.accent else jc.line, CircleShape)
                             .clickable(role = Role.RadioButton) { language = l }
-                            .semantics { selected = on; contentDescription = "Read as ${l.label}" }
+                            .semantics { selected = on; contentDescription = context.getString(R.string.handwriting_read_as, l.label) }
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                     ) { Text(l.label, style = JType.secondary, color = if (on) jc.accent else jc.ink) }
                 }
@@ -120,7 +122,7 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
                 ) {
                     CircularProgressIndicator(Modifier.size(22.dp), color = jc.accent, strokeWidth = 2.5.dp)
                     Text(
-                        if (s == InkState.Downloading) "Getting ${language.label} handwriting (about 20 MB, only once)…" else "Reading handwriting…",
+                        if (s == InkState.Downloading) stringResource(R.string.handwriting_getting_model, language.label) else stringResource(R.string.handwriting_reading_handwriting),
                         style = JType.secondary, color = jc.muted,
                     )
                 }
@@ -132,7 +134,7 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
                             .verticalScroll(rememberScrollState()).padding(12.dp),
                     ) {
                         BasicTextField(
-                            text, { text = it }, Modifier.fillMaxWidth().semantics { contentDescription = "Text read from the handwriting" },
+                            text, { text = it }, Modifier.fillMaxWidth().semantics { contentDescription = context.getString(R.string.handwriting_text_read_from_the_handwriting) },
                             textStyle = JType.body.copy(color = jc.ink), cursorBrush = SolidColor(jc.accent),
                         )
                     }
@@ -141,17 +143,17 @@ fun HandwritingDialog(strokes: List<PenStroke>, onAdd: (text: String, removeInk:
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(removeInk, null, Modifier.padding(8.dp), colors = CheckboxDefaults.colors(checkedColor = jc.accent, checkmarkColor = jc.bg))
-                        Text("Remove the handwriting", style = JType.secondary, color = jc.ink)
+                        Text(stringResource(R.string.handwriting_remove_the_handwriting), style = JType.secondary, color = jc.ink)
                     }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
-                if (state is InkState.Found) TextAction("Copy", {
-                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Handwriting", text))
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                if (state is InkState.Found) TextAction(stringResource(R.string.common_copy), {
+                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(context.getString(R.string.handwriting_handwriting), text))
+                    Toast.makeText(context, context.getString(R.string.handwriting_copied), Toast.LENGTH_SHORT).show()
                 })
-                TextAction("Cancel", onDismiss)
-                if (state is InkState.Found) TextAction("Add to note", { onAdd(text, removeInk) }, bold = true, enabled = text.isNotBlank())
+                TextAction(stringResource(R.string.common_cancel), onDismiss)
+                if (state is InkState.Found) TextAction(stringResource(R.string.handwriting_add_to_note), { onAdd(text, removeInk) }, bold = true, enabled = text.isNotBlank())
             }
         }
     }

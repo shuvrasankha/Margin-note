@@ -29,6 +29,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.margin.app.data.Aisle
 import com.margin.app.data.aisleOf
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Shows where a shopping list's items will go, aisle by aisle, before sorting it. Tapping an item picks its
@@ -36,6 +38,7 @@ import com.margin.app.data.aisleOf
  */
 @Composable
 fun AisleSortDialog(items: List<String>, mine: Map<String, Aisle>, onChoose: (String, Aisle) -> Unit, onSort: () -> Unit, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var choices by remember { mutableStateOf(mine) }
     var fixing by remember { mutableStateOf<String?>(null) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -45,9 +48,9 @@ fun AisleSortDialog(items: List<String>, mine: Map<String, Aisle>, onChoose: (St
         ) {
             val item = fixing
             if (item == null) {
-                Text("Sort by aisle", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+                Text(stringResource(R.string.aisle_sort_sort_by_aisle), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
                 Text(
-                    "Items still to get, grouped in the order you walk the shop; ticked ones go last. Tap an item in the wrong aisle to move it.",
+                    stringResource(R.string.aisle_sort_items_still_to_get_grouped),
                     Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted,
                 )
                 items.groupBy { aisleOf(it, choices) }.toSortedMap().forEach { (aisle, inAisle) ->
@@ -56,21 +59,21 @@ fun AisleSortDialog(items: List<String>, mine: Map<String, Aisle>, onChoose: (St
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { fixing = text }
                                 .padding(horizontal = 20.dp, vertical = 6.dp)
-                                .semantics { contentDescription = "$text, in ${aisle.label}. Tap to change the aisle." },
+                                .semantics { contentDescription = context.getString(R.string.aisle_item_desc, text, aisle.label) },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(text, Modifier.weight(1f), style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("Change", style = JType.small, color = jc.accent)
+                            Text(stringResource(R.string.common_change), style = JType.small, color = jc.accent)
                         }
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SecondaryButton("Cancel", onDismiss, Modifier.weight(1f))
-                    PrimaryButton("Sort list", onSort, Modifier.weight(1f))
+                    SecondaryButton(stringResource(R.string.common_cancel), onDismiss, Modifier.weight(1f))
+                    PrimaryButton(stringResource(R.string.aisle_sort_sort_list), onSort, Modifier.weight(1f))
                 }
             } else {
-                Text("Aisle for “$item”", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink, maxLines = 2)
-                Text("Remembered for this item on every list.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.aisle_for_item, item), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink, maxLines = 2)
+                Text(stringResource(R.string.aisle_sort_remembered_for_this_item_on), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
                 val now = aisleOf(item, choices)
                 Aisle.entries.forEach { a ->
                     Row(
@@ -85,7 +88,7 @@ fun AisleSortDialog(items: List<String>, mine: Map<String, Aisle>, onChoose: (St
                         if (a == now) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
                     }
                 }
-                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp)) { TextAction("Back", { fixing = null }) }
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp)) { TextAction(stringResource(R.string.common_back), { fixing = null }) }
             }
         }
     }

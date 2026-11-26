@@ -33,6 +33,9 @@ import com.margin.app.data.readingLabel
 import java.time.LocalDate
 import java.time.format.TextStyle
 import java.util.Locale
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /** Word goals to pick from, in words a day; 0 is no goal. */
 private val GOALS = listOf(0, 100, 250, 500, 1000, 2000)
@@ -53,11 +56,13 @@ internal fun WordCountBar(vm: EditorViewModel, onOpen: () -> Unit) {
     val goal by vm.writing.goal.collectAsState()
     val days by vm.writing.days.collectAsState()
     val today = (days[LocalDate.now()] ?: 0).coerceAtLeast(0)
-    val left = if (selected > 0) "$selected of ${plural(words, "word")}" else "${plural(words, "word")} · ${readingLabel(words).replace("Under a minute", "<1 min read")}"
-    val right = if (goal > 0) "Today $today / $goal" else null
+    val left = if (selected > 0) pluralStringResource(R.plurals.writing_selected_of_words, words, words, selected.toString())
+        else stringResource(R.string.writing_count_reading, pluralStringResource(R.plurals.common_words, words, words), readingText(words, R.string.writing_under_a_minute_short))
+    val right = if (goal > 0) stringResource(R.string.writing_today_of_goal_short, today.toString(), goal.toString()) else null
+    val barDesc = if (right != null) stringResource(R.string.writing_bar_desc_two, left, right) else stringResource(R.string.writing_bar_desc_one, left)
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onOpen).padding(horizontal = 20.dp, vertical = 6.dp)
-            .semantics { contentDescription = listOfNotNull(left, right).joinToString(". ") + ". Tap for writing stats." },
+            .semantics { contentDescription = barDesc },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(left, Modifier.weight(1f), style = JType.small, color = jc.muted, maxLines = 1)
@@ -83,60 +88,60 @@ internal fun WritingStatsDialog(vm: EditorViewModel, onDismiss: () -> Unit) {
     val streak = goalStreak(days, goal, now)
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Writing stats") },
+        title = { Text(stringResource(R.string.writing_stats_writing_stats)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Heading("This note")
+                Heading(stringResource(R.string.writing_stats_this_note))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatTile("$words", if (words == 1) "word" else "words", Modifier.weight(1f))
-                    StatTile("${body.count { !it.isWhitespace() }}", "characters", Modifier.weight(1f))
-                    paragraphs(blocks).let { p -> StatTile("$p", if (p == 1) "paragraph" else "paragraphs", Modifier.weight(1f)) }
+                    StatTile("$words", pluralStringResource(R.plurals.writing_word_unit, words), Modifier.weight(1f))
+                    StatTile("${body.count { !it.isWhitespace() }}", stringResource(R.string.writing_characters_unit), Modifier.weight(1f))
+                    paragraphs(blocks).let { p -> StatTile("$p", pluralStringResource(R.plurals.writing_paragraph_unit, p), Modifier.weight(1f)) }
                 }
                 Text(
-                    listOfNotNull(readingLabel(words).let { if (it.startsWith("Under")) "Under a minute to read" else it }, "$selected selected".takeIf { selected > 0 }).joinToString(" · "),
+                    listOfNotNull(readingText(words, R.string.writing_under_a_minute_to_read), stringResource(R.string.writing_n_selected, selected.toString()).takeIf { selected > 0 }).joinToString(" · "),
                     style = JType.small, color = jc.muted,
                 )
-                Heading("Today")
+                Heading(stringResource(R.string.common_today))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     if (goal > 0) ProgressRing(today.toFloat() / goal, Modifier.size(52.dp), stroke = 5.dp) {
                         Text("${(100 * today / goal).coerceAtMost(999)}%", style = JType.caption, color = jc.ink)
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            if (goal > 0) "$today of ${plural(goal, "word")}" else "${plural(today, "word")} written",
+                            if (goal > 0) pluralStringResource(R.plurals.writing_today_of_goal, goal, goal, today.toString()) else pluralStringResource(R.plurals.writing_words_written, today, today),
                             style = JType.row, color = jc.ink,
                         )
                         Text(
                             when {
-                                goal == 0 -> "Across all your notes. Set a goal to keep a streak."
-                                today >= goal && streak > 1 -> "Goal reached. $streak days in a row."
-                                today >= goal -> "Goal reached for today."
-                                streak > 0 -> "${plural(goal - today, "word")} to go to make it ${streak + 1} days in a row."
-                                else -> "${plural(goal - today, "word")} to go."
+                                goal == 0 -> stringResource(R.string.writing_stats_across_all_your_notes_set)
+                                today >= goal && streak > 1 -> pluralStringResource(R.plurals.writing_goal_reached_streak, streak, streak)
+                                today >= goal -> stringResource(R.string.writing_stats_goal_reached_for_today)
+                                streak > 0 -> pluralStringResource(R.plurals.writing_to_go_streak, goal - today, goal - today, (streak + 1).toString())
+                                else -> pluralStringResource(R.plurals.writing_to_go, goal - today, goal - today)
                             },
                             style = JType.small, color = jc.muted,
                         )
                     }
                 }
                 WeekBars(days, goal, now)
-                Heading("Daily goal")
+                Heading(stringResource(R.string.writing_stats_daily_goal))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GOALS.forEach { g -> Pill(if (g == 0) "Off" else "$g", g == goal, { vm.writing.setGoal(g) }) }
+                    GOALS.forEach { g -> Pill(if (g == 0) stringResource(R.string.writing_stats_off) else "$g", g == goal, { vm.writing.setGoal(g) }) }
                 }
                 Row(
                     Modifier.fillMaxWidth().clickable(role = Role.Switch) { vm.writing.setShowCount(!showCount) }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("Show word count while writing", style = JType.row, color = jc.ink)
-                        Text("Under every note, above the toolbar.", style = JType.small, color = jc.muted)
+                        Text(stringResource(R.string.writing_stats_show_word_count_while_writing), style = JType.row, color = jc.ink)
+                        Text(stringResource(R.string.writing_stats_under_every_note_above_the), style = JType.small, color = jc.muted)
                     }
                     JSwitch(showCount, { vm.writing.setShowCount(it) })
                 }
-                Text("Words written are counted on this phone only. Deleting words takes them off today's count.", style = JType.caption, color = jc.muted)
+                Text(stringResource(R.string.writing_stats_words_written_are_counted_on), style = JType.caption, color = jc.muted)
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_done)) } },
     )
 }
 
@@ -146,9 +151,10 @@ private fun WeekBars(days: Map<LocalDate, Int>, goal: Int, today: LocalDate) {
     val week = (6 downTo 0).map { today.minusDays(it.toLong()) }
     val counts = week.map { (days[it] ?: 0).coerceAtLeast(0) }
     val top = maxOf(counts.max(), goal, 1)
+    val lastWeek = stringResource(R.string.writing_last_7_days)
     Row(
         Modifier.fillMaxWidth().semantics {
-            contentDescription = "Last 7 days: " + week.zip(counts).joinToString(", ") { (d, n) -> "${d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())} $n" }
+            contentDescription = lastWeek.format(week.zip(counts).joinToString(", ") { (d, n) -> "${d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())} $n" })
         },
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom,
     ) {
@@ -169,3 +175,8 @@ private fun WeekBars(days: Map<LocalDate, Int>, goal: Int, today: LocalDate) {
 /** A section title inside the sheet, lined up with its content. */
 @Composable
 private fun Heading(text: String) = Text(text, Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
+
+/** [com.margin.app.data.readingLabel] in the app's language; [under] is said for a minute or less. */
+@Composable
+internal fun readingText(words: Int, @androidx.annotation.StringRes under: Int = R.string.writing_under_a_minute): String =
+    com.margin.app.data.readingMinutes(words).let { m -> if (m <= 1) stringResource(under) else pluralStringResource(R.plurals.writing_min_read, m, m) }

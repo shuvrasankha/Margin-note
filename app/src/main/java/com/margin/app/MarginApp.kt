@@ -22,10 +22,16 @@ class MarginApp : Application() {
     @Inject lateinit var placeReminders: com.margin.app.data.PlaceReminders
     @Inject lateinit var pinnedNotes: com.margin.app.data.PinnedNotes
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        com.margin.app.data.untitledNoteName = getString(R.string.model_new_note)
+    }
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
+        com.margin.app.data.untitledNoteName = getString(R.string.model_new_note)
         appScope.launch {
             repository.ensureDefaultFolder()
             repository.purgeExpiredTrash()
@@ -39,6 +45,8 @@ class MarginApp : Application() {
             repository.liveNotes().collect {
                 RecentWidget.push(this@MarginApp, it)
                 com.margin.app.ui.ListWidget.push(this@MarginApp, it)
+                com.margin.app.ui.NoteWidget.push(this@MarginApp, it)
+                com.margin.app.ui.TodayWidget.push(this@MarginApp, it)
                 // Notes pinned to the shade; also puts them back after a restart, when this process starts.
                 pinnedNotes.refresh(it)
             }

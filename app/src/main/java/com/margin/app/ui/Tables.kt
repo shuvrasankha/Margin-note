@@ -64,6 +64,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.margin.app.data.MAX_TABLE_COLUMNS
 import com.margin.app.data.MAX_TABLE_ROWS
 import com.margin.app.data.NoteTable
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 const val ICON_TABLE = "M3 5h18v14H3zM3 10h18M3 14.5h18M9 5v14M15 5v14"
 
@@ -78,11 +81,17 @@ fun tableHeight(t: NoteTable): Dp = TABLE_ROW * t.rowCount + TABLE_GAP * 2 + 1.d
 /** A table in the note, read-only: the first row is the header. Tapping it opens [onOpen] (the editor). */
 @Composable
 fun TableCard(table: NoteTable, onOpen: () -> Unit, onRemove: (() -> Unit)?, modifier: Modifier = Modifier, onGraph: (() -> Unit)? = null) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val shape = JShape.sm
+    val tableDesc = stringResource(
+        R.string.tables_desc,
+        pluralStringResource(R.plurals.tables_desc_rows, table.rowCount, table.rowCount),
+        pluralStringResource(R.plurals.tables_desc_columns, table.columnCount, table.columnCount),
+    )
     Box(modifier) {
         Column(
             Modifier.fillMaxWidth().clip(shape).border(1.dp, jc.line, shape).clickable(role = Role.Button, onClick = onOpen)
-                .semantics { contentDescription = "Table, ${table.rowCount} rows, ${table.columnCount} columns. Tap to edit." },
+                .semantics { contentDescription = tableDesc },
         ) {
             table.rows.forEachIndexed { r, cells ->
                 if (r > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
@@ -103,12 +112,12 @@ fun TableCard(table: NoteTable, onOpen: () -> Unit, onRemove: (() -> Unit)?, mod
             Box(
                 Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(JShape.sm).background(jc.bg.copy(alpha = 0.9f))
                     .clickable(role = Role.Button, onClick = onGraph).padding(horizontal = 10.dp, vertical = 3.dp),
-            ) { Text("Graph", style = JType.small, color = jc.accent, fontWeight = FontWeight.SemiBold) }
+            ) { Text(stringResource(R.string.tables_graph), style = JType.small, color = jc.accent, fontWeight = FontWeight.SemiBold) }
         }
         if (onRemove != null) {
             Box(
                 Modifier.align(Alignment.TopEnd).padding(4.dp).size(24.dp).clip(JShape.sm).background(jc.bg.copy(alpha = 0.9f))
-                    .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = "Remove table" },
+                    .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = context.getString(R.string.tables_remove_table) },
                 contentAlignment = Alignment.Center,
             ) { JIcon(Ico.CLOSE, jc.muted, size = 12.dp, stroke = 2.4f) }
         }
@@ -121,6 +130,7 @@ fun TableCard(table: NoteTable, onOpen: () -> Unit, onRemove: (() -> Unit)?, mod
  */
 @Composable
 fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var table by remember { mutableStateOf(start.normalized()) }
     var at by remember { mutableStateOf(0 to 0) }
     val focus = LocalFocusManager.current
@@ -141,9 +151,9 @@ fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> U
         }
         Column(Modifier.fillMaxSize().background(jc.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Delete", onDelete, color = jc.danger)
-                Text("Table", Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
-                TextAction("Done", { onDone(table) }, bold = true)
+                TextAction(stringResource(R.string.common_delete), onDelete, color = jc.danger)
+                Text(stringResource(R.string.tables_table), Modifier.weight(1f), style = JType.rowTitle, color = jc.ink, textAlign = TextAlign.Center)
+                TextAction(stringResource(R.string.common_done), { onDone(table) }, bold = true)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
@@ -173,7 +183,7 @@ fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> U
                                             }
                                             .background(if (at == r to c) jc.accent.copy(alpha = 0.10f) else Color.Transparent)
                                             .padding(horizontal = 10.dp, vertical = 12.dp)
-                                            .semantics { contentDescription = if (r == 0) "Header, column ${c + 1}" else "Row $r, column ${c + 1}" },
+                                            .semantics { contentDescription = if (r == 0) context.getString(R.string.tables_header_column, (c + 1).toString()) else context.getString(R.string.tables_row_column, r.toString(), (c + 1).toString()) },
                                         singleLine = true,
                                         textStyle = JType.secondary.copy(color = jc.ink, fontWeight = if (r == 0) FontWeight.SemiBold else FontWeight.Normal),
                                         cursorBrush = SolidColor(jc.accent),
@@ -185,7 +195,7 @@ fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> U
                         }
                     }
                     Text(
-                        "Tap a cell, then use the buttons below to add or delete its row or column.",
+                        stringResource(R.string.tables_tap_a_cell_then_use),
                         Modifier.padding(top = 12.dp).width(page), style = JType.small, color = jc.muted,
                     )
                 }
@@ -194,12 +204,12 @@ fun TableEditor(start: NoteTable, onDone: (NoteTable) -> Unit, onDelete: () -> U
             val (r, c) = at
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
             Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
-                TableTool(ICON_ROW_ADD, "Add row", table.rowCount < MAX_TABLE_ROWS) { table = table.addRow(r + 1) }
-                TableTool(ICON_ROW_DELETE, "Delete row", table.rowCount > 1) {
+                TableTool(ICON_ROW_ADD, stringResource(R.string.tables_add_row), table.rowCount < MAX_TABLE_ROWS) { table = table.addRow(r + 1) }
+                TableTool(ICON_ROW_DELETE, stringResource(R.string.tables_delete_row), table.rowCount > 1) {
                     table = table.removeRow(r); at = r.coerceAtMost(table.rowCount - 1) to c
                 }
-                TableTool(ICON_COLUMN_ADD, "Add column", table.columnCount < MAX_TABLE_COLUMNS) { table = table.addColumn(c + 1) }
-                TableTool(ICON_COLUMN_DELETE, "Delete column", table.columnCount > 1) {
+                TableTool(ICON_COLUMN_ADD, stringResource(R.string.tables_add_column), table.columnCount < MAX_TABLE_COLUMNS) { table = table.addColumn(c + 1) }
+                TableTool(ICON_COLUMN_DELETE, stringResource(R.string.tables_delete_column), table.columnCount > 1) {
                     table = table.removeColumn(c); at = r to c.coerceAtMost(table.columnCount - 1)
                 }
             }

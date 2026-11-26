@@ -75,25 +75,20 @@ class ListWidget : AppWidgetProvider() {
 
         private fun views(context: Context, widgetId: Int, list: NoteEntity?): RemoteViews {
             val v = RemoteViews(context.packageName, R.layout.widget_list)
-            if (list == null) {
-                // No list yet: the title picks one, and + or the mic starts a shopping list.
-                v.setTextViewText(R.id.list_title, context.getString(R.string.list_widget_pick))
-                v.setOnClickPendingIntent(R.id.list_title, configure(context, widgetId))
-            } else {
-                v.setTextViewText(R.id.list_title, list.title.ifBlank { "List" })
-                v.setOnClickPendingIntent(R.id.list_title, PendingIntent.getActivity(
-                    context, widgetId,
-                    Intent(context, MainActivity::class.java).setAction(RecentWidget.ACTION_OPEN)
-                        .putExtra(RecentWidget.EXTRA_NOTE, list.id).putExtra(RecentWidget.EXTRA_FOLDER, list.folderId)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                ))
-            }
-            val listName = list?.title?.ifBlank { null } ?: "Shopping list"
+            // The title (with its ▾) picks the list; the logo opens it in the app (or just the app, with no list yet).
+            v.setTextViewText(R.id.list_title, list?.title?.ifBlank { context.getString(R.string.widget_list) } ?: context.getString(R.string.list_widget_pick))
+            v.setOnClickPendingIntent(R.id.list_pick, configure(context, widgetId))
+            val open = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            if (list != null) open.setAction(RecentWidget.ACTION_OPEN).putExtra(RecentWidget.EXTRA_NOTE, list.id).putExtra(RecentWidget.EXTRA_FOLDER, list.folderId)
+            v.setOnClickPendingIntent(R.id.list_logo, PendingIntent.getActivity(context, widgetId, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            val listName = list?.title?.ifBlank { null } ?: "Shopping list" // A list title: found or created by name, so it stays as is.
             v.setOnClickPendingIntent(R.id.list_voice, add(context, widgetId * 2, listName, typed = false))
             v.setOnClickPendingIntent(R.id.list_add, add(context, widgetId * 2 + 1, listName, typed = true))
 
             val tasks = list?.let(ListWidgetData::tasks).orEmpty()
+            val left = tasks.count { !it.done }
+            v.setTextViewText(R.id.list_count, if (left == 0) context.getString(R.string.widget_all_done) else context.resources.getQuantityString(R.plurals.widget_n_to_go, left, left))
+            v.setViewVisibility(R.id.list_count, if (tasks.isEmpty()) View.GONE else View.VISIBLE)
             v.setViewVisibility(R.id.list_empty, if (tasks.isEmpty()) View.VISIBLE else View.GONE)
             v.setViewVisibility(R.id.list_items, if (tasks.isEmpty()) View.GONE else View.VISIBLE)
             if (list != null) {
@@ -111,7 +106,7 @@ class ListWidget : AppWidgetProvider() {
                 })
                 row.setImageViewResource(R.id.item_check, if (t.done) R.drawable.widget_check_on else R.drawable.widget_check_off)
                 row.setTextColor(R.id.item_text, context.getColor(if (t.done) R.color.widget_muted else R.color.widget_ink))
-                row.setContentDescription(R.id.item, (if (t.done) "Done: " else "") + t.text)
+                row.setContentDescription(R.id.item, if (t.done) context.getString(R.string.widget_done_item, t.text) else t.text)
                 row.setOnClickFillInIntent(R.id.item, Intent().putExtra(EXTRA_NOTE, list!!.id).putExtra(EXTRA_BLOCK, t.blockId))
                 items.addItem(t.blockId.hashCode().toLong(), row)
             }

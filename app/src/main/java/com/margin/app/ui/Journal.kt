@@ -62,6 +62,9 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.time.temporal.WeekFields
 import java.util.Locale
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * The journal opens only with the notes passcode (or fingerprint), the same one locked notes use; the first
@@ -70,9 +73,10 @@ import java.util.Locale
 @Composable
 fun JournalGate(
     editor: EditorViewModel, fingerprint: String?, onCancel: () -> Unit,
-    intro: String = "The journal is locked. Choose a passcode to open it; locked notes use the same one.",
+    intro: String = stringResource(R.string.journal_the_journal_is_locked_choose),
     content: @Composable () -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val unlocked by editor.sessionUnlocked.collectAsState()
     if (unlocked) return content()
     var mode by remember { mutableStateOf<PasswordMode?>(null) }
@@ -87,7 +91,7 @@ fun JournalGate(
         }
         mode = if (has) PasswordMode.ENTER else PasswordMode.CREATE
     }
-    val submit: suspend (CharArray) -> String? = { pw -> if (editor.enterPassword(pw)) null else if (old) "Wrong password" else "Wrong passcode" }
+    val submit: suspend (CharArray) -> String? = { pw -> if (editor.enterPassword(pw)) null else if (old) context.getString(R.string.journal_wrong_password) else context.getString(R.string.journal_wrong_passcode) }
     mode?.let { m ->
         if (old) OldPasswordDialog(onDismiss = onCancel, onSubmit = submit)
         else PasscodeDialog(
@@ -119,9 +123,26 @@ fun journalTitle(day: LocalDate): String = day.format(DateTimeFormatter.ofLocali
  * the week holding today sits on a band. Days with an entry carry a dot, days to come can't be opened.
  * Below: a button for today's entry and the month's entries, newest first, as an agenda.
  */
+/** Today's prompt, above the write button while today has no entry; tapping it opens the entry. */
+@Composable
+private fun JournalPrompt(today: LocalDate, onWrite: () -> Unit) {
+    // A question to start from, one a day, the same all day.
+    val prompts = androidx.compose.ui.res.stringArrayResource(R.array.journal_prompts)
+    val prompt = prompts[(today.dayOfYear - 1) % prompts.size]
+    Column(
+        Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp).fillMaxWidth().clip(JShape.md).background(jc.card)
+            .clickable(role = Role.Button, onClick = onWrite).padding(16.dp)
+            .semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(stringResource(R.string.journal_todays_prompt), style = JType.section, color = jc.accent)
+        Text(prompt, style = JType.item, color = jc.ink)
+    }
+}
+
 @Composable
 fun JournalScreen(
-    notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit, backLabel: String = "Folders",
+    notes: List<NoteEntity>, onOpenDay: (LocalDate) -> Unit, onDelete: (LocalDate) -> Unit, onBack: () -> Unit, backLabel: String = stringResource(R.string.journal_library),
     reminderAt: Long? = null, onSetReminder: (java.time.LocalTime) -> Unit = {}, onClearReminder: () -> Unit = {},
 ) {
     val today = LocalDate.now()
@@ -138,7 +159,7 @@ fun JournalScreen(
     var reminding by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val notifyPermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) android.widget.Toast.makeText(context, "Reminder set, but notifications are off for Margin, so it won't show.", android.widget.Toast.LENGTH_LONG).show()
+        if (!granted) android.widget.Toast.makeText(context, context.getString(R.string.journal_reminder_set_but_notifications_are), android.widget.Toast.LENGTH_LONG).show()
     }
     if (reminding) JournalReminderDialog(
         reminderAt,
@@ -155,42 +176,38 @@ fun JournalScreen(
     deleting?.let { day ->
         MarginDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("Delete this entry?") },
-            text = { Text("${journalTitle(day)} moves to Recently Deleted. Opening the day again brings it back.") },
-            confirmButton = { TextButton(onClick = { onDelete(day); deleting = null }) { Text("Delete", color = jc.danger) } },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+            title = { Text(stringResource(R.string.journal_delete_this_entry)) },
+            text = { Text(stringResource(R.string.journal_moves_to_recently_deleted_opening, journalTitle(day))) },
+            confirmButton = { TextButton(onClick = { onDelete(day); deleting = null }) { Text(stringResource(R.string.common_delete), color = jc.danger) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
-    val glass = rememberGlass()
+    val pageScroll = rememberScrollState()
     Scaffold(containerColor = jc.page, topBar = {
-        NavBar(backLabel, onBack, color = jc.page, glass = glass) {
-            if (shown != thisMonth) TextAction("Today", { month = thisMonth.toString() })
+        NavBar(backLabel, onBack, color = jc.page) {
+            if (shown != thisMonth) TextAction(stringResource(R.string.common_today), { month = thisMonth.toString() })
             IconAction(
-                Ico.ALARM, reminderAt?.let { "Daily reminder at ${timeLabel(context, it)}. Change it" } ?: "Remind me to write",
-                { reminding = true }, fill = reminderAt != null,
+                Ico.ALARM, reminderAt?.let { stringResource(R.string.journal_daily_reminder_at_change_it, timeLabel(context, it)) } ?: stringResource(R.string.journal_remind_me_to_write),
+                { reminding = true }, fill = reminderAt != null, color = if (reminderAt != null) jc.accent else jc.ink,
             )
-            IconAction(Ico.BACK, "Previous month", { month = shown.minusMonths(1).toString() })
-            IconAction(Ico.CHEVRON, "Next month", { month = shown.plusMonths(1).toString() }, enabled = canGoOn)
         }
     }) { padding ->
-        Column(Modifier.glassBody(glass, padding).fillMaxSize().verticalScroll(rememberScrollState()).glassInner(glass, padding)) {
-            Text("Journal", Modifier.padding(start = 20.dp), style = JType.rowTitle, color = jc.accent)
-            Text(
-                buildAnnotatedString {
-                    append(shown.month.getDisplayName(TextStyle.FULL_STANDALONE, locale) + " ")
-                    withStyle(SpanStyle(color = jc.accent)) { append(shown.year.toString()) }
-                },
-                Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp).semantics { heading() },
-                style = JType.pageTitle, color = jc.ink,
-            )
-            Row(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(pageScroll)) {
+            // "Journal", then the streak and counts in one quiet line.
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.journal_journal), Modifier.semantics { heading() }, style = JType.pageTitle, color = jc.ink)
                 val streak = habitStreak(written, today)
-                StatTile(plural(streak, "day"), "Writing streak", Modifier.weight(1f), fill = jc.card, color = if (streak > 0) jc.accent else jc.ink)
-                StatTile("${written.count { YearMonth.from(it) == shown }}", "This month", Modifier.weight(1f), fill = jc.card)
-                StatTile("${written.size}", "In all", Modifier.weight(1f), fill = jc.card)
+                val inMonth = written.count { YearMonth.from(it) == YearMonth.from(today) }
+                Text(
+                    listOf(
+                        if (streak == 0) stringResource(R.string.journal_no_streak_yet) else pluralStringResource(R.plurals.journal_days_in_a_row, streak, streak),
+                        pluralStringResource(R.plurals.journal_entries_this_month, inMonth, inMonth), stringResource(R.string.journal_in_all, written.size),
+                    ).joinToString(" · "),
+                    style = JType.secondary, color = jc.muted,
+                )
             }
             Column(
-                Modifier.padding(horizontal = 16.dp).clip(JShape.lg).glassFill(jc.card, JShape.lg).padding(horizontal = 6.dp, vertical = 10.dp)
+                Modifier.padding(horizontal = 16.dp).clip(JShape.lg).background(jc.card).padding(horizontal = 6.dp, vertical = 10.dp)
                     // Swipe left for the next month, right for the one before.
                     .pointerInput(canGoOn) {
                         detectHorizontalDragGestures(
@@ -202,6 +219,15 @@ fun JournalScreen(
                         ) { _, dx -> drag += dx }
                     },
             ) {
+                // The month and the arrows to move, on the calendar itself.
+                Row(Modifier.fillMaxWidth().padding(start = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        shown.month.getDisplayName(TextStyle.FULL_STANDALONE, locale) + " " + shown.year,
+                        Modifier.weight(1f).semantics { heading() }, style = JType.subheading, color = jc.ink,
+                    )
+                    IconAction(Ico.BACK, stringResource(R.string.journal_previous_month), { month = shown.minusMonths(1).toString() }, color = jc.ink, size = 20.dp)
+                    IconAction(Ico.CHEVRON, stringResource(R.string.journal_next_month), { month = shown.plusMonths(1).toString() }, enabled = canGoOn, color = jc.ink, size = 20.dp)
+                }
                 Row(Modifier.padding(bottom = 2.dp)) {
                     for (k in 0 until 7) {
                         val dow = DayOfWeek.of((firstDay.value - 1 + k) % 7 + 1)
@@ -218,7 +244,7 @@ fun JournalScreen(
                     val week = (0 until 7).map { first.plusDays(w * 7L + it) }
                     Row(
                         Modifier.padding(vertical = 2.dp).clip(JShape.sm)
-                            .then(if (today in week) Modifier.background(jc.inset) else Modifier),
+                            .then(if (today in week) Modifier.background(jc.page) else Modifier),
                     ) {
                         week.forEach { day ->
                             Box(Modifier.weight(1f).height(50.dp), contentAlignment = Alignment.Center) {
@@ -228,14 +254,15 @@ fun JournalScreen(
                     }
                 }
             }
+            if (today !in written) JournalPrompt(today) { onOpenDay(today) }
             PrimaryButton(
-                if (today in written) "Open today's entry" else "Write today's entry", { onOpenDay(today) },
+                if (today in written) stringResource(R.string.journal_open_todays_entry) else stringResource(R.string.journal_write_todays_entry), { onOpenDay(today) },
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
             )
             val entries = written.filter { YearMonth.from(it) == shown }.sortedDescending()
-            SectionLabel(if (entries.isEmpty()) "No entries" else plural(entries.size, "entry", "entries"), Modifier.padding(top = 0.dp))
+            SectionLabel(if (entries.isEmpty()) stringResource(R.string.journal_no_entries) else pluralStringResource(R.plurals.journal_entries, entries.size, entries.size), Modifier.padding(top = 0.dp))
             if (entries.isEmpty()) Text(
-                "Tap a day to write about it.", Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted,
+                stringResource(R.string.journal_tap_a_day_to_write), Modifier.padding(horizontal = 20.dp), style = JType.secondary, color = jc.muted,
             )
             else {
                 val byDay = notes.associateBy { journalDay(it) }
@@ -245,7 +272,7 @@ fun JournalScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(
-                            Modifier.size(48.dp).clip(JShape.sm).background(if (day == today) jc.accent else jc.inset),
+                            Modifier.size(48.dp).clip(JShape.sm).background(if (day == today) jc.accent else jc.page),
                             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                         ) {
                             Text("${day.dayOfMonth}", style = JType.subheading, color = if (day == today) jc.bg else jc.ink)
@@ -256,7 +283,7 @@ fun JournalScreen(
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
-                                if (day == today) "Today" else day.dayOfWeek.getDisplayName(TextStyle.FULL_STANDALONE, locale),
+                                if (day == today) stringResource(R.string.common_today) else day.dayOfWeek.getDisplayName(TextStyle.FULL_STANDALONE, locale),
                                 style = JType.rowTitle, color = jc.ink,
                             )
                             val note = byDay[day]
@@ -266,7 +293,7 @@ fun JournalScreen(
                                 style = JType.small, color = jc.muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             )
                         }
-                        IconAction(Ico.TRASH, "Delete entry for " + journalTitle(day), { deleting = day }, color = jc.muted, size = 20.dp)
+                        IconAction(Ico.TRASH, stringResource(R.string.journal_delete_entry_for, journalTitle(day)), { deleting = day }, color = jc.muted, size = 20.dp)
                     }
                 }
             }
@@ -277,7 +304,12 @@ fun JournalScreen(
 
 @Composable
 internal fun DayCell(day: LocalDate, isToday: Boolean, isLater: Boolean, outside: Boolean, hasEntry: Boolean, onClick: () -> Unit) {
-    val label = journalTitle(day) + (if (isToday) ", today" else "") + if (hasEntry) ", has an entry" else ""
+    val label = when {
+        isToday && hasEntry -> stringResource(R.string.journal_day_today_has_entry, journalTitle(day))
+        isToday -> stringResource(R.string.journal_day_today, journalTitle(day))
+        hasEntry -> stringResource(R.string.journal_day_has_entry, journalTitle(day))
+        else -> journalTitle(day)
+    }
     Column(
         Modifier.size(42.dp).clip(CircleShape)
             .then(if (isToday) Modifier.background(jc.accent) else Modifier)
@@ -307,19 +339,19 @@ private fun JournalReminderDialog(current: Long?, onPick: (java.time.LocalTime) 
     val state = androidx.compose.material3.rememberTimePickerState(start.hour, start.minute, is24Hour = android.text.format.DateFormat.is24HourFormat(context))
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Daily journal reminder") },
+        title = { Text(stringResource(R.string.journal_daily_journal_reminder)) },
         text = {
             Column {
-                Text("A nudge each day at this time, only if you haven't written that day's entry yet.", style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.journal_a_nudge_each_day_at), style = JType.small, color = jc.muted)
                 Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
                     androidx.compose.material3.TimePicker(state, colors = marginTimeColors())
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text(if (current == null) "Remind me" else "Save") } },
+        confirmButton = { TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text(if (current == null) stringResource(R.string.journal_remind_me) else stringResource(R.string.common_save)) } },
         dismissButton = {
-            if (current != null) TextButton(onClick = onRemove) { Text("Turn off", color = jc.danger) }
-            else TextButton(onClick = onDismiss) { Text("Cancel") }
+            if (current != null) TextButton(onClick = onRemove) { Text(stringResource(R.string.journal_turn_off), color = jc.danger) }
+            else TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

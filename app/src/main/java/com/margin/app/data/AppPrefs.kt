@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.margin.app.R
 
 /** App-wide preferences (device-local, not synced). */
 @Singleton
@@ -70,7 +71,6 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
             textSize = enumOr(prefs.getString(K_TEXT_SIZE, null), TextSize.DEFAULT),
             previewLines = prefs.getInt(K_PREVIEW_LINES, 1).coerceIn(0, 2),
             gridView = prefs.getBoolean(K_GRID_VIEW, false),
-            glass = prefs.getBoolean(K_GLASS, false),
         ),
     )
     val appearance: StateFlow<Appearance> = _appearance
@@ -78,7 +78,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     fun setAppearance(a: Appearance) {
         prefs.edit().putString(K_THEME, a.theme.name)
             .putString(K_TEXT_SIZE, a.textSize.name).putInt(K_PREVIEW_LINES, a.previewLines)
-            .putBoolean(K_GRID_VIEW, a.gridView).putBoolean(K_GLASS, a.glass).apply()
+            .putBoolean(K_GRID_VIEW, a.gridView).apply()
         _appearance.value = a
     }
 
@@ -129,7 +129,6 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         const val K_TEXT_SIZE = "textSize"
         const val K_PREVIEW_LINES = "previewLines"
         const val K_GRID_VIEW = "gridView"
-        const val K_GLASS = "frostedGlass"
         const val K_WELCOME = "welcomeDone"
         const val K_FINGERPRINT = "fingerprintPassword"
         const val K_APP_LOCK = "appLockSample"
@@ -164,8 +163,8 @@ operator fun Map<Toggle, Boolean>.invoke(t: Toggle) = this[t] ?: t.default
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** Text size multiplies the system font scale. */
-enum class TextSize(val scale: Float, val label: String) {
-    SMALL(0.9f, "Small"), DEFAULT(1f, "Default"), LARGE(1.12f, "Large"), LARGER(1.24f, "Larger"), LARGEST(1.3f, "Largest"),
+enum class TextSize(val scale: Float, val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    SMALL(0.9f, "Small", R.string.text_size_small), DEFAULT(1f, "Default", R.string.text_size_default), LARGE(1.12f, "Large", R.string.text_size_large), LARGER(1.24f, "Larger", R.string.text_size_larger), LARGEST(1.3f, "Largest", R.string.text_size_largest),
 }
 
 data class Appearance(
@@ -175,6 +174,4 @@ data class Appearance(
     val previewLines: Int = 1,
     /** Note lists as a two-column grid of cards instead of rows. */
     val gridView: Boolean = false,
-    /** Bars as frosted glass over what scrolls under them. Only takes effect on Android 12+ (see glassSupported). */
-    val glass: Boolean = false,
 )

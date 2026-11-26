@@ -96,7 +96,7 @@ class MarginAutofillService : AutofillService() {
         }
 
         /** The dropdown item shown before unlocking. */
-        fun unlockItem(context: Context): RemoteViews = item(context, context.getString(R.string.autofill_unlock), "Unlock to see your passwords", null)
+        fun unlockItem(context: Context): RemoteViews = item(context, context.getString(R.string.autofill_unlock), context.getString(R.string.autofill_unlock_sub), null)
 
         /** One dropdown item: [icon] or Margin's own. */
         fun item(context: Context, title: String, sub: String?, icon: Bitmap?): RemoteViews =

@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import com.margin.app.R
 
 // ---------- Quantities ----------
 
@@ -41,7 +42,7 @@ fun tickedCount(blocks: List<Block>) = blocks.drop(1).count { it.type == BlockTy
 
 // ---------- Sort ----------
 
-enum class ListSort(val label: String) { AZ("A to Z"), ZA("Z to A"), DUE("By due date"), UNDONE("To do first") }
+enum class ListSort(val label: String, @androidx.annotation.StringRes val labelRes: Int) { AZ("A to Z", R.string.list_sort_az), ZA("Z to A", R.string.list_sort_za), DUE("By due date", R.string.list_sort_due), UNDONE("To do first", R.string.list_sort_undone) }
 
 /**
  * Tasks sorted within each run of task lines, so headings and other lines stay where they are. An indented task
@@ -105,13 +106,16 @@ fun suggestItems(items: List<PastItem>, typed: String, have: Set<String>, limit:
 // ---------- Due dates ----------
 
 /** "Today", "Tomorrow", "Yesterday", "Fri" within the week ahead, else "21 Nov". */
-fun dueLabel(day: Long, today: LocalDate = LocalDate.now(), locale: Locale = Locale.getDefault()): String {
+fun dueLabel(
+    day: Long, today: LocalDate = LocalDate.now(), locale: Locale = Locale.getDefault(),
+    todayWord: String = "Today", tomorrowWord: String = "Tomorrow", yesterdayWord: String = "Yesterday",
+): String {
     val d = LocalDate.ofEpochDay(day)
     val diff = day - today.toEpochDay()
     return when {
-        diff == 0L -> "Today"
-        diff == 1L -> "Tomorrow"
-        diff == -1L -> "Yesterday"
+        diff == 0L -> todayWord
+        diff == 1L -> tomorrowWord
+        diff == -1L -> yesterdayWord
         diff in 2..6 -> d.dayOfWeek.getDisplayName(TextStyle.SHORT, locale)
         d.year == today.year -> d.format(DateTimeFormatter.ofPattern("d MMM", locale))
         else -> d.format(DateTimeFormatter.ofPattern("d MMM yyyy", locale))

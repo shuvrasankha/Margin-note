@@ -1,5 +1,6 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -79,6 +80,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -111,6 +113,9 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.time.format.TextStyle as DateStyle
 import java.util.Locale
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /** A list with a tick-mark count: the trackers. */
 const val ICON_TRACKERS = "M4 6h11M4 12h11M4 18h7M17 16l2 2 3-4M18 4v6M15 7h6"
@@ -152,18 +157,18 @@ fun TrackersScreen(
     val parsed = remember(trackers) { trackers.associate { it.id to trackerEntries(it) } }
     var naming by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<EntryEdit?>(null) }
-    if (naming) NameDialog("New tracker", "", onDismiss = { naming = false }, label = "Like Movies watched") { naming = false; onAdd(it) }
+    if (naming) NameDialog(stringResource(R.string.trackers_new_tracker), "", onDismiss = { naming = false }, label = stringResource(R.string.trackers_like_movies_watched)) { naming = false; onAdd(it) }
     editing?.let { EntryEditor(trackers, it, photos, onSave) { editing = null } }
 
-    val glass = rememberGlass()
-    Scaffold(containerColor = jc.page, topBar = { NavBar("Folders", onBack, color = jc.page, glass = glass) }) { padding ->
-        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding, PaddingValues(bottom = 40.dp))) {
-            item { PageTitle("Trackers") }
+    val pageList = rememberLazyListState()
+    Scaffold(containerColor = jc.page, topBar = { NavBar(stringResource(R.string.trackers_library), onBack, color = jc.page) }) { padding ->
+        LazyColumn(state = pageList, modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp)) {
+            item { PageTitle(stringResource(R.string.trackers_trackers)) }
             if (trackers.isEmpty()) item { EmptyHero() }
             else item {
                 val total = remember(trackers) { parsed.values.sumOf { it.countInYear(today.year) } }
                 Text(
-                    "${plural(total, "thing")} logged in ${today.year}", Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
+                    pluralStringResource(R.plurals.trackers_logged_in_year, total, total, today.year), Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
                     style = JType.secondary, color = jc.muted,
                 )
             }
@@ -176,7 +181,7 @@ fun TrackersScreen(
                 val kinds = trackers.mapNotNull { trackerKind(it.title) }.toSet()
                 val starters = TRACKER_STARTERS.filter { it.lowercase() !in taken && trackerKind(it) !in kinds }
                 Text(
-                    if (trackers.isEmpty()) "Pick one to start" else "Start another",
+                    if (trackers.isEmpty()) stringResource(R.string.trackers_pick_one_to_start) else stringResource(R.string.trackers_start_another),
                     Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 10.dp), style = JType.section, color = jc.muted,
                 )
                 FlowRow(
@@ -184,7 +189,7 @@ fun TrackersScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     starters.forEach { name -> StarterChip(trackerKind(name)?.let(::kindIcon), name) { onAdd(name) } }
-                    StarterChip(null, "Your own…") { naming = true }
+                    StarterChip(null, stringResource(R.string.trackers_your_own)) { naming = true }
                 }
             }
         }
@@ -197,16 +202,16 @@ private fun EmptyHero() {
         Row(horizontalArrangement = Arrangement.spacedBy((-10).dp)) {
             listOf(TrackerKind.MOVIE, TrackerKind.BOOK, TrackerKind.PLACE).forEachIndexed { i, kind ->
                 Box(
-                    Modifier.padding(top = if (i == 1) 0.dp else 10.dp).size(64.dp).clip(CircleShape).background(jc.selected).border(3.dp, jc.well, CircleShape),
+                    Modifier.padding(top = if (i == 1) 0.dp else 10.dp).size(64.dp).clip(CircleShape).background(jc.selected).border(3.dp, jc.page, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) { JIcon(kindIcon(kind), jc.accent, size = 30.dp) }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Watch it, read it, log it", style = JType.subheading, color = jc.ink, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.trackers_watch_it_read_it_log), style = JType.subheading, color = jc.ink, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Keep a list of the movies you watch, books you read and places you go, and watch your year add up.",
+            stringResource(R.string.trackers_keep_a_list_of_the),
             style = JType.para, color = jc.muted, textAlign = TextAlign.Center,
         )
     }
@@ -216,7 +221,7 @@ private fun EmptyHero() {
 private fun StarterChip(icon: String?, label: String, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
-        Modifier.height(40.dp).pressScale(press, 0.94f).clip(JShape.pill).glassFill(jc.card, JShape.pill).border(1.dp, jc.line, JShape.pill)
+        Modifier.height(40.dp).pressScale(press, 0.94f).clip(JShape.pill).background(jc.card).border(1.dp, jc.line, JShape.pill)
             .clickable(press, ripple(), role = Role.Button, onClick = tapped(onClick)).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -231,7 +236,7 @@ private fun TrackerCard(note: NoteEntity, entries: List<TrackerEntry>, today: Lo
     val latest = entries.firstOrNull { it.date != null } ?: entries.firstOrNull()
     val press = remember { MutableInteractionSource() }
     Column(
-        modifier.fillMaxWidth().pressScale(press, 0.98f).clip(JShape.lg).glassFill(jc.card, JShape.lg)
+        modifier.fillMaxWidth().pressScale(press, 0.98f).clip(JShape.lg).background(jc.card)
             .clickable(press, ripple(), role = Role.Button, onClick = tapped(onOpen)).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -239,18 +244,18 @@ private fun TrackerCard(note: NoteEntity, entries: List<TrackerEntry>, today: Lo
             Column(Modifier.weight(1f)) {
                 Text(note.title, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    latest?.let { "Latest: " + it.title.ifBlank { "Untitled" } } ?: "Nothing added yet",
+                    latest?.let { stringResource(R.string.trackers_latest, it.title.ifBlank { stringResource(R.string.common_untitled) }) } ?: stringResource(R.string.trackers_nothing_added_yet),
                     style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
-            AddButton("Add to ${note.title}", onAdd)
+            AddButton(stringResource(R.string.trackers_add_to, note.title), onAdd)
         }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("$thisYear", style = BigNumber, color = jc.ink)
-                    Text(" in ${today.year}", Modifier.padding(bottom = 6.dp), style = JType.secondary, color = jc.muted)
+                    Text(stringResource(R.string.trackers_in_year, today.year), Modifier.padding(bottom = 6.dp), style = JType.secondary, color = jc.muted)
                 }
                 Trend(thisYear, entries.countSameTimeLastYear(today), short = true)
             }
@@ -266,12 +271,12 @@ private fun Trend(thisYear: Int, lastYear: Int, short: Boolean = false) {
     val diff = thisYear - lastYear
     Text(
         when {
-            short && diff > 0 -> "↑ $diff vs last year"
-            short && diff < 0 -> "↓ ${-diff} vs last year"
-            short -> "Level with last year"
-            diff > 0 -> "↑ $diff more than this time last year"
-            diff < 0 -> "↓ ${-diff} fewer than this time last year"
-            else -> "Level with this time last year"
+            short && diff > 0 -> stringResource(R.string.trackers_vs_last_year, diff)
+            short && diff < 0 -> stringResource(R.string.trackers_vs_last_year_2, -diff)
+            short -> stringResource(R.string.trackers_level_with_last_year)
+            diff > 0 -> stringResource(R.string.trackers_more_than_this_time_last, diff)
+            diff < 0 -> stringResource(R.string.trackers_fewer_than_this_time_last, -diff)
+            else -> stringResource(R.string.trackers_level_with_this_time_last)
         },
         style = JType.small, color = if (diff > 0) jc.accent else jc.muted, fontWeight = if (diff > 0) FontWeight.Medium else FontWeight.Normal,
     )
@@ -327,6 +332,7 @@ private fun AddButton(label: String, onClick: () -> Unit) {
  */
 @Composable
 private fun MonthBars(counts: IntArray, highlight: Int, modifier: Modifier = Modifier, labels: Boolean = false) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val grow = remember { Animatable(0f) }
     LaunchedEffect(Unit) { grow.animateTo(1f, tween(700, 80, JMotion.ease)) }
     val accent = jc.accent
@@ -335,10 +341,10 @@ private fun MonthBars(counts: IntArray, highlight: Int, modifier: Modifier = Mod
     val locale = Locale.getDefault()
     val described = remember(counts) {
         counts.withIndex().filter { it.value > 0 }.joinToString { "${Month.of(it.index + 1).getDisplayName(DateStyle.SHORT, locale)} ${it.value}" }
-            .ifEmpty { "Nothing yet" }
+            .ifEmpty { context.getString(R.string.trackers_nothing_yet) }
     }
     val max = (counts.maxOrNull() ?: 0).coerceAtLeast(1)
-    Column(modifier.semantics { contentDescription = "By month: $described" }) {
+    Column(modifier.semantics { contentDescription = context.getString(R.string.trackers_by_month, described) }) {
         if (labels) Row(Modifier.fillMaxWidth()) {
             counts.forEachIndexed { i, c ->
                 Text(
@@ -394,58 +400,58 @@ fun TrackerScreen(
     var deleting by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<EntryEdit?>(null) }
     editing?.let { EntryEditor(trackers, it, photos, onSave) { editing = null } }
-    if (renaming) NameDialog("Rename tracker", note.title, onDismiss = { renaming = false }, label = "Tracker") { renaming = false; onRename(note, it) }
+    if (renaming) NameDialog(stringResource(R.string.trackers_rename_tracker), note.title, onDismiss = { renaming = false }, label = stringResource(R.string.trackers_tracker)) { renaming = false; onRename(note, it) }
     if (deleting) MarginDialog(
         onDismissRequest = { deleting = false },
-        title = { Text("Delete \"${note.title}\"?") },
-        text = { Text("It moves to Recently Deleted with its ${plural(entries.size, "entry", "entries")}.") },
-        confirmButton = { TextButton(onClick = { deleting = false; onDelete(note); onBack() }) { Text("Delete", color = jc.danger) } },
-        dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } },
+        title = { Text(stringResource(R.string.trackers_delete, note.title)) },
+        text = { Text(pluralStringResource(R.plurals.trackers_delete_moves_entries, entries.size, entries.size)) },
+        confirmButton = { TextButton(onClick = { deleting = false; onDelete(note); onBack() }) { Text(stringResource(R.string.common_delete), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.common_cancel)) } },
     )
 
     val undated = entries.count { it.date == null }
     val years = entries.years(today.year) + if (undated > 0) listOf(NO_YEAR) else emptyList()
     val shown = entries.filter { if (year == NO_YEAR) it.date == null else it.date?.year == year }
-    val glass = rememberGlass()
+    val pageList = rememberLazyListState()
     Scaffold(
         containerColor = jc.page,
         topBar = {
-            NavBar(backLabel, onBack, color = jc.page, glass = glass) {
+            NavBar(backLabel, onBack, color = jc.page) {
                 Box {
-                    IconAction(Ico.MORE, "More", { menu = true })
-                    DropdownMenu(menu, { menu = false }, containerColor = jc.solidCard) {
-                        DropdownMenuItem(text = { Text("Rename") }, onClick = { menu = false; renaming = true })
-                        DropdownMenuItem(text = { Text("Delete", color = jc.danger) }, onClick = { menu = false; deleting = true })
+                    IconAction(Ico.MORE, stringResource(R.string.common_more), { menu = true })
+                    JMenu(menu, { menu = false }, width = 200.dp) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.common_rename)) }, onClick = { menu = false; renaming = true })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.common_delete), color = jc.danger) }, onClick = { menu = false; deleting = true })
                     }
                 }
             }
         },
         bottomBar = {
-            Box(Modifier.fillMaxWidth().glassBackground(glass, jc.page).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                PrimaryButton("Add to ${note.title}", { editing = EntryEdit(note.id, null) }, Modifier.fillMaxWidth())
+            Box(Modifier.fillMaxWidth().background(jc.page).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                PrimaryButton(stringResource(R.string.trackers_add_to, note.title), { editing = EntryEdit(note.id, null) }, Modifier.fillMaxWidth())
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding, PaddingValues(bottom = 24.dp))) {
+        LazyColumn(state = pageList, modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     KindTile(note.title, 56.dp)
                     Column(Modifier.weight(1f)) {
                         Text(note.title, style = JType.noteTitle, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("${plural(entries.size, "entry", "entries")} in all", style = JType.secondary, color = jc.muted)
+                        Text(pluralStringResource(R.plurals.trackers_entries_in_all, entries.size, entries.size), style = JType.secondary, color = jc.muted)
                     }
                 }
             }
             if (years.size > 1) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    years.forEach { y -> Pill(if (y == NO_YEAR) "No date" else "$y", year == y, { year = y }) }
+                    years.forEach { y -> Pill(if (y == NO_YEAR) stringResource(R.string.trackers_no_date) else "$y", year == y, { year = y }) }
                 }
                 Spacer(Modifier.height(12.dp))
             }
             item { YearCard(entries, shown, year, today, Modifier.padding(horizontal = 16.dp)) }
             if (shown.isEmpty()) item {
                 Text(
-                    if (year == today.year) "Nothing yet this year. Tap Add when you finish one." else "Nothing in $year.",
+                    if (year == today.year) stringResource(R.string.trackers_nothing_yet_this_year_tap) else stringResource(R.string.trackers_nothing_in, year),
                     Modifier.fillMaxWidth().padding(24.dp), style = JType.secondary, color = jc.muted, textAlign = TextAlign.Center,
                 )
             }
@@ -453,7 +459,7 @@ fun TrackerScreen(
                 item(key = "m$month") {
                     Row(Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            month?.let { Month.of(it).getDisplayName(DateStyle.FULL_STANDALONE, Locale.getDefault()) } ?: "No date",
+                            month?.let { Month.of(it).getDisplayName(DateStyle.FULL_STANDALONE, Locale.getDefault()) } ?: stringResource(R.string.trackers_no_date),
                             Modifier.weight(1f), style = JType.section, color = jc.ink,
                         )
                         Text("${group.size}", style = JType.section, color = jc.muted)
@@ -477,7 +483,7 @@ private fun YearCard(all: List<TrackerEntry>, shown: List<TrackerEntry>, year: I
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("${shown.size}", style = HeroNumber, color = jc.ink)
-                Text(if (year == NO_YEAR) "  without a date" else "  in $year", Modifier.padding(bottom = 10.dp), style = JType.secondary, color = jc.muted)
+                Text(if (year == NO_YEAR) stringResource(R.string.trackers_without_a_date) else stringResource(R.string.trackers_in_year_indented, year), Modifier.padding(bottom = 10.dp), style = JType.secondary, color = jc.muted)
             }
             if (year == today.year) Trend(shown.size, all.countSameTimeLastYear(today))
             if (year != NO_YEAR) {
@@ -489,9 +495,9 @@ private fun YearCard(all: List<TrackerEntry>, shown: List<TrackerEntry>, year: I
                 Spacer(Modifier.height(14.dp))
                 val busiest = counts.withIndex().maxByOrNull { it.value }?.takeIf { it.value > 0 }
                 Row {
-                    Stat("Average", shown.averageRating()?.let { "★ " + String.format(locale, "%.1f", it) } ?: "—", Modifier.weight(1f))
-                    Stat("Busiest", busiest?.let { Month.of(it.index + 1).getDisplayName(DateStyle.SHORT_STANDALONE, locale) } ?: "—", Modifier.weight(1f))
-                    Stat("Per month", if (shown.isEmpty()) "—" else String.format(locale, "%.1f", shown.size / (if (year == today.year) today.monthValue else 12).toDouble()), Modifier.weight(1f))
+                    Stat(stringResource(R.string.trackers_average), shown.averageRating()?.let { "★ " + String.format(locale, "%.1f", it) } ?: "—", Modifier.weight(1f))
+                    Stat(stringResource(R.string.trackers_busiest), busiest?.let { Month.of(it.index + 1).getDisplayName(DateStyle.SHORT_STANDALONE, locale) } ?: "—", Modifier.weight(1f))
+                    Stat(stringResource(R.string.trackers_per_month), if (shown.isEmpty()) "—" else String.format(locale, "%.1f", shown.size / (if (year == today.year) today.monthValue else 12).toDouble()), Modifier.weight(1f))
                 }
             }
         }
@@ -513,9 +519,9 @@ private fun EntryRow(entry: TrackerEntry, photos: TrackerPhotos, onClick: () -> 
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         DateBadge(entry.date)
-        Text(entry.title.ifBlank { "Untitled" }, Modifier.weight(1f), style = JType.item, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(entry.title.ifBlank { stringResource(R.string.common_untitled) }, Modifier.weight(1f), style = JType.item, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
         entry.rating?.let { Stars(it) }
-        entry.photo?.let { PhotoThumb(photos.file(it), Modifier.size(40.dp, 52.dp).clip(JShape.xs).background(jc.inset)) }
+        entry.photo?.let { PhotoThumb(photos.file(it), Modifier.size(40.dp, 52.dp).clip(JShape.xs).background(jc.page)) }
     }
 }
 
@@ -536,7 +542,7 @@ private fun PhotoThumb(file: File, modifier: Modifier) {
 @Composable
 private fun DateBadge(day: LocalDate?) {
     Column(
-        Modifier.size(48.dp).clip(JShape.sm).background(jc.inset),
+        Modifier.size(48.dp).clip(JShape.sm).background(jc.page),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
     ) {
         if (day == null) Text("–", style = JType.rowTitle, color = jc.muted)
@@ -549,9 +555,10 @@ private fun DateBadge(day: LocalDate?) {
 
 @Composable
 private fun Stars(rating: Int) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Text(
         "★".repeat(rating) + "☆".repeat(5 - rating), style = JType.small.copy(letterSpacing = 1.sp), color = jc.accent,
-        modifier = Modifier.semantics { contentDescription = "$rating out of 5" },
+        modifier = Modifier.semantics { contentDescription = context.getString(R.string.trackers_out_of_5, rating) },
     )
 }
 
@@ -561,7 +568,7 @@ private fun EntryEditor(trackers: List<NoteEntity>, edit: EntryEdit, photos: Tra
     // The note as it is now, so a sync that landed while the dialog was open isn't overwritten.
     val note = trackers.firstOrNull { it.id == edit.noteId } ?: return
     EntryDialog(
-        if (edit.original == null) "Add to ${note.title}" else "Edit entry", edit.original, photos, onDismiss = onClose,
+        if (edit.original == null) stringResource(R.string.trackers_add_to, note.title) else stringResource(R.string.trackers_edit_entry), edit.original, photos, onDismiss = onClose,
         onDelete = edit.original?.let { old -> { onClose(); onSave(note, trackerEntries(note).replacing(old, null)) } },
     ) { entry -> onClose(); onSave(note, trackerEntries(note).replacing(edit.original, entry)) }
 }
@@ -586,7 +593,7 @@ private fun EntryDialog(title: String, initial: TrackerEntry?, photos: TrackerPh
         busy = true
         scope.launch {
             try { photo = photos.compress(uri, name.trim().ifBlank { "Photo" } + ".jpg") }
-            catch (_: Exception) { Toast.makeText(context, "Couldn't add that photo.", Toast.LENGTH_SHORT).show() }
+            catch (_: Exception) { Toast.makeText(context, context.getString(R.string.trackers_couldnt_add_that_photo), Toast.LENGTH_SHORT).show() }
             finally { then(); busy = false }
         }
     }
@@ -601,7 +608,7 @@ private fun EntryDialog(title: String, initial: TrackerEntry?, photos: TrackerPh
     }
     fun paste() {
         val uri = runCatching { clipboard?.primaryClip?.let { clip -> (0 until clip.itemCount).firstNotNullOfOrNull { clip.getItemAt(it).uri } } }.getOrNull()
-        if (uri == null) Toast.makeText(context, "There's no photo to paste.", Toast.LENGTH_SHORT).show() else store(uri)
+        if (uri == null) Toast.makeText(context, context.getString(R.string.trackers_theres_no_photo_to_paste), Toast.LENGTH_SHORT).show() else store(uri)
     }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { store(it) } }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
@@ -616,32 +623,32 @@ private fun EntryDialog(title: String, initial: TrackerEntry?, photos: TrackerPh
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Title") }, shape = JShape.sm)
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.trackers_title)) }, shape = JShape.sm)
                 Row(
                     Modifier.fillMaxWidth().clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) { picking = true }.padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     JIcon(Ico.CALENDAR, jc.accent, size = 18.dp)
-                    Text(date?.let(::dayLabel) ?: "No date", Modifier.weight(1f), style = JType.secondary, color = jc.ink)
-                    Text(if (date == null) "Set" else "Change", style = JType.label, color = jc.accent)
+                    Text(date?.let(::dayLabel) ?: stringResource(R.string.trackers_no_date), Modifier.weight(1f), style = JType.secondary, color = jc.ink)
+                    Text(if (date == null) stringResource(R.string.common_set) else stringResource(R.string.common_change), style = JType.label, color = jc.accent)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     for (n in 1..5) {
                         val on = (rating ?: 0) >= n
                         Box(
                             Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button) { rating = if (rating == n) null else n }
-                                .semantics { contentDescription = "Rate $n out of 5" },
+                                .semantics { contentDescription = context.getString(R.string.trackers_rate_out_of_5, n); selected = on },
                             contentAlignment = Alignment.Center,
-                        ) { Text(if (on) "★" else "☆", fontSize = 28.sp, color = if (on) jc.accent else jc.muted) }
+                        ) { JIcon(Ico.STAR, if (on) jc.accent else jc.muted, size = 28.dp, fill = on) }
                     }
                     Spacer(Modifier.weight(1f))
-                    if (rating != null) TextAction("Clear", { rating = null }, color = jc.muted)
+                    if (rating != null) TextAction(stringResource(R.string.common_clear), { rating = null }, color = jc.muted)
                 }
                 Row(
                     Modifier.fillMaxWidth().clip(JShape.sm).background(jc.surface).padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Box(Modifier.size(52.dp, 68.dp).clip(JShape.xs).background(jc.inset), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(52.dp, 68.dp).clip(JShape.xs).background(jc.page), contentAlignment = Alignment.Center) {
                         val p = photo
                         when {
                             busy -> CircularProgressIndicator(Modifier.size(22.dp), color = jc.accent, strokeWidth = 2.dp)
@@ -651,35 +658,35 @@ private fun EntryDialog(title: String, initial: TrackerEntry?, photos: TrackerPh
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            when { busy -> "Shrinking the photo…"; photo != null -> "Photo"; else -> "Add a cover or photo" },
+                            when { busy -> stringResource(R.string.trackers_shrinking_the_photo); photo != null -> stringResource(R.string.trackers_photo); else -> stringResource(R.string.trackers_add_a_cover_or_photo) },
                             style = JType.secondary, color = jc.ink,
                         )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextAction(if (photo == null) "Choose" else "Change", {
+                            TextAction(if (photo == null) stringResource(R.string.trackers_choose) else stringResource(R.string.common_change), {
                                 gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             }, enabled = !busy)
-                            TextAction("Camera", {
+                            TextAction(stringResource(R.string.trackers_camera), {
                                 val target = photos.cameraTarget()
                                 shot = target
                                 try { camera.launch(target.second) } catch (_: android.content.ActivityNotFoundException) {
                                     shot = null; target.first.delete()
-                                    Toast.makeText(context, "No camera app on this phone.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.trackers_no_camera_app_on_this), Toast.LENGTH_SHORT).show()
                                 }
                             }, enabled = !busy)
-                            if (canPaste) TextAction("Paste", ::paste, enabled = !busy)
-                            if (photo != null) TextAction("Remove", { photo = null }, color = jc.danger, enabled = !busy)
+                            if (canPaste) TextAction(stringResource(R.string.common_paste), ::paste, enabled = !busy)
+                            if (photo != null) TextAction(stringResource(R.string.common_remove), { photo = null }, color = jc.danger, enabled = !busy)
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(TrackerEntry(date, name.trim(), rating, photo)) }, enabled = name.isNotBlank() && !busy) { Text("Save", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = { onSave(TrackerEntry(date, name.trim(), rating, photo)) }, enabled = name.isNotBlank() && !busy) { Text(stringResource(R.string.common_save), fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
             Row {
-                if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete", color = jc.danger) }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                if (onDelete != null) TextButton(onClick = onDelete) { Text(stringResource(R.string.common_delete), color = jc.danger) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
             }
         },
     )
@@ -706,8 +713,8 @@ private fun EntryDateDialog(current: LocalDate, onDismiss: () -> Unit, onPick: (
             )
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(1f))
-                TextAction("Cancel", onDismiss)
-                TextAction("Set", {
+                TextAction(stringResource(R.string.common_cancel), onDismiss)
+                TextAction(stringResource(R.string.common_set), {
                     state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
                 }, bold = true, enabled = state.selectedDateMillis != null)
             }

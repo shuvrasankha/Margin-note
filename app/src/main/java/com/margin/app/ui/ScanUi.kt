@@ -35,6 +35,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * OCR result: the text found, editable so mistakes can be fixed before it goes into the note. Insert adds it
@@ -49,7 +51,7 @@ fun ScanDialog(state: ScanState, onInsert: (String) -> Unit, onDismiss: () -> Un
                 .padding(top = 18.dp, bottom = 8.dp),
         ) {
             Text(
-                when (state) { ScanState.Reading -> "Reading text…"; is ScanState.Found -> "Text found"; is ScanState.Failed -> "No text" },
+                when (state) { ScanState.Reading -> stringResource(R.string.scan_reading_text); is ScanState.Found -> stringResource(R.string.scan_text_found); is ScanState.Failed -> stringResource(R.string.scan_no_text) },
                 Modifier.padding(horizontal = 20.dp), style = JType.rowTitle, color = jc.ink,
             )
             when (state) {
@@ -57,35 +59,35 @@ fun ScanDialog(state: ScanState, onInsert: (String) -> Unit, onDismiss: () -> Un
                     Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     CircularProgressIndicator(Modifier.size(22.dp), color = jc.accent, strokeWidth = 2.5.dp)
-                    Text("Looking for text in the photo. This stays on your phone.", style = JType.secondary, color = jc.muted)
+                    Text(stringResource(R.string.scan_looking_for_text_in_the), style = JType.secondary, color = jc.muted)
                 }
                 is ScanState.Failed -> Text(state.message, Modifier.padding(20.dp), style = JType.secondary, color = jc.muted)
                 is ScanState.Found -> {
                     var text by remember(state) { mutableStateOf(state.text) }
-                    Text("Check it and fix any mistakes before adding it.", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.scan_check_it_and_fix_any), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.small, color = jc.muted)
                     Box(
                         Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().heightIn(min = 120.dp, max = 360.dp)
                             .clip(JShape.sm).border(1.dp, jc.line, JShape.sm).background(jc.surface)
                             .verticalScroll(rememberScrollState()).padding(12.dp),
                     ) {
                         BasicTextField(
-                            text, { text = it }, Modifier.fillMaxWidth().semantics { contentDescription = "Text found in the photo" },
+                            text, { text = it }, Modifier.fillMaxWidth().semantics { contentDescription = context.getString(R.string.scan_text_found_in_the_photo) },
                             textStyle = JType.body.copy(color = jc.ink), cursorBrush = SolidColor(jc.accent),
                         )
                     }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
-                        TextAction("Copy", {
-                            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Scanned text", text))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                        TextAction(stringResource(R.string.common_copy), {
+                            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(context.getString(R.string.scan_scanned_text), text))
+                            Toast.makeText(context, context.getString(R.string.scan_copied), Toast.LENGTH_SHORT).show()
                         })
-                        TextAction("Cancel", onDismiss)
-                        TextAction("Add to note", { onInsert(text) }, bold = true, enabled = text.isNotBlank())
+                        TextAction(stringResource(R.string.common_cancel), onDismiss)
+                        TextAction(stringResource(R.string.scan_add_to_note), { onInsert(text) }, bold = true, enabled = text.isNotBlank())
                     }
                     return@Column
                 }
             }
             Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) {
-                TextAction(if (state == ScanState.Reading) "Cancel" else "OK", onDismiss)
+                TextAction(if (state == ScanState.Reading) stringResource(R.string.common_cancel) else stringResource(R.string.common_ok), onDismiss)
             }
         }
     }

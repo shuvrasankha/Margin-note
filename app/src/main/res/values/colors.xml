@@ -2,6 +2,8 @@
 <resources>
     <!-- Launch screen: the app's page colour, so it blends into the first screen. -->
     <color name="launch_bg">#FFFFFFFF</color>
+    <!-- Widgets: the page colour, see-through enough to hint at the wallpaper, solid enough to read on any. -->
+    <color name="widget_bg">#E0FFFFFF</color>
     <!-- Recent notes widget. -->
     <color name="widget_ink">#FF111111</color>
     <color name="widget_muted">#FF5C5C63</color>

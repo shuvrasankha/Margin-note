@@ -99,7 +99,7 @@ class NoteRepository @Inject constructor(
                 val note = NoteEntity(
                     id = newId(), folderId = folderFor(n.folder), blocks = emptyList(), title = "", searchText = "",
                     createdAt = created, updatedAt = now,
-                ).withBlocks(n.blocks, now).copy(editedAt = n.editedAt ?: created, isPinned = n.pinned)
+                ).withBlocks(n.blocks, now).copy(editedAt = n.editedAt ?: created, isPinned = n.pinned && !n.archived, archived = n.archived)
                 notes.upsert(note)
             }
         }
@@ -143,8 +143,8 @@ class NoteRepository @Inject constructor(
 
     suspend fun setFolderSort(id: String, sortBy: NoteSort, ascending: Boolean) {
         val folder = folders.get(id) ?: return
-        if (folder.sortBy == sortBy && folder.sortAscending == ascending) return
-        folders.upsert(folder.copy(sortBy = sortBy, sortAscending = ascending, updatedAt = now()))
+        if (folder.sortBy == sortBy && folder.sortAscending == ascending && !folder.manualOrder) return
+        folders.upsert(folder.copy(sortBy = sortBy, sortAscending = ascending, manualOrder = false, updatedAt = now()))
         scheduler.requestDebounced()
     }
 
@@ -307,6 +307,38 @@ class NoteRepository @Inject constructor(
         scheduler.requestDebounced()
     }
 
+    /** Archives (unpinning, as Keep does) or unarchives; an unarchived note whose folder is gone goes to the default one. */
+    suspend fun setArchived(ids: Collection<String>, archived: Boolean) {
+        val now = now()
+        db.withTransaction {
+            ids.mapNotNull { notes.get(it) }.filter { !it.deleted && it.trashedAt == null && it.archived != archived }.forEach { n ->
+                val folder = folders.get(n.folderId)
+                val target = if (archived || (folder != null && !folder.deleted)) n.folderId else DEFAULT_FOLDER_ID
+                notes.upsert(n.copy(archived = archived, isPinned = n.isPinned && !archived, folderId = target, updatedAt = now))
+            }
+        }
+        scheduler.requestDebounced()
+    }
+
+    /** Arrange notes: [ids] in their new order get places 1..n (0 is for notes added since, which go first). Only changed notes are rewritten. */
+    suspend fun arrangeNotes(ids: List<String>) {
+        val now = now()
+        db.withTransaction {
+            ids.forEachIndexed { i, id ->
+                val n = notes.get(id)?.takeIf { !it.deleted && it.sortOrder != i + 1 } ?: return@forEachIndexed
+                notes.upsert(n.copy(sortOrder = i + 1, updatedAt = now))
+            }
+        }
+        scheduler.requestDebounced()
+    }
+
+    suspend fun setFolderManual(id: String, manual: Boolean) {
+        val folder = folders.get(id) ?: return
+        if (folder.manualOrder == manual) return
+        folders.upsert(folder.copy(manualOrder = manual, updatedAt = now()))
+        scheduler.requestDebounced()
+    }
+
     suspend fun moveToTrash(ids: Collection<String>) {
         val now = now()
         db.withTransaction {
@@ -405,6 +437,9 @@ class NoteRepository @Inject constructor(
         if (count > 0) scheduler.requestDebounced()
         return count
     }
+
+    suspend fun setColor(id: String, color: NoteColor) =
+        update(id) { it.copy(color = color.name.takeIf { color != NoteColor.NONE }, updatedAt = now()) }
 
     suspend fun setFont(id: String, font: NoteFont) =
         update(id) { it.copy(font = font.name.takeIf { font != NoteFont.DEFAULT }, updatedAt = now()) }

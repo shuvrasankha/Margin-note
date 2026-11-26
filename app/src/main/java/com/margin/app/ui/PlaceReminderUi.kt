@@ -61,6 +61,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Picks where to be reminded about a note: arriving or leaving, how near counts, and the place itself, from
@@ -81,21 +83,21 @@ fun PlaceReminderDialog(current: Place?, recent: List<Place>, onPick: (Place) ->
     var name by remember { mutableStateOf("") }
 
     fun locate() {
-        busy = "Finding where you are…"; error = null
+        busy = context.getString(R.string.place_reminder_finding_where_you_are); error = null
         currentPlace(context) { found ->
             busy = null
-            if (found == null) error = "Couldn't find where you are. Check that location is on, or search instead."
+            if (found == null) error = context.getString(R.string.place_reminder_couldnt_find_where_you_are)
             else { naming = found; name = "" }
         }
     }
     val access = rememberPlaceAccess()
     fun search() {
         val q = query.trim().ifEmpty { return }
-        busy = "Searching…"; error = null; results = null
+        busy = context.getString(R.string.place_reminder_searching); error = null; results = null
         scope.launch {
             val found = findPlaces(context, q)
             busy = null
-            if (found == null) error = "Searching needs an internet connection." else if (found.isEmpty()) error = "Nothing found for “$q”." else results = found
+            if (found == null) error = context.getString(R.string.place_reminder_searching_needs_an_internet_connection) else if (found.isEmpty()) error = context.getString(R.string.place_reminder_nothing_found_for, q) else results = found
         }
     }
 
@@ -104,48 +106,48 @@ fun PlaceReminderDialog(current: Place?, recent: List<Place>, onPick: (Place) ->
             Modifier.padding(horizontal = 16.dp).widthIn(max = 400.dp).fillMaxWidth().clip(JShape.lg).background(jc.bg)
                 .verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
         ) {
-            Text(if (naming == null) "Remind me at a place" else "Name this place", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
-            current?.takeIf { naming == null }?.let { Text("Set: ${it.phrase.replaceFirstChar(Char::lowercase)}", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted) }
+            Text(if (naming == null) stringResource(R.string.place_reminder_remind_me_at_a_place) else stringResource(R.string.place_reminder_name_this_place), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            current?.takeIf { naming == null }?.let { Text(stringResource(R.string.place_reminder_set, it.phraseText(context).replaceFirstChar(Char::lowercase)), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted) }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                Pill("Arriving", !leaving, { leaving = false })
-                Pill("Leaving", leaving, { leaving = true })
+                Pill(stringResource(R.string.place_reminder_arriving), !leaving, { leaving = false })
+                Pill(stringResource(R.string.place_reminder_leaving), leaving, { leaving = true })
             }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Within", style = JType.small, color = jc.muted)
-                Place.RADII.forEach { r -> Pill(if (r >= 1000) "${r / 1000} km" else "$r m", radius == r, { radius = r }) }
+                Text(stringResource(R.string.place_reminder_within), style = JType.small, color = jc.muted)
+                Place.RADII.forEach { r -> Pill(if (r >= 1000) stringResource(R.string.place_reminder_km, r / 1000) else "$r m", radius == r, { radius = r }) }
             }
             val found = naming
             if (found != null) {
                 Text(found.label, Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp), style = JType.small, color = jc.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                PlainField(name, { name = it }, "Shop, Home, Office…", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), onDone = {
+                PlainField(name, { name = it }, stringResource(R.string.place_reminder_shop_home_office), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), onDone = {
                     onPick(found.copy(label = name.trim().ifEmpty { found.label }, leaving = leaving, radius = radius))
                 })
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
-                    TextAction("Back", { naming = null })
-                    TextAction("Set Reminder", { onPick(found.copy(label = name.trim().ifEmpty { found.label }, leaving = leaving, radius = radius)) }, bold = true)
+                    TextAction(stringResource(R.string.common_back), { naming = null })
+                    TextAction(stringResource(R.string.place_reminder_set_reminder), { onPick(found.copy(label = name.trim().ifEmpty { found.label }, leaving = leaving, radius = radius)) }, bold = true)
                 }
                 return@Column
             }
-            PlaceRow(Ico.LOCATE, "Where I am now", null) { access.ensure(background = false) { ok -> if (ok) locate() } }
+            PlaceRow(Ico.LOCATE, stringResource(R.string.place_reminder_where_i_am_now), null) { access.ensure(background = false) { ok -> if (ok) locate() } }
             Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                PlainField(query, { query = it }, "Search an address or place", Modifier.weight(1f), search = true, onDone = ::search)
-                TextAction("Search", ::search, enabled = query.isNotBlank())
+                PlainField(query, { query = it }, stringResource(R.string.place_reminder_search_an_address_or_place), Modifier.weight(1f), search = true, onDone = ::search)
+                TextAction(stringResource(R.string.common_search), ::search, enabled = query.isNotBlank())
             }
             busy?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = JType.small, color = jc.muted) }
             error?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 6.dp), style = JType.small, color = jc.danger) }
             results?.forEach { p -> PlaceRow(Ico.PLACE, p.label, null, lines = 2) { naming = p; name = "" } }
             if (results == null && recent.isNotEmpty()) {
-                Text("Recent", Modifier.padding(start = 20.dp, top = 10.dp, bottom = 2.dp), style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.place_reminder_recent), Modifier.padding(start = 20.dp, top = 10.dp, bottom = 2.dp), style = JType.small, color = jc.muted)
                 recent.forEach { p -> PlaceRow(Ico.PLACE, p.label, null) { onPick(p.copy(leaving = leaving, radius = radius)) } }
             }
-            if (current != null) PlaceRow(Ico.TRASH, "Remove place reminder", null, danger = true, onClick = onRemove)
-            Box(Modifier.fillMaxWidth().padding(end = 12.dp, top = 4.dp), contentAlignment = Alignment.CenterEnd) { TextAction("Cancel", onDismiss) }
+            if (current != null) PlaceRow(Ico.TRASH, stringResource(R.string.place_reminder_remove_place_reminder), null, danger = true, onClick = onRemove)
+            Box(Modifier.fillMaxWidth().padding(end = 12.dp, top = 4.dp), contentAlignment = Alignment.CenterEnd) { TextAction(stringResource(R.string.common_cancel), onDismiss) }
         }
     }
     access.Dialogs()
@@ -179,14 +181,15 @@ internal fun PlainField(value: String, onChange: (String) -> Unit, placeholder: 
 /** The note's place reminder under its title, like the time reminder's chip. */
 @Composable
 fun PlaceChip(place: Place, onClick: () -> Unit) {
+    val context = LocalContext.current
     Row(
         Modifier.padding(bottom = 10.dp).clip(JShape.xs).clickable(role = Role.Button, onClick = onClick)
             .background(jc.selected).padding(horizontal = 8.dp, vertical = 4.dp)
-            .semantics { contentDescription = "Place reminder: ${place.phrase}. Tap to change it." },
+            .semantics { contentDescription = context.getString(R.string.place_reminder_place_reminder_tap_to_change, place.phraseText(context)) },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         JIcon(Ico.PLACE, jc.accent, size = 14.dp, stroke = 2f)
-        Text(place.phrase, style = JType.small, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(place.phraseText(context), style = JType.small, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -247,32 +250,30 @@ class PlaceAccess internal constructor(
         explaining?.let { background ->
             MarginDialog(
                 onDismissRequest = { explaining = null; finish(false) },
-                title = { Text("Use your location?") },
+                title = { Text(stringResource(R.string.place_reminder_use_your_location)) },
                 text = {
                     Text(
-                        if (background) "To remind you when you arrive at or leave a place, Margin checks your location in the background, " +
-                            "even when the app is closed. Choose “Allow all the time” on the next screen. Your location stays on this phone: " +
-                            "Margin doesn't store it or send it anywhere."
-                        else "Margin uses your location once, to find where you are now. It stays on this phone.",
+                        if (background) stringResource(R.string.place_location_background_explain)
+                        else stringResource(R.string.place_reminder_margin_uses_your_location_once),
                     )
                 },
-                confirmButton = { TextButton(onClick = ::continueAsking) { Text("Continue") } },
-                dismissButton = { TextButton(onClick = { explaining = null; finish(false) }) { Text("Not Now") } },
+                confirmButton = { TextButton(onClick = ::continueAsking) { Text(stringResource(R.string.common_continue)) } },
+                dismissButton = { TextButton(onClick = { explaining = null; finish(false) }) { Text(stringResource(R.string.place_reminder_not_now)) } },
             )
         }
         if (noPrecise) MarginDialog(
             onDismissRequest = { noPrecise = false },
-            title = { Text("Precise location needed") },
-            text = { Text("Place reminders need precise location; approximate location can be off by a few kilometers. Turn on “Use precise location” for Margin in Settings.") },
-            confirmButton = { TextButton(onClick = { noPrecise = false; openAppSettings(context) }) { Text("Open Settings") } },
-            dismissButton = { TextButton(onClick = { noPrecise = false }) { Text("Not Now") } },
+            title = { Text(stringResource(R.string.place_reminder_precise_location_needed)) },
+            text = { Text(stringResource(R.string.place_reminder_place_reminders_need_precise_location)) },
+            confirmButton = { TextButton(onClick = { noPrecise = false; openAppSettings(context) }) { Text(stringResource(R.string.place_reminder_open_settings)) } },
+            dismissButton = { TextButton(onClick = { noPrecise = false }) { Text(stringResource(R.string.place_reminder_not_now)) } },
         )
         if (settingsHint) MarginDialog(
             onDismissRequest = { settingsHint = false },
-            title = { Text("Location is only allowed while using Margin") },
-            text = { Text("The reminder is saved, but it can't ring until Margin may use location all the time. In Settings, open Permissions › Location and choose “Allow all the time”.") },
-            confirmButton = { TextButton(onClick = { settingsHint = false; openAppSettings(context) }) { Text("Open Settings") } },
-            dismissButton = { TextButton(onClick = { settingsHint = false }) { Text("Not Now") } },
+            title = { Text(stringResource(R.string.place_reminder_location_is_only_allowed_while)) },
+            text = { Text(stringResource(R.string.place_reminder_the_reminder_is_saved_but)) },
+            confirmButton = { TextButton(onClick = { settingsHint = false; openAppSettings(context) }) { Text(stringResource(R.string.place_reminder_open_settings)) } },
+            dismissButton = { TextButton(onClick = { settingsHint = false }) { Text(stringResource(R.string.place_reminder_not_now)) } },
         )
     }
 }
@@ -351,4 +352,8 @@ private suspend fun findPlaces(context: Context, query: String): List<Place>? {
 
 /** Tells the user, where it matters, that a place reminder can't ring yet. */
 fun placeNotWatched(context: Context) =
-    Toast.makeText(context, "Saved, but it can't ring until Margin may use location all the time.", Toast.LENGTH_LONG).show()
+    Toast.makeText(context, context.getString(R.string.place_reminder_saved_but_it_cant_ring), Toast.LENGTH_LONG).show()
+
+/** [Place.phrase] in the app's language: "When I arrive at Home". */
+internal fun Place.phraseText(context: Context): String =
+    context.getString(if (leaving) R.string.place_when_i_leave else R.string.place_when_i_arrive_at, label)

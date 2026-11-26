@@ -37,6 +37,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.TemporalAdjusters
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * Above the toolbar while the cursor is on a task: items from your other lists that finish what you're typing,
@@ -44,6 +46,7 @@ import java.time.temporal.TemporalAdjusters
  */
 @Composable
 internal fun TaskBar(vm: EditorViewModel, onDue: (Int) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val line = vm.taskAtCursor ?: return
     val items by vm.pastItems.collectAsState()
     val suggestions = vm.itemSuggestions(items)
@@ -59,19 +62,19 @@ internal fun TaskBar(vm: EditorViewModel, onDue: (Int) -> Unit) {
         Row(
             Modifier.height(36.dp).clip(JShape.pill).border(1.dp, if (overdue) jc.danger else jc.line, JShape.pill)
                 .clickable(role = Role.Button) { onDue(line) }.padding(horizontal = 12.dp)
-                .semantics { contentDescription = if (due == null) "Add a due date" else "Due ${dueLabel(due)}. Tap to change it." },
+                .semantics { contentDescription = if (due == null) context.getString(R.string.list_tools_add_a_due_date) else context.getString(R.string.list_tools_due_desc, dueText(context, due)) },
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             JIcon(Ico.ALARM, if (overdue) jc.danger else jc.accent, size = 16.dp, stroke = 2f)
-            Text(if (due == null) "Due date" else dueLabel(due), style = JType.secondary, color = if (overdue) jc.danger else jc.ink, maxLines = 1)
+            Text(if (due == null) stringResource(R.string.list_tools_due_date) else dueText(context, due), style = JType.secondary, color = if (overdue) jc.danger else jc.ink, maxLines = 1)
         }
         if (name.isNotBlank()) Row(
             Modifier.height(36.dp).clip(JShape.pill).border(1.dp, jc.line, JShape.pill),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            StepButton("−", "One fewer", enabled = qty > 1) { vm.stepQty(-1) }
-            Text("×$qty", Modifier.semantics { contentDescription = "Quantity $qty" }, style = JType.secondary, color = jc.ink)
-            StepButton("+", "One more") { vm.stepQty(1) }
+            StepButton("−", stringResource(R.string.list_tools_one_fewer), enabled = qty > 1) { vm.stepQty(-1) }
+            Text("×$qty", Modifier.semantics { contentDescription = context.getString(R.string.list_tools_quantity_desc, qty.toString()) }, style = JType.secondary, color = jc.ink)
+            StepButton("+", stringResource(R.string.list_tools_one_more)) { vm.stepQty(1) }
         }
     }
 }
@@ -92,14 +95,14 @@ internal fun DueDateDialog(current: Long?, onPick: (Long?) -> Unit, onDismiss: (
     )
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Due date") },
+        title = { Text(stringResource(R.string.list_tools_due_date)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("Today", current == today.toEpochDay(), { onPick(today.toEpochDay()) })
-                    Pill("Tomorrow", current == today.plusDays(1).toEpochDay(), { onPick(today.plusDays(1).toEpochDay()) })
+                    Pill(stringResource(R.string.common_today), current == today.toEpochDay(), { onPick(today.toEpochDay()) })
+                    Pill(stringResource(R.string.common_tomorrow), current == today.plusDays(1).toEpochDay(), { onPick(today.plusDays(1).toEpochDay()) })
                     val monday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY))
-                    Pill("Next week", current == monday.toEpochDay(), { onPick(monday.toEpochDay()) })
+                    Pill(stringResource(R.string.list_tools_next_week), current == monday.toEpochDay(), { onPick(monday.toEpochDay()) })
                 }
                 DatePicker(
                     state, title = null, headline = null, showModeToggle = false,
@@ -111,12 +114,12 @@ internal fun DueDateDialog(current: Long?, onPick: (Long?) -> Unit, onDismiss: (
                 )
             }
         },
-        dismissButton = if (current != null) ({ TextButton(onClick = { onPick(null) }) { Text("Remove", color = jc.danger) } }) else null,
+        dismissButton = if (current != null) ({ TextButton(onClick = { onPick(null) }) { Text(stringResource(R.string.common_remove), color = jc.danger) } }) else null,
         confirmButton = {
             TextButton(
                 onClick = { state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()) } },
                 enabled = state.selectedDateMillis != null,
-            ) { Text("Set") }
+            ) { Text(stringResource(R.string.common_set)) }
         },
     )
 }
@@ -126,19 +129,27 @@ internal fun DueDateDialog(current: Long?, onPick: (Long?) -> Unit, onDismiss: (
 internal fun SortListDialog(anyDue: Boolean, onPick: (ListSort) -> Unit, onDismiss: () -> Unit) {
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sort list") },
+        title = { Text(stringResource(R.string.list_tools_sort_list)) },
         text = {
             Column {
                 ListSort.entries.filter { it != ListSort.DUE || anyDue }.forEach { s ->
                     Text(
-                        s.label,
+                        stringResource(s.labelRes),
                         Modifier.fillMaxWidth().clip(JShape.sm).clickable(role = Role.Button) { onPick(s) }.padding(vertical = 14.dp),
                         style = JType.row, color = jc.ink,
                     )
                 }
-                Text("Headings and other lines stay where they are. Undo puts the list back.", style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.list_tools_headings_and_other_lines_stay), style = JType.small, color = jc.muted)
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
+
+/** [dueLabel] with "Today", "Tomorrow" and "Yesterday" in the app's language. */
+internal fun dueText(context: android.content.Context, day: Long): String = dueLabel(
+    day,
+    todayWord = context.getString(R.string.common_today),
+    tomorrowWord = context.getString(R.string.common_tomorrow),
+    yesterdayWord = context.getString(R.string.common_yesterday),
+)

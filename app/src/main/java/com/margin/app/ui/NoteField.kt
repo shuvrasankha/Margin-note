@@ -59,6 +59,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
@@ -110,6 +111,7 @@ import com.margin.app.data.MarginJson
 import com.margin.app.data.Mark
 import com.margin.app.data.MathSuggestion
 import com.margin.app.data.NoteEntity
+import com.margin.app.data.NoteColor
 import com.margin.app.data.NoteFont
 import com.margin.app.data.Paper
 import com.margin.app.data.Plot
@@ -135,6 +137,8 @@ import com.margin.app.data.resolveLink
 import com.margin.app.data.tableGraph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 internal val GUTTER = 30.sp
 internal const val INDENT_STEP = 24f // sp per indent step
@@ -199,13 +203,54 @@ internal val systemSerif: FontFamily by lazy {
     }.getOrNull() ?: FontFamily.Serif
 }
 
+/** A note colour as a card fill: mixed into [jc.card] (more in dark mode, where the card is near black). */
+@Composable
+internal fun NoteColor.fill(): Color =
+    if (this == NoteColor.NONE) jc.card else androidx.compose.ui.graphics.lerp(jc.card, Color(argb), if (jc.card.luminance() < 0.5f) 0.30f else 0.20f)
+
+/** Picks the colour a note is marked with: a row of round swatches, the current one ringed. */
+@Composable
+internal fun ColorDialog(current: NoteColor, onPick: (NoteColor) -> Unit, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(Modifier.clip(JShape.lg).background(jc.bg).padding(vertical = 16.dp)) {
+            Text(stringResource(R.string.note_field_colour), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            Text(stringResource(R.string.note_field_marks_the_note_in_your), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+            Spacer(Modifier.height(12.dp))
+            NoteColor.entries.chunked(5).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    row.forEach { c ->
+                        val on = c == current
+                        Box(
+                            Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.RadioButton) { onPick(c) }
+                                .semantics { selected = on; contentDescription = context.getString(c.labelRes) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                Modifier.size(36.dp).clip(CircleShape)
+                                    .background(if (c == NoteColor.NONE) jc.card else Color(c.argb))
+                                    .border(if (on) 3.dp else 1.dp, if (on) jc.accent else jc.line, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (c == NoteColor.NONE) JIcon(Ico.CLOSE, jc.muted, size = 16.dp, stroke = 2f)
+                                else if (on) JIcon(Ico.CHECK, Color.White, size = 18.dp, stroke = 2.8f)
+                            }
+                        }
+                    }
+                    repeat(5 - row.size) { Spacer(Modifier.size(48.dp)) }
+                }
+            }
+        }
+    }
+}
+
 /** Picks the typeface of a note's text; each choice is shown in its own font. */
 @Composable
 internal fun FontDialog(current: NoteFont, onPick: (NoteFont) -> Unit, onDismiss: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(Modifier.clip(JShape.lg).background(jc.bg).padding(vertical = 16.dp)) {
-            Text("Font", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
-            Text("Used for this note's text.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+            Text(stringResource(R.string.note_field_font), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            Text(stringResource(R.string.note_field_used_for_this_notes_text), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
             Spacer(Modifier.height(8.dp))
             NoteFont.entries.forEach { f ->
                 val on = f == current
@@ -215,7 +260,7 @@ internal fun FontDialog(current: NoteFont, onPick: (NoteFont) -> Unit, onDismiss
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Text("Aa", Modifier.width(36.dp), style = JType.item.copy(fontFamily = f.family, fontSize = 20.sp), color = jc.ink)
-                    Text(f.label, Modifier.weight(1f), style = JType.item.copy(fontFamily = f.family), color = if (on) jc.accent else jc.ink)
+                    Text(stringResource(f.labelRes), Modifier.weight(1f), style = JType.item.copy(fontFamily = f.family), color = if (on) jc.accent else jc.ink)
                     if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
                 }
             }
@@ -239,6 +284,8 @@ internal fun NoteField(
     onViewPhoto: (String) -> Unit,
     onOpenLink: (String) -> Unit,
     onPreviewLink: (String) -> Unit,
+    /** Shown between the title and the first line (a to-do list's progress and chips). */
+    underTitle: (@Composable () -> Unit)? = null,
 ) {
     val requester = remember { FocusRequester() }
     // Lives next to the field so the field is attached when it runs: on a new note, and again after
@@ -270,7 +317,7 @@ internal fun NoteField(
     val dueMeasurer = rememberTextMeasurer()
     val aiMeasurer = rememberTextMeasurer()
     val aiLabel = remember(aiMeasurer, aiTint) { aiMeasurer.measure("✦ AI", JType.caption.copy(color = aiTint, fontWeight = FontWeight.SemiBold)) }
-    val aiHiddenLabel = remember(aiMeasurer, muted) { aiMeasurer.measure("Hidden", JType.caption.copy(color = muted)) }
+    val aiHiddenLabel = run { val hidden = androidx.compose.ui.res.stringResource(R.string.note_field_hidden); remember(aiMeasurer, muted, hidden) { aiMeasurer.measure(hidden, JType.caption.copy(color = muted)) } }
     val tagColor = jc.accent
     val targets by vm.linkTargets.collectAsState()
     val targetKeys = remember(targets) { targets.map { linkKey(it.title) }.toSet() }
@@ -331,14 +378,26 @@ internal fun NoteField(
         with(px) { (inlineHeight(d, pageWidth.toFloat()) + drawingGap).coerceIn(MIN_DRAWING.toPx(), MAX_DRAWING.toPx()).toSp() }
     } ?: imageLine
     // A line that is just a link to a note ("[[Plan]]") shows a card with the note's first lines under it.
-    val linkPreviews = remember(doc, targets) { linkPreviewLines(doc, targets) }
+    val linkPreviews = remember(doc, targets) { linkPreviewLines(context, doc, targets) }
     fun previewExtra(rows: Int) = with(px) { linkCardHeight(rows).toSp() }
     val findColor = jc.accent
     // Four-line paper: each line of text gets room for a gap under its band, like a copybook.
     val fourLine = vm.paper == Paper.FOUR_LINE
     fun textHeight(style: TextStyle) = if (fourLine) (style.lineHeight.value + style.fontSize.value * FOUR_LINE_GAP).sp else style.lineHeight
-    val foldedLines = remember(doc) { aiFoldedLines(doc) }
-    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine, vm.justChecked) {
+    // Folded AI cards, and ticked tasks while the list hides them (the one just ticked stays until it settles).
+    // The header under the title rides in extra room on the title's line, so it only fits while the title is one row.
+    // shortcut: a wrapped title puts the header above it instead (line height would add the room to every row).
+    var titleOneRow by remember { mutableStateOf(true) }
+    var underTitlePx by remember { mutableIntStateOf(0) }
+    val headerRoom = if (underTitle != null && titleOneRow) with(px) { underTitlePx.toSp().value } else 0f
+    val foldedLines = remember(doc, vm.hideTicked, vm.justChecked) {
+        aiFoldedLines(doc).also { f ->
+            if (vm.hideTicked) doc.lines.forEachIndexed { i, m ->
+                if (i > 0 && m.type == BlockType.CHECK && m.checked && m.id != vm.justChecked) f[i] = true
+            }
+        }
+    }
+    val annotated = remember(doc, styles, muted, tagColor, targetKeys, urls, imageLine, matches, matchAt, drawings, pageWidth, linkPreviews, photos, fourLine, vm.justChecked, foldedLines, headerRoom) {
         buildAnnotatedString {
             // Each ParagraphStyle range is already its own paragraph, so a real '\n' would add an empty one
             // after every line. Show a zero-width space in its place (same length, so offsets still map 1:1).
@@ -356,7 +415,7 @@ internal fun NoteField(
                     ?: meta.attachment?.let { if (it.isDrawing) drawingLine(it) else if (it.isImage) photoLine(it) else if (it.isPdf) pdfLine else fileLine }
                     ?: preview?.let { (style.lineHeight.value + previewExtra(it.second.size).value).sp }
                     // shortcut: the gap goes under every row of a wrapped title, not just its last; fine while titles are short.
-                    ?: if (i == 0) (textHeight(style).value + TITLE_GAP).sp
+                    ?: if (i == 0) (textHeight(style).value + TITLE_GAP + headerRoom).sp
                     else if (aiRunStart(doc, i) && line.isEmpty()) AI_HEADER.sp
                     // shortcut: the room goes on every row of a wrapped item, not only between items (Compose has no paragraph spacing).
                     else if (meta.type == BlockType.CHECK && !fourLine) (textHeight(style).value + CHECK_GAP).sp
@@ -501,6 +560,7 @@ internal fun NoteField(
     }
     val fontPx = styles.mapValues { (_, s) -> with(px) { s.fontSize.toPx() } }
     val bodyFont = with(px) { JType.body.fontSize.toPx() }
+    if (underTitle != null && !titleOneRow) Box(Modifier.padding(bottom = 4.dp)) { underTitle() }
     Box(modifier.fillMaxWidth().onSizeChanged { pageWidth = it.width }) {
         BasicTextField(
             value = vm.value,
@@ -514,7 +574,10 @@ internal fun NoteField(
             textStyle = (if (doc.text.isEmpty()) styles.getValue(BlockType.TITLE) else styles.getValue(BlockType.BODY)).copy(color = jc.ink),
             cursorBrush = SolidColor(Color.Transparent),
             visualTransformation = { TransformedText(annotated, OffsetMapping.Identity) },
-            onTextLayout = { layout = it },
+            onTextLayout = { l ->
+                layout = l
+                titleOneRow = l.lineCount == 0 || l.getLineForOffset((doc.texts.firstOrNull()?.length ?: 1).minus(1).coerceAtLeast(0)) == 0
+            },
             modifier = Modifier.fillMaxWidth()
                 // The note's paper, under the text and lined up with it.
                 .drawBehind {
@@ -554,7 +617,7 @@ internal fun NoteField(
                             down.consume()
                             up.consume()
                             try { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(web.second))) } catch (_: android.content.ActivityNotFoundException) {
-                                Toast.makeText(context, "No app on this phone can open web links.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.note_field_no_app_on_this_phone), Toast.LENGTH_SHORT).show()
                             }
                             return@awaitEachGesture
                         }
@@ -683,7 +746,7 @@ internal fun NoteField(
                 },
         )
         if (doc.texts.first().isEmpty()) {
-            Text("Title", style = styles.getValue(BlockType.TITLE).copy(color = muted))
+            Text(stringResource(R.string.note_field_title), style = styles.getValue(BlockType.TITLE).copy(color = muted))
         }
         val l = layout
         fixing?.takeIf { l != null && it.end <= l.layoutInput.text.length }?.let { m ->
@@ -722,7 +785,7 @@ internal fun NoteField(
                     Text(g.message, style = JType.small, color = jc.muted)
                     if (g.replacements.isNotEmpty()) Row(Modifier.offset(x = (-8).dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         g.replacements.take(3).forEach { fix ->
-                            TextAction(fix.ifBlank { "Remove" }, {
+                            TextAction(fix.ifBlank { stringResource(R.string.common_remove) }, {
                                 grammarFix = null
                                 val t = vm.value.text
                                 if (t.regionMatches(g.start, g.original, 0, g.original.length)) {
@@ -742,10 +805,10 @@ internal fun NoteField(
         if (math != null && l != null && sel.start <= l.layoutInput.text.length) {
             val at = l.getCursorRect(sel.start)
             val (label, spoken) = when (math) {
-                is MathSuggestion.Answer -> math.text to "Answer ${math.text}. Tap to add it."
-                is MathSuggestion.Solution -> math.text to "${math.text}. Tap to add it."
-                is MathSuggestion.Solved -> math.text to "${math.text}. Tap to add it."
-                is MathSuggestion.Graph -> "Show graph" to "Show graph"
+                is MathSuggestion.Answer -> math.text to stringResource(R.string.note_field_answer_tap_to_add_it, math.text)
+                is MathSuggestion.Solution -> math.text to stringResource(R.string.note_field_tap_to_add_it, math.text)
+                is MathSuggestion.Solved -> math.text to stringResource(R.string.note_field_tap_to_add_it, math.text)
+                is MathSuggestion.Graph -> stringResource(R.string.note_field_show_graph) to stringResource(R.string.note_field_show_graph)
             }
             Popup(offset = IntOffset((at.right + with(density) { 6.dp.toPx() }).toInt(), (at.center.y - with(density) { 22.dp.toPx() }).toInt())) {
                 Box(Modifier.clip(JShape.sm).background(jc.accent.copy(alpha = 0.12f)).semantics { contentDescription = spoken }) {
@@ -783,14 +846,19 @@ internal fun NoteField(
             forEachLineBounds(doc, l) { i, top, bottom, firstBottom ->
                 val meta = doc.lines[i]
                 number = if (meta.type == BlockType.NUMBERED) number + 1 else 0
+                if (i == 0 && underTitle != null && titleOneRow) Box(
+                    Modifier.offset { IntOffset(0, (top + textHeight(styles.getValue(BlockType.TITLE)).toPx() + TITLE_GAP.sp.toPx() / 2).toInt()) }
+                        .fillMaxWidth().onSizeChanged { underTitlePx = it.height },
+                ) { underTitle() }
+                if (foldedLines.getOrNull(i) == true) return@forEachLineBounds
                 if (aiRunStart(doc, i) && !vm.readOnly) {
                     // Hide / Remove on the card's badge line, at the right.
                     Row(
                         Modifier.offset { IntOffset(0, (top + firstBottom).toInt() / 2 - 18.dp.roundToPx()) }.fillMaxWidth().height(36.dp),
                         horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconAction(if (meta.folded) Ico.EYE else Ico.EYE_OFF, if (meta.folded) "Show AI text" else "Hide AI text", { vm.toggleAiFold(i) }, color = jc.muted, size = 18.dp)
-                        IconAction(Ico.TRASH, "Remove AI text", { vm.removeAiCard(i) }, color = jc.muted, size = 18.dp)
+                        IconAction(if (meta.folded) Ico.EYE else Ico.EYE_OFF, if (meta.folded) stringResource(R.string.note_field_show_ai_text) else stringResource(R.string.note_field_hide_ai_text), { vm.toggleAiFold(i) }, color = jc.muted, size = 18.dp)
+                        IconAction(Ico.TRASH, stringResource(R.string.note_field_remove_ai_text), { vm.removeAiCard(i) }, color = jc.muted, size = 18.dp)
                     }
                 }
                 meta.table?.let { t ->
@@ -832,7 +900,7 @@ internal fun NoteField(
                             if (d != null) { if (!vm.readOnly) onOpenDrawing(i, d); return@AttachmentCard }
                             if (a.isImage) { onViewPhoto(meta.id); return@AttachmentCard }
                             try { context.startActivity(vm.files.viewIntent(a)) } catch (_: android.content.ActivityNotFoundException) {
-                                Toast.makeText(context, "No app on this phone can open this file.", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.note_field_no_app_on_this_phone_2), Toast.LENGTH_SHORT).show()
                             }
                         },
                         onRemove = if (vm.readOnly) null else ({ vm.removeAttachment(i) }),
@@ -853,7 +921,7 @@ internal fun NoteField(
                 }
                 if (meta.type == BlockType.CHECK) meta.due?.let { due ->
                     // The due date at the end of the task's last row, where there's room for it.
-                    val label = com.margin.app.data.dueLabel(due)
+                    val label = dueText(context, due)
                     val color = when { meta.checked -> muted; due < todayDay -> danger; due == todayDay -> aiTint; else -> muted }
                     val measured = dueMeasurer.measure(label, JType.caption)
                     val row = l.getLineForOffset(lineStarts[i] + doc.texts[i].length)
@@ -862,34 +930,53 @@ internal fun NoteField(
                         val y = (l.getLineTop(row) + l.getLineBottom(row)) / 2 - measured.size.height / 2
                         Text(
                             label, Modifier.offset { IntOffset(l.size.width - measured.size.width, y.toInt()) }
-                                .semantics { contentDescription = "Due $label" },
+                                .semantics { contentDescription = context.getString(R.string.note_field_due, label) },
                             style = JType.caption, color = color, maxLines = 1,
                         )
                     }
+                }
+                if (meta.type == BlockType.CHECK && doc.texts[i].isEmpty() && i == doc.lines.lastIndex && !meta.checked) {
+                    val x = l.getHorizontalPosition(lineStarts[i], true)
+                    Box(
+                        Modifier.offset { IntOffset(x.toInt(), top.toInt()) }.height(with(density) { (firstBottom - top).toDp() }),
+                        contentAlignment = Alignment.CenterStart,
+                    ) { Text(stringResource(R.string.note_field_add_item), style = styles.getValue(BlockType.CHECK).copy(color = muted)) }
                 }
                 if (meta.type !in MARKER_TYPES) return@forEachLineBounds
                 val style = styles.getValue(meta.type)
                 // Markers line up with the first row of a wrapped line.
                 val firstRow = firstBottom - top
+                val adding = meta.type == BlockType.CHECK && doc.texts[i].isEmpty() && i == doc.lines.lastIndex && !meta.checked
+                val tick = meta.type == BlockType.CHECK && !adding
+                // A task's whole gutter, every row of it, takes the tap: the circle alone is too small a target.
                 Box(
-                    contentAlignment = Alignment.CenterStart,
-                    modifier = Modifier
+                    Modifier
                         .offset { IntOffset(leadOf(meta).sp.roundToPx(), top.toInt()) }
-                        .size(with(density) { GUTTER.toDp() }, with(density) { minOf(firstRow, bottom - top).toDp() }),
-                ) {
+                        .size(with(density) { GUTTER.toDp() }, with(density) { (if (tick) bottom - top else minOf(firstRow, bottom - top)).toDp() })
+                        .then(
+                            if (tick) Modifier.clickable(
+                                remember { MutableInteractionSource() }, androidx.compose.material3.ripple(bounded = false, radius = 20.dp),
+                                enabled = !vm.trashed, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) },
+                            ).semantics { contentDescription = if (meta.checked) context.getString(R.string.note_field_checked) else context.getString(R.string.note_field_not_checked) } else Modifier,
+                        ),
+                    contentAlignment = Alignment.TopStart,
+                ) { Box(Modifier.height(with(density) { minOf(firstRow, bottom - top).toDp() }), contentAlignment = Alignment.CenterStart) {
                     when (meta.type) {
                         BlockType.BULLET -> Text("•", style = style)
                         BlockType.DASHED -> Text("–", style = style)
                         BlockType.NUMBERED -> Text("$number.", style = style)
                         // Sized to the line: at a small text size a fixed 22dp circle is taller than the line and they overlap.
-                        else -> CheckCircle(
-                            meta.checked,
+                        // An empty task at the end reads as the place to add one: a plus and an "Add item" hint.
+                        else -> if (adding) Box(
+                            Modifier.size(with(density) { minOf(firstRow * 0.8f, GUTTER.toPx() * 0.75f).toDp() }.coerceAtMost(22.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) { JIcon(Ico.PLUS, jc.accent, size = 18.dp, stroke = 2.2f) }
+                        else CheckCircle(
+                            meta.checked, soft = true,
                             size = with(density) { minOf(firstRow * 0.8f, GUTTER.toPx() * 0.75f).toDp() }.coerceAtMost(22.dp),
-                            modifier = Modifier.clip(CircleShape).clickable(enabled = !vm.trashed, role = Role.Checkbox, onClick = tapped { vm.toggleChecked(i) })
-                                .semantics { contentDescription = if (meta.checked) "Checked" else "Not checked" },
                         )
                     }
-                }
+                } }
             }
         }
     }
@@ -911,7 +998,7 @@ internal fun linkCardHeight(rows: Int) = LINK_CARD_ROW * rows + LINK_CARD_PADDIN
  * Lines that are nothing but a link to an existing note (not the title, not a list item), with the note and the
  * lines its card shows: its first lines of text, or why there are none.
  */
-internal fun linkPreviewLines(doc: EditorDoc, notes: List<NoteEntity>): Map<Int, Pair<NoteEntity, List<String>>> {
+internal fun linkPreviewLines(context: android.content.Context, doc: EditorDoc, notes: List<NoteEntity>): Map<Int, Pair<NoteEntity, List<String>>> {
     val out = HashMap<Int, Pair<NoteEntity, List<String>>>()
     doc.texts.forEachIndexed { i, text ->
         val meta = doc.lines[i]
@@ -920,9 +1007,9 @@ internal fun linkPreviewLines(doc: EditorDoc, notes: List<NoteEntity>): Map<Int,
             ?: return@forEachIndexed
         val note = resolveLink(link.second, notes) ?: return@forEachIndexed
         val rows = when {
-            note.isLocked -> listOf("Locked note")
+            note.isLocked -> listOf(context.getString(R.string.note_field_locked_note))
             else -> note.blocks.drop(1).filter { it.attachment == null && it.plainText.isNotBlank() }.flatMap { it.plainText.lines() }.take(LINK_CARD_ROWS).map { it.trim() }
-                .ifEmpty { listOf(if (note.blocks.any { it.attachment != null }) "Attachments only" else "No text yet") }
+                .ifEmpty { listOf(if (note.blocks.any { it.attachment != null }) context.getString(R.string.note_field_attachments_only) else context.getString(R.string.note_field_no_text_yet)) }
         }
         out[i] = note to rows
     }
@@ -998,15 +1085,16 @@ internal fun rememberDrawings(doc: EditorDoc, files: com.margin.app.data.Attachm
 /** A drawing as part of the text: ink on the page, no card. Tap to edit it. */
 @Composable
 internal fun InlineDrawingLine(d: Drawing, a: Attachment, onOpen: () -> Unit, onRemove: (() -> Unit)?, modifier: Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Box(
         modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onOpen)
-            .semantics { contentDescription = "Drawing. Tap to edit it." },
+            .semantics { contentDescription = context.getString(R.string.note_field_drawing_tap_to_edit_it) },
     ) {
         InlineDrawing(d, Modifier.fillMaxSize())
         if (onRemove != null) {
             Box(
                 Modifier.align(Alignment.TopEnd).size(28.dp).clip(CircleShape).background(jc.surface)
-                    .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = "Remove ${a.name}" },
+                    .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = context.getString(R.string.note_field_remove, a.name) },
                 contentAlignment = Alignment.Center,
             ) { JIcon(Ico.CLOSE, jc.muted, size = 12.dp, stroke = 2.6f) }
         }
@@ -1039,9 +1127,9 @@ internal fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?
             modifier.clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) {
                 val u = url ?: return@clickable
                 try { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u))) } catch (_: android.content.ActivityNotFoundException) {
-                    Toast.makeText(context, "No app on this phone can open web links.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.note_field_no_app_on_this_phone), Toast.LENGTH_SHORT).show()
                 }
-            }.semantics { contentDescription = a.name + ", web link" },
+            }.semantics { contentDescription = context.getString(R.string.note_field_web_link_desc, a.name) },
         ) {
             Row(Modifier.fillMaxSize().padding(end = 14.dp, start = if (thumb == null) 14.dp else 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (thumb != null) Image(thumb, null, Modifier.fillMaxHeight().aspectRatio(1f), contentScale = ContentScale.Crop)
@@ -1050,7 +1138,7 @@ internal fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?
                     Text(a.name, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     preview?.description?.let { Text(it, style = JType.small, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     Text(
-                        url?.let(::hostOf) ?: if (file.exists()) "" else "Not downloaded yet. It arrives with the next sync.",
+                        url?.let(::hostOf) ?: if (file.exists()) "" else stringResource(R.string.note_field_not_downloaded_yet_it_arrives),
                         style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
@@ -1092,7 +1180,7 @@ internal fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?
             Column(Modifier.weight(1f)) {
                 Text(a.name, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    if (file.exists()) a.mime.substringAfter('/') else "Not downloaded yet. It arrives with the next sync.",
+                    if (file.exists()) a.mime.substringAfter('/') else stringResource(R.string.note_field_not_downloaded_yet_it_arrives),
                     style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1103,9 +1191,10 @@ internal fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?
 
 @Composable
 internal fun RemoveButton(a: Attachment, onRemove: () -> Unit, modifier: Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Box(
         modifier.padding(6.dp).size(28.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f))
-            .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = "Remove ${a.name}" },
+            .clickable(role = Role.Button, onClick = onRemove).semantics { contentDescription = context.getString(R.string.note_field_remove, a.name) },
         contentAlignment = Alignment.Center,
     ) { JIcon(Ico.CLOSE, Color.White, size = 12.dp, stroke = 2.6f) }
 }

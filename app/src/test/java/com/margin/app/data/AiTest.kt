@@ -1,5 +1,7 @@
 package com.margin.app.data
 
+import com.margin.app.R
+
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -48,11 +50,11 @@ class AiTest {
     }
 
     @Test fun errorsNeverShowTheBody() {
-        assertEquals("API key rejected. Check the key.", aiErrorText(401, "secret"))
-        assertEquals("API key rejected. Check the key.", aiErrorText(400, """{"error":{"status":"API_KEY_INVALID"}}"""))
-        assertEquals("Model unavailable. Check the model name.", aiErrorText(404, ""))
-        assertEquals("Provider limit reached. Check your provider account or try later.", aiErrorText(429, ""))
-        assertEquals("Provider error (500). Try again later.", aiErrorText(500, "secret"))
+        assertEquals(R.string.ai_err_key_rejected, aiErrorRes(401, "secret"))
+        assertEquals(R.string.ai_err_key_rejected, aiErrorRes(400, """{"error":{"status":"API_KEY_INVALID"}}"""))
+        assertEquals(R.string.ai_err_model, aiErrorRes(404, ""))
+        assertEquals(R.string.ai_err_limit, aiErrorRes(429, ""))
+        assertEquals(R.string.ai_err_provider, aiErrorRes(500, "secret"))
     }
 
     @Test fun dropsReasoningInTheAnswer() {

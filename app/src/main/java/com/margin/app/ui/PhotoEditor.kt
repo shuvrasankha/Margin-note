@@ -73,9 +73,11 @@ import java.io.File
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
-private enum class PhotoTool(val label: String, val icon: String) {
-    CROP("Crop", Ico.CROP), ROTATE("Rotate", Ico.ROTATE), ADJUST("Adjust", Ico.SETTINGS), RESIZE("Resize", Ico.RESIZE)
+private enum class PhotoTool(val label: String, @androidx.annotation.StringRes val labelRes: Int, val icon: String) {
+    CROP("Crop", R.string.photo_tool_crop, Ico.CROP), ROTATE("Rotate", R.string.photo_tool_rotate, Ico.ROTATE), ADJUST("Adjust", R.string.photo_tool_adjust, Ico.SETTINGS), RESIZE("Resize", R.string.photo_tool_resize, Ico.RESIZE)
 }
 
 /** Crop shapes: width to height, or null for any shape. "Original" is the photo's own shape. */
@@ -179,12 +181,12 @@ internal fun PhotoEditor(file: File, name: String, onCancel: () -> Unit, onSave:
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextAction("Cancel", onCancel, color = Color.White, enabled = !saving)
-                Text("Edit photo", Modifier.weight(1f), style = JType.rowTitle, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                TextAction("Reset", { edit = PhotoEdit(); shape = null }, color = Color.White, enabled = !saving && !edit.isIdentity)
+                TextAction(stringResource(R.string.common_cancel), onCancel, color = Color.White, enabled = !saving)
+                Text(stringResource(R.string.photo_editor_edit_photo), Modifier.weight(1f), style = JType.rowTitle, color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                TextAction(stringResource(R.string.common_reset), { edit = PhotoEdit(); shape = null }, color = Color.White, enabled = !saving && !edit.isIdentity)
                 if (saving) Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = jc.accent, strokeWidth = 2.dp)
-                } else TextAction("Save", {
+                } else TextAction(stringResource(R.string.common_save), {
                     saving = true
                     onSave(edit) { saving = false }
                 }, bold = true, enabled = source != null)
@@ -193,7 +195,7 @@ internal fun PhotoEditor(file: File, name: String, onCancel: () -> Unit, onSave:
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val image = preview
                 if (image != null) PhotoCanvas(image, edit, tool == PhotoTool.CROP, shapeOnPhoto(shape, image.width, image.height)) { edit = edit.copy(crop = it) }
-                else if (failed) Text("Couldn't open the photo.", color = Color.White, style = JType.secondary)
+                else if (failed) Text(stringResource(R.string.photo_editor_couldnt_open_the_photo), color = Color.White, style = JType.secondary)
                 else CircularProgressIndicator(Modifier.size(28.dp), color = Color.White, strokeWidth = 2.dp)
             }
 
@@ -203,7 +205,7 @@ internal fun PhotoEditor(file: File, name: String, onCancel: () -> Unit, onSave:
                     when (tool) {
                         PhotoTool.CROP -> PillRow {
                             CROP_SHAPES.forEach { (label, s) ->
-                                DarkPill(label, shape == s) {
+                                DarkPill(pillLabel(label), shape == s) {
                                     shape = s
                                     if (img != null) edit = edit.copy(crop = cropToAspect(if (s == null) edit.crop else CropRect.FULL, shapeOnPhoto(s, img.width, img.height)))
                                 }
@@ -216,18 +218,18 @@ internal fun PhotoEditor(file: File, name: String, onCancel: () -> Unit, onSave:
                                     val w = img?.height ?: return e; val h = img.width
                                     return if (shape == null) e else e.copy(crop = cropToAspect(CropRect.FULL, shapeOnPhoto(shape, w, h)))
                                 }
-                                IconAction(Ico.ROTATE_LEFT, "Turn left", { edit = turned(edit.turnedLeft()) }, color = Color.White)
-                                IconAction(Ico.ROTATE, "Turn right", { edit = turned(edit.turnedRight()) }, color = Color.White)
-                                IconAction(Ico.FLIP_H, "Flip left to right", { edit = edit.flippedH() }, color = Color.White)
-                                IconAction(Ico.FLIP_V, "Flip upside down", { edit = edit.flippedV() }, color = Color.White)
+                                IconAction(Ico.ROTATE_LEFT, stringResource(R.string.photo_editor_turn_left), { edit = turned(edit.turnedLeft()) }, color = Color.White)
+                                IconAction(Ico.ROTATE, stringResource(R.string.photo_editor_turn_right), { edit = turned(edit.turnedRight()) }, color = Color.White)
+                                IconAction(Ico.FLIP_H, stringResource(R.string.photo_editor_flip_left_to_right), { edit = edit.flippedH() }, color = Color.White)
+                                IconAction(Ico.FLIP_V, stringResource(R.string.photo_editor_flip_upside_down), { edit = edit.flippedV() }, color = Color.White)
                             }
-                            EditSlider("Straighten", "${edit.straighten.roundToInt()}°", edit.straighten, -45f..45f, { edit = edit.copy(straighten = (it * 2).roundToInt() / 2f) }) {
+                            EditSlider(stringResource(R.string.photo_editor_straighten), "${edit.straighten.roundToInt()}°", edit.straighten, -45f..45f, { edit = edit.copy(straighten = (it * 2).roundToInt() / 2f) }) {
                                 edit = edit.copy(straighten = 0f)
                             }
                         }
                         PhotoTool.ADJUST -> {
                             var which by remember { mutableStateOf(0) }
-                            val names = listOf("Brightness", "Contrast", "Saturation")
+                            val names = listOf(stringResource(R.string.photo_editor_brightness), stringResource(R.string.photo_editor_contrast), stringResource(R.string.photo_editor_saturation))
                             val values = listOf(edit.brightness, edit.contrast, edit.saturation)
                             fun set(i: Int, v: Float) {
                                 edit = when (i) { 0 -> edit.copy(brightness = v); 1 -> edit.copy(contrast = v); else -> edit.copy(saturation = v) }
@@ -239,11 +241,11 @@ internal fun PhotoEditor(file: File, name: String, onCancel: () -> Unit, onSave:
                             }
                         }
                         PhotoTool.RESIZE -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            PillRow { SIZES.forEach { (label, s) -> DarkPill(label, edit.scale == s) { edit = edit.copy(scale = s) } } }
+                            PillRow { SIZES.forEach { (label, s) -> DarkPill(pillLabel(label), edit.scale == s) { edit = edit.copy(scale = s) } } }
                             Spacer(Modifier.height(12.dp))
                             source?.let { s ->
                                 val (w, h) = editedSize(s.width, s.height, edit)
-                                Text("$w × $h px", style = JType.secondary, color = Color.White.copy(alpha = 0.75f))
+                                Text(stringResource(R.string.photo_size_px, w.toString(), h.toString()), style = JType.secondary, color = Color.White.copy(alpha = 0.75f))
                             }
                         }
                     }
@@ -262,6 +264,7 @@ internal fun PhotoEditor(file: File, name: String, onCancel: () -> Unit, onSave:
  */
 @Composable
 private fun PhotoCanvas(image: ImageBitmap, edit: PhotoEdit, cropping: Boolean, aspect: Float?, onCrop: (CropRect) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var area by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     val pad = with(density) { 24.dp.toPx() }
@@ -277,7 +280,7 @@ private fun PhotoCanvas(image: ImageBitmap, edit: PhotoEdit, cropping: Boolean, 
 
     Canvas(
         Modifier.fillMaxSize().onSizeChanged { area = it }
-            .semantics { contentDescription = if (cropping) "Photo with crop box. Drag the corners or sides to crop." else "Photo" }
+            .semantics { contentDescription = if (cropping) context.getString(R.string.photo_editor_photo_with_crop_box_drag) else context.getString(R.string.photo_editor_photo) }
             // The left handles sit near the screen edge, where a drag would otherwise be the Back gesture.
             .then(if (!cropping) Modifier else Modifier.systemGestureExclusion { Rect(0f, photo.top, it.size.width.toFloat(), photo.bottom) }.pointerInput(Unit) {
                 awaitEachGesture {
@@ -357,11 +360,12 @@ private fun DarkPill(label: String, selected: Boolean, onClick: () -> Unit) {
 /** A slider from [range] with its [name] and [shown] value; tapping the value sets it back with [onReset]. */
 @Composable
 private fun EditSlider(name: String, shown: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit, onReset: () -> Unit) {
+    val sliderDesc = stringResource(R.string.photo_slider_desc, name, shown)
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(name, Modifier.weight(1f), style = JType.small, color = Color.White.copy(alpha = 0.75f))
             Text(shown, Modifier.clickable(role = Role.Button, onClick = onReset).padding(horizontal = 6.dp, vertical = 2.dp)
-                .semantics { contentDescription = "$name $shown, tap to reset" }, style = JType.small, color = Color.White)
+                .semantics { contentDescription = sliderDesc }, style = JType.small, color = Color.White)
         }
         Slider(
             value = value, onValueChange = onChange, valueRange = range,
@@ -380,6 +384,15 @@ private fun ToolTab(t: PhotoTool, selected: Boolean, onClick: () -> Unit) {
     ) {
         JIcon(t.icon, color)
         Spacer(Modifier.height(3.dp))
-        Text(t.label, style = JType.small, color = color)
+        Text(stringResource(t.labelRes), style = JType.small, color = color)
     }
+}
+
+/** A crop or size pill's label in the app's language; ratios and percentages stay as they are. */
+@Composable
+private fun pillLabel(key: String): String = when (key) {
+    "Free" -> stringResource(R.string.photo_shape_free)
+    "Original" -> stringResource(R.string.photo_shape_original)
+    "Square" -> stringResource(R.string.photo_shape_square)
+    else -> key
 }

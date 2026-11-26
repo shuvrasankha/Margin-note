@@ -1,5 +1,6 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -67,23 +68,25 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /** "Today, 6:00 PM", "Tomorrow, 9:00 AM" or "Mon, Nov 17, 9:00 AM". */
 fun reminderLabel(context: Context, time: Long): String {
     val clock = DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_TIME)
     val day = DAY_MS
     return when {
-        DateUtils.isToday(time) -> "Today, $clock"
-        DateUtils.isToday(time - day) -> "Tomorrow, $clock"
+        DateUtils.isToday(time) -> context.getString(R.string.reminder_today, clock)
+        DateUtils.isToday(time - day) -> context.getString(R.string.reminder_tomorrow, clock)
         else -> DateUtils.formatDateTime(
             context, time, DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY or DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH,
-        ) + ", " + clock
+        ).let { date -> context.getString(R.string.reminder_date_at, date, clock) }
     }
 }
 
 /** [reminderLabel] with how it repeats: "Tomorrow, 9:00 AM · Weekly". */
 fun reminderLabel(context: Context, time: Long, repeat: Repeat): String =
-    reminderLabel(context, time) + if (repeat == Repeat.NEVER) "" else " · ${repeat.label}"
+    if (repeat == Repeat.NEVER) reminderLabel(context, time) else context.getString(R.string.reminder_with_repeat, reminderLabel(context, time), context.getString(repeat.labelRes))
 
 private const val DAY_MS = 24 * 60 * 60 * 1000L
 
@@ -116,11 +119,11 @@ fun ReminderDialog(
                 .padding(vertical = 16.dp),
         ) {
             Text(
-                if (!custom) "Remind me" else if (pickedDate == null) "Pick a day" else "Pick a time",
+                if (!custom) stringResource(R.string.reminder_remind_me) else if (pickedDate == null) stringResource(R.string.reminder_pick_a_day) else stringResource(R.string.reminder_pick_a_time),
                 Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink,
             )
             current?.let {
-                if (!custom) Text("Set for ${reminderLabel(context, it, currentRepeat)}", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+                if (!custom) Text(stringResource(R.string.reminder_set_for, reminderLabel(context, it, currentRepeat)), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
             }
             if (!custom) RepeatChips(repeat) { repeat = it }
             if (!custom && calendarFor != null) Box(Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) {
@@ -131,35 +134,43 @@ fun ReminderDialog(
                     Column(Modifier.padding(top = 4.dp)) {
                         // Only the repeat changed: keep the time already set.
                         if (current != null && repeat != currentRepeat && current > System.currentTimeMillis()) {
-                            ChoiceRow(Ico.CHECK, "Keep this time", reminderLabel(context, current)) { onPick(current, repeat, toCalendar) }
+                            ChoiceRow(Ico.CHECK, stringResource(R.string.reminder_keep_this_time), reminderLabel(context, current)) { onPick(current, repeat, toCalendar) }
                         }
                         reminderChoices(now).forEach { (label, at) ->
+                            // reminderChoices() names them in English; those names are the keys here.
                             val icon = when (label) {
                                 "This evening" -> Ico.SUNSET
                                 "Tomorrow morning" -> Ico.SUN
                                 "Next week" -> Ico.CALENDAR
                                 else -> Ico.CLOCK
                             }
-                            ChoiceRow(icon, label, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli(), repeat, toCalendar) }
+                            val shown = when (label) {
+                                "In 1 hour" -> stringResource(R.string.reminder_in_1_hour)
+                                "This evening" -> stringResource(R.string.reminder_this_evening)
+                                "Tomorrow morning" -> stringResource(R.string.reminder_tomorrow_morning)
+                                "Next week" -> stringResource(R.string.reminder_next_week)
+                                else -> label
+                            }
+                            ChoiceRow(icon, shown, reminderLabel(context, at.toInstant().toEpochMilli())) { onPick(at.toInstant().toEpochMilli(), repeat, toCalendar) }
                         }
-                        ChoiceRow(Ico.CALENDAR_PICK, "Pick date & time…", null) { custom = true }
-                        onPlace?.let { ChoiceRow(Ico.PLACE, if (place == null) "At a place…" else "Change place…", place?.label, onClick = it) }
-                        if (current != null) ChoiceRow(Ico.TRASH, "Remove reminder", null, danger = true, onClick = onRemove)
+                        ChoiceRow(Ico.CALENDAR_PICK, stringResource(R.string.reminder_pick_date_time), null) { custom = true }
+                        onPlace?.let { ChoiceRow(Ico.PLACE, if (place == null) stringResource(R.string.reminder_at_a_place) else stringResource(R.string.reminder_change_place), place?.label, onClick = it) }
+                        if (current != null) ChoiceRow(Ico.TRASH, stringResource(R.string.reminder_remove_reminder), null, danger = true, onClick = onRemove)
                     }
                     if (!onTime) {
                         Text(
-                            "Android may deliver reminders a few minutes late unless Margin is allowed to set alarms.",
+                            stringResource(R.string.reminder_android_may_deliver_reminders_a),
                             Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp), style = JType.small, color = jc.muted,
                         )
                         Box(Modifier.padding(start = 12.dp)) {
-                            TextAction("Allow alarms", {
+                            TextAction(stringResource(R.string.reminder_allow_alarms), {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) runCatching {
                                     context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
                                 }
                             })
                         }
                     }
-                    Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) { TextAction("Cancel", onDismiss) }
+                    Box(Modifier.fillMaxWidth().padding(end = 12.dp), contentAlignment = Alignment.CenterEnd) { TextAction(stringResource(R.string.common_cancel), onDismiss) }
                 }
                 pickedDate == null -> {
                     val today = LocalDate.now()
@@ -181,8 +192,8 @@ fun ReminderDialog(
                         ),
                     )
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
-                        TextAction("Back", { custom = false })
-                        TextAction("Next", {
+                        TextAction(stringResource(R.string.common_back), { custom = false })
+                        TextAction(stringResource(R.string.common_next), {
                             state.selectedDateMillis?.let { pickedDate = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
                         }, bold = true, enabled = state.selectedDateMillis != null)
                     }
@@ -194,10 +205,10 @@ fun ReminderDialog(
                     Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) { TimePicker(state, colors = colors) }
                     error?.let { Text(it, Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.danger) }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.End) {
-                        TextAction("Back", { pickedDate = null; error = null })
-                        TextAction("Set reminder", {
+                        TextAction(stringResource(R.string.common_back), { pickedDate = null; error = null })
+                        TextAction(stringResource(R.string.reminder_set_reminder), {
                             val at = ZonedDateTime.of(pickedDate, LocalTime.of(state.hour, state.minute), ZoneId.systemDefault()).toInstant().toEpochMilli()
-                            if (at <= System.currentTimeMillis()) error = "That time has passed. Pick a later one."
+                            if (at <= System.currentTimeMillis()) error = context.getString(R.string.reminder_that_time_has_passed_pick)
                             else onPick(at, repeat, toCalendar)
                         }, bold = true)
                     }
@@ -214,11 +225,11 @@ private fun RepeatChips(selected: Repeat, onSelect: (Repeat) -> Unit) {
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Repeat", style = JType.small, color = jc.muted)
+        Text(stringResource(R.string.reminder_repeat), style = JType.small, color = jc.muted)
         Repeat.entries.forEach { r ->
             val on = r == selected
             Text(
-                r.label,
+                stringResource(r.labelRes),
                 Modifier.clip(JShape.md).background(if (on) jc.accent else jc.bg)
                     .border(1.dp, if (on) jc.accent else jc.line, JShape.md)
                     .clickable(role = Role.RadioButton) { onSelect(r) }.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -251,7 +262,7 @@ private data class ReminderEntry(val note: NoteEntity?, val at: Long, val repeat
 @Composable
 fun RemindersScreen(
     notes: List<NoteEntity>, reminders: Map<String, Long>, repeats: Map<String, Repeat>, onOpen: (NoteEntity) -> Unit, onBack: () -> Unit,
-    backLabel: String = "Folders", onTime: Boolean = true, onJournal: () -> Unit = {},
+    backLabel: String = stringResource(R.string.reminder_library), onTime: Boolean = true, onJournal: () -> Unit = {},
     onSet: (NoteEntity, Long, Repeat) -> Unit = { _, _, _ -> }, onRemove: (NoteEntity) -> Unit = {},
     /** Makes the note for a new reminder and returns its id. */
     onCreate: (title: String, details: String, at: Long, repeat: Repeat) -> String = { _, _, _, _ -> "" },
@@ -291,24 +302,24 @@ fun RemindersScreen(
         }
     }
     fun open(e: ReminderEntry) { e.note?.let(onOpen) ?: onJournal() }
-    val glass = rememberGlass()
+    val pageList = rememberLazyListState()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar(backLabel, onBack, color = jc.page, glass = glass) },
-        floatingActionButton = { if (rows.isNotEmpty()) FloatingAction(Ico.PLUS, "New reminder", glass) { creating = true } },
+        topBar = { NavBar(backLabel, onBack, color = jc.page) },
+        floatingActionButton = { if (rows.isNotEmpty()) FloatingAction(Ico.PLUS, stringResource(R.string.reminder_new_reminder)) { creating = true } },
     ) { padding ->
-        LazyColumn(Modifier.glassBody(glass, padding).fillMaxSize(), contentPadding = glassPadding(glass, padding)) {
-            item { PageTitle("Reminders") }
+        LazyColumn(state = pageList, modifier = Modifier.padding(padding).fillMaxSize()) {
+            item { PageTitle(stringResource(R.string.reminder_reminders)) }
             if (!onTime && rows.isNotEmpty()) item {
                 // Without the exact-alarm permission Android batches alarms, so say so where it matters.
                 Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.md).glassFill(jc.card, JShape.md)
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.md).background(jc.card)
                         .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     IconTile(Ico.CLOCK, jc.danger)
-                    Text("Reminders may arrive a few minutes late.", Modifier.weight(1f), style = JType.small, color = jc.ink)
-                    TextAction("Allow", {
+                    Text(stringResource(R.string.reminder_reminders_may_arrive_a_few), Modifier.weight(1f), style = JType.small, color = jc.ink)
+                    TextAction(stringResource(R.string.common_allow), {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) runCatching {
                             context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")))
                         }
@@ -318,8 +329,8 @@ fun RemindersScreen(
             if (rows.isEmpty() && placeRows.isEmpty()) {
                 item {
                     BigEmpty(
-                        Ico.ALARM, "No reminders", "Make one here, or open a note and tap the alarm clock at the top to be reminded about it.",
-                        button = "New reminder", onButton = { creating = true },
+                        Ico.ALARM, stringResource(R.string.reminder_no_reminders), stringResource(R.string.reminder_add_one_here_or_tap),
+                        button = stringResource(R.string.reminder_new_reminder), onButton = { creating = true },
                     )
                 }
                 return@LazyColumn
@@ -330,21 +341,21 @@ fun RemindersScreen(
                 val next = rows.firstOrNull { it.at >= now } ?: rows.first()
                 val todayCount = rows.count { it.at >= now && group(it.at) == "Today" }
                 Column(
-                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).glassFill(jc.card, JShape.lg)
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().clip(JShape.lg).background(jc.card)
                         .clickable { open(next) }.padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         IconTile(Ico.ALARM, size = 48.dp)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(if (next.at >= now) countdown(next.at, now).let { c -> if (c.startsWith("in ")) "Next up · $c" else "Next up" } else "Missed", style = JType.caption, color = if (next.at >= now) jc.muted else jc.danger)
-                            Text(next.note?.displayTitle ?: "Write in your journal", style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(if (next.at >= now) countdown(next.at, now).let { c -> if (c.startsWith("in ")) stringResource(R.string.reminder_next_up, c) else stringResource(R.string.reminder_next_up_2) } else stringResource(R.string.reminder_missed), style = JType.caption, color = if (next.at >= now) jc.muted else jc.danger)
+                            Text(next.note?.displayTitle ?: stringResource(R.string.reminder_write_in_your_journal), style = JType.subheading, color = jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text(reminderLabel(context, next.at, next.repeat), style = JType.secondary, color = jc.accent, maxLines = 1)
                         }
                     }
                     // Counts worth showing: none at 0, and no row for a single one (the list below says as much).
                     val stats = listOf(
-                        todayCount to "Today", rows.count { it.at >= now } to "Coming up", rows.count { it.repeat != Repeat.NEVER } to "Repeating",
+                        todayCount to stringResource(R.string.common_today), rows.count { it.at >= now } to stringResource(R.string.reminder_coming_up), rows.count { it.repeat != Repeat.NEVER } to stringResource(R.string.reminder_repeating),
                     ).filter { it.first > 0 }
                     if (stats.size >= 2) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         stats.forEach { (n, label) -> StatTile("$n", label, Modifier.weight(1f)) }
@@ -354,14 +365,18 @@ fun RemindersScreen(
             rows.groupBy { group(it.at) }.forEach { (label, items) ->
                 item(key = "g:$label") {
                     Column(Modifier.animateItem(fadeInSpec = JMotion.standard(), placementSpec = JMotion.standard(), fadeOutSpec = JMotion.quick())) {
-                        SectionLabel(label)
+                        SectionLabel(when (label) {
+                            "Missed" -> stringResource(R.string.reminder_group_missed); "Today" -> stringResource(R.string.common_today)
+                            "Tomorrow" -> stringResource(R.string.common_tomorrow); "This week" -> stringResource(R.string.reminder_group_this_week)
+                            else -> stringResource(R.string.reminder_group_later)
+                        })
                         DividedCard(items, 60.dp) { e -> ReminderRow(e, missed = label == "Missed", onOpen = { open(e) }, onEdit = { editing = e }) }
                     }
                 }
             }
             if (placeRows.isNotEmpty()) item(key = "g:places") {
                 Column {
-                    SectionLabel("At a place")
+                    SectionLabel(stringResource(R.string.reminder_at_a_place_2))
                     DividedCard(placeRows, 60.dp) { (note, place) ->
                         Row(
                             Modifier.fillMaxWidth().clickable { onOpen(note) }.padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
@@ -370,9 +385,9 @@ fun RemindersScreen(
                             IconTile(Ico.PLACE)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(note.displayTitle, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(place.phrase, style = JType.secondary, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(place.phraseText(context), style = JType.secondary, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            IconAction(Ico.CLOSE, "Remove place reminder", { onRemovePlace(note) }, size = 20.dp)
+                            IconAction(Ico.CLOSE, stringResource(R.string.reminder_remove_place_reminder), { onRemovePlace(note) }, size = 20.dp)
                         }
                     }
                 }
@@ -417,18 +432,18 @@ private fun ReminderRow(e: ReminderEntry, missed: Boolean, onOpen: () -> Unit, o
     ) {
         IconTile(if (note == null) Ico.CALENDAR else Ico.ALARM, if (missed) jc.danger else jc.accent)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(note?.displayTitle ?: "Journal", style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(note?.displayTitle ?: stringResource(R.string.reminder_journal), style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(reminderLabel(context, e.at, e.repeat), style = JType.secondary, color = if (missed) jc.danger else jc.accent, maxLines = 1)
             val sub = when {
-                note == null -> "Daily reminder to write today's entry"
-                isHabit(note) -> "Habit"
+                note == null -> stringResource(R.string.reminder_daily_reminder_to_write_todays)
+                isHabit(note) -> stringResource(R.string.reminder_habit)
                 note.isLocked -> null
                 else -> note.snippet.takeIf { it.isNotBlank() }
             }
             sub?.let { Text(it, style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         // Habits and the journal set their reminder on their own screens, so only notes get the button.
-        if (note != null && !isHabit(note)) IconAction(Ico.CLOCK, "Change reminder", onEdit, size = 20.dp)
+        if (note != null && !isHabit(note)) IconAction(Ico.CLOCK, stringResource(R.string.reminder_change_reminder), onEdit, size = 20.dp)
         else Spacer(Modifier.width(12.dp))
     }
 }
@@ -453,17 +468,17 @@ private fun NewReminderDialog(onTime: Boolean, onDismiss: () -> Unit, onSave: (S
     androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New reminder") },
+        title = { Text(stringResource(R.string.reminder_new_reminder)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 androidx.compose.material3.OutlinedTextField(
                     title, { title = it }, Modifier.fillMaxWidth().focusRequester(focus), singleLine = true, shape = JShape.sm,
-                    label = { Text("Remind me to…") }, colors = passwordColors(),
+                    label = { Text(stringResource(R.string.reminder_remind_me_to)) }, colors = passwordColors(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
                 )
                 androidx.compose.material3.OutlinedTextField(
                     details, { details = it }, Modifier.fillMaxWidth(), minLines = 2, maxLines = 4, shape = JShape.sm,
-                    label = { Text("Details (optional)") }, colors = passwordColors(),
+                    label = { Text(stringResource(R.string.reminder_details_optional)) }, colors = passwordColors(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
                 )
                 Row(
@@ -473,20 +488,20 @@ private fun NewReminderDialog(onTime: Boolean, onDismiss: () -> Unit, onSave: (S
                 ) {
                     JIcon(Ico.CLOCK, jc.accent, size = 20.dp)
                     Column(Modifier.weight(1f)) {
-                        Text("When", style = JType.small, color = jc.muted)
+                        Text(stringResource(R.string.reminder_when), style = JType.small, color = jc.muted)
                         Text(reminderLabel(context, at, repeat), style = JType.item, color = jc.ink)
                     }
-                    Text("Change", style = JType.small, color = jc.accent)
+                    Text(stringResource(R.string.common_change), style = JType.small, color = jc.accent)
                 }
                 CalendarSwitch(toCalendar) { toCalendar = it }
             }
         },
         confirmButton = {
-            TextAction("Save", {
+            TextAction(stringResource(R.string.common_save), {
                 if (at <= System.currentTimeMillis()) picking = true else onSave(title.trim(), details.trim(), at, repeat, toCalendar)
             }, bold = true, enabled = title.isNotBlank())
         },
-        dismissButton = { TextAction("Cancel", onDismiss) },
+        dismissButton = { TextAction(stringResource(R.string.common_cancel), onDismiss) },
     )
     if (picking) ReminderDialog(
         current = null, currentRepeat = repeat, onTime = onTime,
@@ -523,10 +538,10 @@ private fun CalendarSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
     ) {
         JIcon(Ico.CALENDAR, jc.accent, size = 20.dp)
         Column(Modifier.weight(1f)) {
-            Text("Add to phone calendar", style = JType.item, color = jc.ink)
+            Text(stringResource(R.string.reminder_add_to_phone_calendar), style = JType.item, color = jc.ink)
             Text(
-                if (!on || allowed) "Also saves it as an event in your default calendar."
-                else "Calendar access is off, so your calendar app will open to save it.",
+                if (!on || allowed) stringResource(R.string.reminder_also_saves_it_as_an)
+                else stringResource(R.string.reminder_calendar_access_is_off_so),
                 style = JType.small, color = jc.muted,
             )
         }
@@ -544,18 +559,19 @@ internal fun reminderToCalendar(
 ) {
     // "today, 6:00 PM" and "tomorrow, …" read as words; a weekday keeps its capital ("Mon, Nov 23").
     val label = reminderLabel(context, at, repeat)
-    val said = "You'll be reminded " + if (label.startsWith("Today") || label.startsWith("Tomorrow")) label.replaceFirstChar { it.lowercaseChar() } else "on $label"
+    val said = if (DateUtils.isToday(at) || DateUtils.isToday(at - DAY_MS)) context.getString(R.string.reminder_said_relative, label.replaceFirstChar { it.lowercaseChar() })
+        else context.getString(R.string.reminder_said_on, label)
     fun toast(text: String, long: Boolean = false) = android.widget.Toast.makeText(context, text, if (long) android.widget.Toast.LENGTH_LONG else android.widget.Toast.LENGTH_SHORT).show()
     scope.launch {
         if (!toCalendar) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CalendarEvents.remove(context, noteId) }
-            toast("$said.")
+            toast(context.getString(R.string.reminder_said_sentence, said))
             return@launch
         }
         val name = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CalendarEvents.add(context, noteId, title, details, at, repeat) }
-        if (name != null) toast("$said, and it's in your calendar ($name).", long = true)
+        if (name != null) toast(context.getString(R.string.reminder_said_calendar, said, name), long = true)
         else {
-            toast("$said.")
+            toast(context.getString(R.string.reminder_said_sentence, said))
             runCatching { context.startActivity(CalendarEvents.insertIntent(title, details, at, repeat)) }
         }
     }

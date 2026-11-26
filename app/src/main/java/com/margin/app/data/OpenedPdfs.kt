@@ -1,5 +1,7 @@
 package com.margin.app.data
 
+import com.margin.app.R
+
 import android.content.Context
 import android.net.Uri
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -70,7 +72,7 @@ class OpenedPdfs @Inject constructor(
 
     suspend fun open(uri: Uri): PdfPlace {
         val (sha, size) = withContext(Dispatchers.IO) {
-            (context.contentResolver.openInputStream(uri) ?: throw IOException("Couldn't open the PDF")).use(::sha256)
+            (context.contentResolver.openInputStream(uri) ?: throw IOException(context.getString(R.string.opened_pdfs_cant_open))).use(::sha256)
         }
         val notes = repo.liveNotes().first()
         val known = prefs.getString("src:$sha", null)?.split('\n')?.takeIf { it.size == 2 }

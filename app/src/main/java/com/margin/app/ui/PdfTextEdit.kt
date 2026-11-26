@@ -82,6 +82,9 @@ import java.io.File
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 private const val ICON_BOLD = "M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"
 private const val ICON_SMALLER = "M4 18l4-11 4 11M5.5 14h5M15 12h6"
@@ -133,23 +136,23 @@ internal fun PdfTextEditor(file: File, sizes: List<Pair<Int, Int>>, startPage: I
 
     Dialog(onDismissRequest = cancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FullWindow()
-        Column(Modifier.fillMaxSize().backdrop(jc.page).statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Column(Modifier.fillMaxSize().background(jc.page).statusBarsPadding().navigationBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).background(jc.bg).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconAction(Ico.CLOSE, "Cancel", cancel)
+                IconAction(Ico.CLOSE, stringResource(R.string.common_cancel), cancel)
                 Column(Modifier.weight(1f)) {
-                    Text("Edit text", style = JType.rowTitle, color = jc.ink)
-                    Text(if (changes.isEmpty()) "No changes yet" else plural(changes.size, "change"), style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.pdf_text_edit_edit_text), style = JType.rowTitle, color = jc.ink)
+                    Text(if (changes.isEmpty()) stringResource(R.string.pdf_text_edit_no_changes_yet) else pluralStringResource(R.plurals.pdf_text_changes, changes.size, changes.size), style = JType.small, color = jc.muted)
                 }
-                TextAction("Save", { finish(); onSave(drafts.values.filter { it.changed }.map { it.edit() }) }, bold = true, enabled = changes.isNotEmpty())
+                TextAction(stringResource(R.string.common_save), { finish(); onSave(drafts.values.filter { it.changed }.map { it.edit() }) }, bold = true, enabled = changes.isNotEmpty())
                 Spacer(Modifier.width(8.dp))
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
             Text(
                 when {
-                    current != null -> "Type to change it. Clear it to remove the line."
-                    runs == null -> "Finding the text…"
-                    runs!!.isEmpty() -> "No text found on this page (it may be a scan). Tap anywhere to add text."
-                    else -> "Tap a line to change it, or tap an empty spot to add text. Pinch to zoom."
+                    current != null -> stringResource(R.string.pdf_text_edit_type_to_change_it_clear)
+                    runs == null -> stringResource(R.string.pdf_text_edit_finding_the_text)
+                    runs!!.isEmpty() -> stringResource(R.string.pdf_text_edit_no_text_found_on_this)
+                    else -> stringResource(R.string.pdf_text_edit_tap_a_line_to_change)
                 },
                 Modifier.fillMaxWidth().background(jc.bg).padding(horizontal = 16.dp, vertical = 8.dp),
                 style = JType.small, color = jc.muted, textAlign = TextAlign.Center,
@@ -211,7 +214,7 @@ internal fun PdfTextEditor(file: File, sizes: List<Pair<Int, Int>>, startPage: I
                                     }
                                 }
                             }
-                            .semantics { contentDescription = "Page ${page + 1}" },
+                            .semantics { contentDescription = context.getString(R.string.pdf_text_page_n, (page + 1).toString()) },
                     ) {
                         image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
                         // Lines that can be edited, lightly outlined.
@@ -240,21 +243,21 @@ internal fun PdfTextEditor(file: File, sizes: List<Pair<Int, Int>>, startPage: I
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
             Row(Modifier.fillMaxWidth().height(60.dp).background(jc.bg).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (current != null) {
-                    EditTool(ICON_SMALLER, "Smaller") { current.size = (current.size - 1f).coerceAtLeast(4f) }
-                    EditTool(ICON_BIGGER, "Bigger") { current.size = (current.size + 1f).coerceAtMost(96f) }
-                    EditTool(ICON_BOLD, "Bold", on = current.bold) { current.bold = !current.bold }
-                    EditTool(Ico.TRASH, if (current.run != null) "Remove" else "Delete", danger = true) {
+                    EditTool(ICON_SMALLER, stringResource(R.string.pdf_text_edit_smaller)) { current.size = (current.size - 1f).coerceAtLeast(4f) }
+                    EditTool(ICON_BIGGER, stringResource(R.string.pdf_text_edit_bigger)) { current.size = (current.size + 1f).coerceAtMost(96f) }
+                    EditTool(ICON_BOLD, stringResource(R.string.pdf_text_edit_bold), on = current.bold) { current.bold = !current.bold }
+                    EditTool(Ico.TRASH, if (current.run != null) stringResource(R.string.common_remove) else stringResource(R.string.common_delete), danger = true) {
                         if (current.run != null) current.text = "" else drafts.remove(current.key)
                         active = null
                     }
-                    if (current.changed && current.run != null) EditTool(Ico.UNDO, "Undo") { drafts.remove(current.key); active = null }
+                    if (current.changed && current.run != null) EditTool(Ico.UNDO, stringResource(R.string.common_undo)) { drafts.remove(current.key); active = null }
                     Spacer(Modifier.weight(1f))
-                    TextAction("Done", { finish() }, bold = true)
+                    TextAction(stringResource(R.string.common_done), { finish() }, bold = true)
                     Spacer(Modifier.width(8.dp))
                 } else {
-                    IconAction(Ico.BACK, "Previous page", { page-- }, enabled = page > 0)
-                    Text("Page ${page + 1} of ${sizes.size}", Modifier.weight(1f), style = JType.secondary, color = jc.ink, textAlign = TextAlign.Center)
-                    IconAction(Ico.CHEVRON, "Next page", { page++ }, enabled = page < sizes.lastIndex)
+                    IconAction(Ico.BACK, stringResource(R.string.pdf_text_edit_previous_page), { page-- }, enabled = page > 0)
+                    Text(stringResource(R.string.pdf_page_of, (page + 1).toString(), sizes.size.toString()), Modifier.weight(1f), style = JType.secondary, color = jc.ink, textAlign = TextAlign.Center)
+                    IconAction(Ico.CHEVRON, stringResource(R.string.pdf_text_edit_next_page), { page++ }, enabled = page < sizes.lastIndex)
                 }
             }
         }
@@ -262,10 +265,10 @@ internal fun PdfTextEditor(file: File, sizes: List<Pair<Int, Int>>, startPage: I
 
     if (leaving) MarginDialog(
         onDismissRequest = { leaving = false },
-        title = { Text("Discard your changes?") },
-        text = { Text("The text you changed won't be saved to the PDF.") },
-        confirmButton = { TextButton({ leaving = false; onCancel() }) { Text("Discard", color = jc.danger) } },
-        dismissButton = { TextButton({ leaving = false }) { Text("Keep editing", color = jc.accent) } },
+        title = { Text(stringResource(R.string.pdf_text_edit_discard_your_changes)) },
+        text = { Text(stringResource(R.string.pdf_text_edit_the_text_you_changed_wont)) },
+        confirmButton = { TextButton({ leaving = false; onCancel() }) { Text(stringResource(R.string.common_discard), color = jc.danger) } },
+        dismissButton = { TextButton({ leaving = false }) { Text(stringResource(R.string.pdf_text_edit_keep_editing), color = jc.accent) } },
         containerColor = jc.bg,
     )
 }

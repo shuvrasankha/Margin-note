@@ -31,6 +31,9 @@ import com.margin.app.data.Block
 import com.margin.app.data.NoteEntity
 import com.margin.app.data.displayTitle
 import com.margin.app.data.todoCount
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 /**
  * Moves or copies some of a list's tasks to another list, or to a new one: unfinished tasks to tomorrow's list,
@@ -49,7 +52,7 @@ fun MoveTasksDialog(
     var copy by remember { mutableStateOf(!canMove) }
     var choosing by remember { mutableStateOf(false) }
     var newTitle by remember { mutableStateOf("") }
-    val verb = if (copy) "Copy" else "Move"
+
     val n = picked.size
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
@@ -57,11 +60,11 @@ fun MoveTasksDialog(
                 .verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
         ) {
             if (!choosing) {
-                Text("$verb items", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
-                Text("Pick the items, then the list they go to.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+                Text(stringResource(if (copy) R.string.move_tasks_copy_items else R.string.move_tasks_move_items), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+                Text(stringResource(R.string.move_tasks_pick_the_items_then_the), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
                 if (canMove) Row(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill("Move", !copy, { copy = false })
-                    Pill("Copy", copy, { copy = true })
+                    Pill(stringResource(R.string.common_move), !copy, { copy = false })
+                    Pill(stringResource(R.string.common_copy), copy, { copy = true })
                 }
                 tasks.forEach { (line, block) ->
                     val on = line in picked
@@ -75,23 +78,23 @@ fun MoveTasksDialog(
                             block.text.ifBlank { "(empty)" }, Modifier.weight(1f), style = JType.item,
                             color = if (block.checked) jc.muted else jc.ink, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
-                        if (block.checked) Text("Done", style = JType.small, color = jc.muted)
+                        if (block.checked) Text(stringResource(R.string.common_done), style = JType.small, color = jc.muted)
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SecondaryButton("Cancel", onDismiss, Modifier.weight(1f))
-                    PrimaryButton(if (n == 0) "Next" else "$verb $n", { choosing = true }, Modifier.weight(1f), enabled = n > 0)
+                    SecondaryButton(stringResource(R.string.common_cancel), onDismiss, Modifier.weight(1f))
+                    PrimaryButton(if (n == 0) stringResource(R.string.common_next) else stringResource(if (copy) R.string.move_tasks_copy_n else R.string.move_tasks_move_n, n.toString()), { choosing = true }, Modifier.weight(1f), enabled = n > 0)
                 }
             } else {
-                Text("$verb ${if (n == 1) "1 item" else "$n items"} to", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+                Text(pluralStringResource(if (copy) R.plurals.move_tasks_copy_to else R.plurals.move_tasks_move_to, n, n), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PlainField(newTitle, { newTitle = it }, "New list name", Modifier.weight(1f)) {
+                    PlainField(newTitle, { newTitle = it }, stringResource(R.string.move_tasks_new_list_name), Modifier.weight(1f)) {
                         if (newTitle.isNotBlank()) onDone(picked, null, newTitle, copy)
                     }
-                    TextAction("Create", { onDone(picked, null, newTitle, copy) }, enabled = newTitle.isNotBlank(), bold = true)
+                    TextAction(stringResource(R.string.common_create), { onDone(picked, null, newTitle, copy) }, enabled = newTitle.isNotBlank(), bold = true)
                 }
-                if (lists.isNotEmpty()) SectionLabel("Lists")
+                if (lists.isNotEmpty()) SectionLabel(stringResource(R.string.move_tasks_lists))
                 lists.forEach { list ->
                     val count = todoCount(list.blocks)
                     Row(
@@ -105,7 +108,7 @@ fun MoveTasksDialog(
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp)) {
-                    TextAction("Back", { choosing = false })
+                    TextAction(stringResource(R.string.common_back), { choosing = false })
                 }
             }
         }

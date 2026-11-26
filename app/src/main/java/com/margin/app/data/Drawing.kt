@@ -3,6 +3,7 @@ package com.margin.app.data
 import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import com.margin.app.R
 
 /** Attachments with this type are Margin drawings: a [Drawing] as JSON, editable again. */
 // Saved in synced notes under the app's old name (Jotter), so other phones still read it.
@@ -27,8 +28,8 @@ data class Drawing(
 )
 
 /** The paper a drawing is done on. */
-enum class Paper(val label: String) {
-    PLAIN("Plain"), SQUARES("Squares"), GRAPH("Graph paper"), RULED("Ruled"), FOUR_LINE("Four-line")
+enum class Paper(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    PLAIN("Plain", R.string.paper_plain), SQUARES("Squares", R.string.paper_squares), GRAPH("Graph paper", R.string.paper_graph), RULED("Ruled", R.string.paper_ruled), FOUR_LINE("Four-line", R.string.paper_four_line)
 }
 
 val Drawing.paperStyle: Paper

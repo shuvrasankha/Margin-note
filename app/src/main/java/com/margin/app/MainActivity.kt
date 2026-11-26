@@ -43,7 +43,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /** How long the logo shows on a cold start. */
-private const val LAUNCH_MS = 550L
+private const val LAUNCH_MS = 750L
 
 @AndroidEntryPoint
 // FragmentActivity: the fingerprint prompt needs one.
@@ -85,10 +85,15 @@ class MainActivity : FragmentActivity() {
                 // The time counts from when the logo is on screen: the first frame of a cold start can itself be slow.
                 LaunchedEffect(Unit) {
                     if (!launching) return@LaunchedEffect
+                    com.margin.app.ui.homeIntro.floatValue = 0f // home waits, hidden, under the logo
                     withFrameNanos { }
                     withFrameNanos { }
                     delay(LAUNCH_MS)
                     launching = false
+                    // As the logo fades, home's parts rise in one after another.
+                    androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(900, easing = androidx.compose.animation.core.LinearEasing)) { v, _ ->
+                        com.margin.app.ui.homeIntro.floatValue = v
+                    }
                 }
                 Box(Modifier.fillMaxSize()) {
                     MarginRoot(nav, folders, notes, editor, settings, vault, backups)
@@ -143,6 +148,7 @@ class MainActivity : FragmentActivity() {
             }
             RecentWidget.ACTION_NEW, RecentWidget.ACTION_SCAN, RecentWidget.ACTION_VOICE -> Screen.Editor(newId(), DEFAULT_FOLDER_ID)
             RecentWidget.ACTION_PASSWORDS -> Screen.Passwords
+            com.margin.app.ui.TodayWidget.ACTION_TODAY -> Screen.Todos
             else -> null
         } ?: return
         // The new note starts the scanner or the recorder once it's open.
