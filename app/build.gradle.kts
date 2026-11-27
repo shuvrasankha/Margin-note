@@ -67,8 +67,9 @@ android {
     }
 
     androidResources {
-        // The app's own languages; libraries' translations into others aren't needed.
-        localeFilters += listOf("en", "bn")
+        // English only: Margin isn't translated yet, so libraries' translations would mix languages on screen.
+        // Add a language here together with its values-xx/strings.xml.
+        localeFilters += listOf("en")
         // PdfBox's CJK character maps (~3 MB): only for Chinese, Japanese and Korean PDFs without their own
         // text mapping. Identity-H/V (used by almost every PDF with embedded fonts) and H/V are kept.
         ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~" +

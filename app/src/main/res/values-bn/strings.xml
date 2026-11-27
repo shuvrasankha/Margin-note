@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Bengali. Only the app's name for now; everything else falls back to English until it's translated. -->
-<resources>
-    <string name="app_name">Margin</string>
-</resources>
