@@ -8,7 +8,7 @@
     <color name="widget_ink">#FF111111</color>
     <color name="widget_muted">#FF5C5C63</color>
     <color name="widget_line">#FFE6E6EA</color>
-    <color name="widget_accent">#FFB25E00</color>
+    <color name="widget_accent">#FFA75800</color>
     <!-- App icon, light and dark: ink ground, amber margin rule, paper lines. -->
     <color name="icon_ground">#FF111111</color>
     <color name="icon_rule">#FFFFB340</color>

@@ -290,7 +290,7 @@ fun FoldersScreen(
         )
     }
     renaming?.let { row ->
-        NameDialog(stringResource(R.string.folders_rename_folder), row.folder.name, onDismiss = { renaming = null }) { vm.rename(row.folder.id, it); renaming = null }
+        NameDialog(stringResource(R.string.folders_rename_folder), row.folder.name, onDismiss = { renaming = null }, taken = { n -> nameTaken(rows, row.folder.parentId, n, except = row.folder.id) }) { vm.rename(row.folder.id, it); renaming = null }
     }
     moving?.let { row ->
         // Not into itself or anything inside it; smart folders hold no folders.
@@ -353,13 +353,16 @@ internal fun NewFolderDialog(
         title = { Text(stringResource(R.string.folders_new_folder_2)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(stringResource(R.string.folders_folder_name)) }, shape = JShape.sm)
+                OutlinedTextField(
+                    name, { name = it }, singleLine = true, label = { Text(stringResource(R.string.folders_folder_name)) }, shape = JShape.sm,
+                    supportingText = if (nameTaken(regular, if (smart) null else parent, name)) { { Text(stringResource(R.string.folders_name_taken)) } } else null,
+                )
                 if (allowSmart) Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.folders_smart_folder), style = JType.row, color = jc.ink)
                         Text(stringResource(R.string.folders_fill_it_automatically_by_tag), style = JType.small, color = jc.muted)
                     }
-                    JSwitch(smart, { smart = it })
+                    JSwitch(smart, { smart = it }, label = stringResource(R.string.folders_smart_folder))
                 }
                 // Smart folders are always top level.
                 if (!smart) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -489,7 +492,7 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
         }
     }
     renaming?.let { row ->
-        NameDialog(stringResource(R.string.folders_rename_folder), row.folder.name, onDismiss = { renaming = null }) { vm.rename(row.folder.id, it); renaming = null }
+        NameDialog(stringResource(R.string.folders_rename_folder), row.folder.name, onDismiss = { renaming = null }, taken = { n -> nameTaken(rows, row.folder.parentId, n, except = row.folder.id) }) { vm.rename(row.folder.id, it); renaming = null }
     }
     deleting?.let { row -> DeleteFolderDialog(row, rows, onDismiss = { deleting = null }) { vm.delete(row.folder.id); deleting = null } }
     if (creating) {
@@ -624,15 +627,15 @@ internal fun SmartFolderDialog(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.folders_has_a_checklist), Modifier.weight(1f), style = JType.row)
-                    JSwitch(filter.hasChecklist, { filter = filter.copy(hasChecklist = it) })
+                    JSwitch(filter.hasChecklist, { filter = filter.copy(hasChecklist = it) }, label = stringResource(R.string.folders_has_a_checklist))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.folders_pinned), Modifier.weight(1f), style = JType.row)
-                    JSwitch(filter.pinnedOnly, { filter = filter.copy(pinnedOnly = it) })
+                    JSwitch(filter.pinnedOnly, { filter = filter.copy(pinnedOnly = it) }, label = stringResource(R.string.folders_pinned))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.folders_has_attachments), Modifier.weight(1f), style = JType.row)
-                    JSwitch(filter.hasAttachments, { filter = filter.copy(hasAttachments = it) })
+                    JSwitch(filter.hasAttachments, { filter = filter.copy(hasAttachments = it) }, label = stringResource(R.string.folders_has_attachments))
                 }
                 Text(stringResource(R.string.folders_edited), Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -647,6 +650,10 @@ internal fun SmartFolderDialog(
     )
 }
 
+/** Whether another folder next to this one already has [name] (allowed, but easy to mix up). */
+private fun nameTaken(rows: List<FolderRow>, parentId: String?, name: String, except: String? = null) =
+    name.isNotBlank() && rows.any { it.folder.id != except && it.folder.parentId == parentId && it.folder.name.trim().equals(name.trim(), ignoreCase = true) }
+
 @Composable
 internal fun NameDialog(
     title: String,
@@ -654,13 +661,15 @@ internal fun NameDialog(
     onDismiss: () -> Unit,
     isValid: (String) -> Boolean = { it.isNotBlank() },
     label: String = stringResource(R.string.folders_name),
+    /** Whether another folder beside this one already has the name: allowed, but shown as a warning. */
+    taken: (String) -> Boolean = { false },
     onSave: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial) }
     MarginDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(label) }, shape = JShape.sm) },
+        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(label) }, shape = JShape.sm, supportingText = if (taken(name)) { { Text(stringResource(R.string.folders_name_taken)) } } else null) },
         confirmButton = { TextButton(onClick = { onSave(name) }, enabled = isValid(name)) { Text(stringResource(R.string.common_save), fontWeight = FontWeight.SemiBold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )

@@ -189,6 +189,12 @@ class MainActivity : FragmentActivity() {
         nav.push(screen)
     }
 
+    // Save early: swiping Margin away from Recents can kill it before onStop's save reaches the database.
+    override fun onPause() {
+        super.onPause()
+        editor.flush()
+    }
+
     override fun onStop() {
         super.onStop()
         editor.flush() // save the open note when the app goes to the background (seals a locked one first)

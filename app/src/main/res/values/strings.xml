@@ -569,6 +569,7 @@
     <string name="folders_its_subfolders_are_deleted_too">Its subfolders are deleted too. Their notes and its notes move to Recently Deleted.</string>
     <string name="folders_its_notes_will_move_to">Its notes will move to Recently Deleted.</string>
     <string name="folders_new_folder_2">New Folder</string>
+    <string name="folders_name_taken">There\'s already a folder with this name here.</string>
     <string name="folders_folder_name">Folder name</string>
     <string name="folders_smart_folder">Smart folder</string>
     <string name="folders_fill_it_automatically_by_tag">Fill it automatically by tag, date or type</string>

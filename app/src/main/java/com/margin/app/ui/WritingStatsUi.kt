@@ -136,7 +136,7 @@ internal fun WritingStatsDialog(vm: EditorViewModel, onDismiss: () -> Unit) {
                         Text(stringResource(R.string.writing_stats_show_word_count_while_writing), style = JType.row, color = jc.ink)
                         Text(stringResource(R.string.writing_stats_under_every_note_above_the), style = JType.small, color = jc.muted)
                     }
-                    JSwitch(showCount, { vm.writing.setShowCount(it) })
+                    JSwitch(showCount, { vm.writing.setShowCount(it) }, label = stringResource(R.string.writing_stats_show_word_count_while_writing))
                 }
                 Text(stringResource(R.string.writing_stats_words_written_are_counted_on), style = JType.caption, color = jc.muted)
             }

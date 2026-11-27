@@ -545,7 +545,7 @@ private fun CalendarSwitch(on: Boolean, onChange: (Boolean) -> Unit) {
                 style = JType.small, color = jc.muted,
             )
         }
-        JSwitch(on, ::set)
+        JSwitch(on, ::set, label = stringResource(R.string.reminder_add_to_phone_calendar))
     }
 }
 

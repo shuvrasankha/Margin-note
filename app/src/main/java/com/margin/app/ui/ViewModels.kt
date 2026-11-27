@@ -533,8 +533,11 @@ class NotesViewModel @Inject constructor(
         .flatMapLatest { f -> if (f == null || isVirtualList(f)) flowOf(null) else repo.folder(f) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Today's date, checked each minute, so "Today" and "Yesterday" move on while the list stays open past midnight. */
+    private val today = kotlinx.coroutines.flow.flow { while (true) { emit(java.time.LocalDate.now()); delay(60_000) } }.distinctUntilChanged()
+
     val entries: StateFlow<List<ListEntry>> = combine(
-        notes, folder, folderId, combine(query, searchResults, searchScope, ::Triple), combine(appPrefs.collapsedPinned, appPrefs.toggles, ::Pair),
+        notes, folder, folderId, combine(query, searchResults, searchScope, ::Triple), combine(appPrefs.collapsedPinned, appPrefs.toggles, today) { c, t, _ -> c to t },
     ) { list, folder, f, (q, results, scope), (collapsed, toggles) ->
         if (q.isNotBlank() && f != TRASH_ID) results.entries(scope) else buildListing(
             list,

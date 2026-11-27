@@ -952,10 +952,10 @@ fun DrawingScreen(
                 WIDTHS.forEach { (name, w, dot) ->
                     val on = width == w
                     Box(
-                        Modifier.size(32.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent)
+                        Modifier.size(48.dp).clip(CircleShape) // 48 dp touch area, 32 dp highlight
                             .clickable(role = Role.RadioButton) { width = w }.semantics { contentDescription = context.getString(R.string.drawing_stroke_desc, context.getString(name)); selected = on },
                         contentAlignment = Alignment.Center,
-                    ) { Box(Modifier.size(dot).clip(CircleShape).background(if (mode == Mode.ERASER || mode == Mode.LASSO) jc.ink else inkOf(ink))) }
+                    ) { Box(Modifier.size(32.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent), contentAlignment = Alignment.Center) { Box(Modifier.size(dot).clip(CircleShape).background(if (mode == Mode.ERASER || mode == Mode.LASSO) jc.ink else inkOf(ink))) } }
                 }
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.size(1.dp, 28.dp).background(jc.line))
@@ -983,7 +983,7 @@ fun DrawingScreen(
                 }
                 // Always in view, whatever the inks scroll to.
                 if (mode != Mode.ERASER) Box(
-                    Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.Button) { picking = true }
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { picking = true } // 48 dp touch area; the ring stays 24
                         .semantics { contentDescription = if (selection.isNotEmpty()) context.getString(R.string.drawing_colour_selection_more_colours) else context.getString(R.string.drawing_more_colours) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1001,7 +1001,7 @@ private val RAINBOW = listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, C
 @Composable
 private fun InkSwatch(color: Color, on: Boolean, name: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.RadioButton, onClick = onClick)
+        Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.RadioButton, onClick = onClick) // 48 dp touch area
             .semantics { contentDescription = name; selected = on },
         contentAlignment = Alignment.Center,
     ) {

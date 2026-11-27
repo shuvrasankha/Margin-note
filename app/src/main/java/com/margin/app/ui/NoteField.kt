@@ -562,6 +562,7 @@ internal fun NoteField(
     val bodyFont = with(px) { JType.body.fontSize.toPx() }
     if (underTitle != null && !titleOneRow) Box(Modifier.padding(bottom = 4.dp)) { underTitle() }
     Box(modifier.fillMaxWidth().onSizeChanged { pageWidth = it.width }) {
+        val titleHint = stringResource(R.string.note_field_title)
         BasicTextField(
             value = vm.value,
             onValueChange = { v ->
@@ -579,6 +580,8 @@ internal fun NoteField(
                 titleOneRow = l.lineCount == 0 || l.getLineForOffset((doc.texts.firstOrNull()?.length ?: 1).minus(1).coerceAtLeast(0)) == 0
             },
             modifier = Modifier.fillMaxWidth()
+                // The "Title" hint is drawn separately, so TalkBack gets it here while the note is empty.
+                .semantics { if (doc.text.isEmpty()) contentDescription = titleHint }
                 // The note's paper, under the text and lined up with it.
                 .drawBehind {
                     val l = layout ?: return@drawBehind

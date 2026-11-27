@@ -490,10 +490,12 @@ fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 22.d
 }
 
 @Composable
-fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true, label: String? = LocalSwitchLabel.current) {
     val view = LocalView.current
     Switch(
         checked = checked, onCheckedChange = { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, enabled = enabled,
+        // The switch is its own TalkBack stop, apart from the row's text, so it carries the row's name.
+        modifier = if (label != null) Modifier.semantics { contentDescription = label } else Modifier,
         colors = SwitchDefaults.colors(
             checkedTrackColor = jc.ink, checkedThumbColor = jc.bg, checkedBorderColor = jc.ink,
             uncheckedTrackColor = jc.switchOff, uncheckedThumbColor = Color.White, uncheckedBorderColor = jc.switchOff,
@@ -591,9 +593,12 @@ fun CardRow(
             Text(label, style = JType.item, color = labelColor)
             sub?.let { Text(it, style = JType.small, color = jc.muted) }
         }
-        trailing()
+        androidx.compose.runtime.CompositionLocalProvider(LocalSwitchLabel provides label) { trailing() }
     }
 }
+
+/** The name a [JSwitch] gives TalkBack when none is passed: its [CardRow]'s label. */
+val LocalSwitchLabel = androidx.compose.runtime.compositionLocalOf<String?> { null }
 
 /**
  * Bottom sheet for choosing a folder: [rows] indented as in the folder tree, the [currentId] folder marked

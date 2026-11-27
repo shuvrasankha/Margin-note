@@ -159,6 +159,7 @@ fun EditorScreen(
     var moving by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var formatting by remember { mutableStateOf(false) }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var attaching by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     var stats by remember { mutableStateOf(false) }
@@ -361,13 +362,21 @@ fun EditorScreen(
     // A phone on its side with the keyboard up has no room for the top bar; the toolbar still hides the keyboard.
     val cramped = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480 &&
         WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var confirmForever by remember { mutableStateOf(false) }
+    if (confirmForever) MarginDialog(
+        onDismissRequest = { confirmForever = false },
+        title = { Text(androidx.compose.ui.res.pluralStringResource(R.plurals.notes_delete_forever_title, 1, 1)) },
+        text = { Text(stringResource(R.string.notes_this_cant_be_undone)) },
+        confirmButton = { TextButton(onClick = { confirmForever = false; vm.deleteForever(onBack) }) { Text(stringResource(R.string.common_delete), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { confirmForever = false }) { Text(stringResource(R.string.common_cancel)) } },
+    )
     Scaffold(
         containerColor = jc.bg,
         topBar = { Column(Modifier.background(jc.bg).then(if (cramped) Modifier.statusBarsPadding() else Modifier)) {
             if (!cramped) NavBar(backLabel, onBack, color = jc.bg) {
                 if (vm.trashed) {
                     TextAction(stringResource(R.string.editor_recover), { vm.recover(onBack) })
-                    TextAction(stringResource(R.string.common_delete), { vm.deleteForever(onBack) }, color = jc.danger)
+                    TextAction(stringResource(R.string.common_delete), { confirmForever = true }, color = jc.danger)
                 } else if (vm.loaded) {
                     if (vm.canUndo && !vm.needsUnlock && !vm.viewOnly) IconAction(Ico.UNDO, stringResource(R.string.common_undo), vm::undo, color = jc.ink)
                     // Lock editing: a closed lock while the note is view-only, an open one while it can be changed.
@@ -638,7 +647,7 @@ fun EditorScreen(
                     if (showCount && !formatting && !attaching && !sharing) WordCountBar(vm) { stats = true }
                     EditorToolbar(
                         vm, formatting, attaching,
-                        onFormat = { formatting = !formatting; attaching = false; sharing = false }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
+                        onFormat = { formatting = !formatting; attaching = false; sharing = false; if (formatting) keyboard?.hide() }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
                         onAttach = { attaching = !attaching; formatting = false; sharing = false }, onDraw = { drawing = null to null },
                         onNew = { formatting = false; attaching = false; onNewNote(vm.folderId) },
                         onFont = { formatting = false; attaching = false; sharing = false; pickingFont = true },
@@ -1142,10 +1151,10 @@ internal fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), style = JType.subheading.copy(fontWeight = FontWeight.Bold), color = jc.ink)
             Box(
-                Modifier.size(32.dp).clip(CircleShape).background(jc.surface).clickable(role = Role.Button, onClick = onClose)
+                Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClose) // 48 dp touch area, 32 dp circle
                     .semantics { contentDescription = context.getString(R.string.common_close) },
                 contentAlignment = Alignment.Center,
-            ) { JIcon(Ico.CLOSE, jc.muted, size = 14.dp, stroke = 2.6f) }
+            ) { Box(Modifier.size(32.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) { JIcon(Ico.CLOSE, jc.muted, size = 14.dp, stroke = 2.6f) } }
         }
         content()
     }
@@ -1590,7 +1599,10 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
 internal fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
     val focusedType = if (vm.focused) vm.doc.lines.getOrNull(vm.cursorLine)?.type else null
     val enabled = focusedType != null && focusedType != BlockType.TITLE
-    SheetPanel(stringResource(R.string.editor_format), onClose) {
+    // Stays below the status bar and above the keyboard, scrolling when it doesn't fit (large text, a small phone).
+    val imeDp = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
+    val maxHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp - imeDp - 200.dp).coerceIn(160.dp, 560.dp)
+    SheetPanel(stringResource(R.string.editor_format), onClose) { Column(Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (!enabled) {
             Text(
                 if (focusedType == BlockType.TITLE) stringResource(R.string.editor_the_first_line_is_always)
@@ -1682,20 +1694,25 @@ internal fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
                 ) { JIcon(icon, if (on) jc.bg else if (can) jc.ink else jc.muted, size = 20.dp) }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.editor_highlight_colour), Modifier.weight(1f), style = JType.secondary, color = jc.muted)
             Tint.entries.forEach { t ->
                 val on = t == vm.highlightTint
                 val name = t.name.lowercase().replaceFirstChar { it.uppercase() }
+                // 48 dp touch area, 28 dp swatch; the 12 dp row spacing would otherwise clip the touch area to 40 dp.
                 Box(
-                    Modifier.size(28.dp).clip(CircleShape).background(t.swatch())
-                        .border(if (on) 2.dp else 0.dp, if (on) jc.ink else Color.Transparent, CircleShape)
-                        .clickable(role = Role.RadioButton) { vm.pickTint(t) }
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.RadioButton) { vm.pickTint(t) }
                         .semantics { contentDescription = name; selected = on },
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(28.dp).clip(CircleShape).background(t.swatch())
+                            .border(if (on) 2.dp else 0.dp, if (on) jc.ink else Color.Transparent, CircleShape),
+                    )
+                }
             }
         }
-    }
+    } }
 }
 
 /** A highlight colour, see-through so text stays readable in light and dark mode. */

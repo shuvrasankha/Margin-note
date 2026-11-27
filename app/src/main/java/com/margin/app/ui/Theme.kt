@@ -39,7 +39,7 @@ data class MarginColors(
     val accent: Color,
     val danger: Color,
     /** Something worked (a connection test passed). */
-    val success: Color = Color(0xFF1E8E3E),
+    val success: Color = Color(0xFF1A7D37),
     /** Background of grouped screens (Settings), with [card] for the groups on it. */
     val page: Color,
     val card: Color,
@@ -50,7 +50,7 @@ data class MarginColors(
 
 private val Light = MarginColors(
     bg = Color(0xFFFFFFFF), surface = Color(0xFFF2F2F4), ink = Color(0xFF111111), muted = Color(0xFF5C5C63),
-    line = Color(0xFFE6E6EA), accent = Color(0xFFB25E00), danger = Color(0xFFC4291C),
+    line = Color(0xFFE6E6EA), accent = Color(0xFFA75800), danger = Color(0xFFC4291C),
     page = Color(0xFFF2F2F4), card = Color(0xFFFFFFFF), selected = Color(0xFFFBF1E6), switchOff = Color(0xFFD4D4D8),
 )
 
