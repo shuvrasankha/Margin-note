@@ -2187,4 +2187,5 @@
     <string name="aisle_sort_items_still_to_get_grouped">Items still to get, grouped in the order you walk the shop; ticked ones go last. Tap an item in the wrong aisle to move it.</string>
     <string name="aisle_sort_sort_list">Sort list</string>
     <string name="aisle_sort_remembered_for_this_item_on">Remembered for this item on every list.</string>
+    <string name="voice_saved_on_leave">Recording stopped and added to the note.</string>
 </resources>

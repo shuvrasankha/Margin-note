@@ -98,7 +98,10 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && Recorder.state.value.active) Recorder.stop()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && Recorder.state.value.active) {
+                Recorder.stop()
+                if (Recorder.state.value.doneMs != null) Toast.makeText(context, context.getString(R.string.voice_saved_on_leave), Toast.LENGTH_SHORT).show()
+            }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }

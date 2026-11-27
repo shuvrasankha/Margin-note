@@ -23,12 +23,15 @@ data class RecState(
 
 /**
  * The one voice recording. It only runs while Margin is on screen: the recorder screen stops and saves it when
- * Margin goes to the background, so there's no foreground service (and no Play microphone declaration).
+ * Margin goes to the background, so there's no foreground service (and no Play microphone declaration). A phone
+ * call (or any app taking audio focus) pauses it.
  */
 object Recorder {
     private val _state = MutableStateFlow(RecState())
     val state: StateFlow<RecState> = _state
     private var recorder: MediaRecorder? = null
+    private var focus: android.media.AudioFocusRequest? = null
+    private var audio: android.media.AudioManager? = null
     var file: File? = null
         private set
 
@@ -50,6 +53,7 @@ object Recorder {
             r.start()
             recorder = r
             file = into
+            holdFocus(context)
             _state.value = RecState(active = true, runStart = SystemClock.elapsedRealtime())
             true
         } catch (e: Exception) {
@@ -60,6 +64,23 @@ object Recorder {
 
     /** The microphone's peak since the last call, 0..1 (square-rooted so quiet speech shows). */
     fun level(): Float = recorder?.let { r -> kotlin.math.sqrt((runCatching { r.maxAmplitude }.getOrDefault(0) / 32767f).coerceIn(0f, 1f)) } ?: 0f
+
+    /** A call or another app took the microphone: pause, so the clip doesn't fill with silence. */
+    private fun holdFocus(context: Context) {
+        val am = context.getSystemService(android.media.AudioManager::class.java) ?: return
+        val req = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setOnAudioFocusChangeListener { if (it < 0 && !_state.value.paused) togglePause() }
+            .build()
+        am.requestAudioFocus(req)
+        audio = am; focus = req
+    }
+
+    private fun dropFocus() {
+        focus?.let { audio?.abandonAudioFocusRequest(it) }
+        focus = null; audio = null
+    }
 
     fun togglePause() {
         val r = recorder ?: return
@@ -95,6 +116,7 @@ object Recorder {
     fun handedOver() { file = null; _state.value = RecState() }
 
     private fun release(r: MediaRecorder) {
+        dropFocus()
         r.release()
         recorder = null
     }
