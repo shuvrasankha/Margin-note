@@ -732,6 +732,7 @@
     <string name="notes_filter_all">All</string>
     <string name="notes_filter_pinned">Pinned</string>
     <string name="notes_filter_lists">Lists</string>
+    <string name="notes_filter_conflicts">Two versions</string>
     <string name="notes_filter_photos">Photos</string>
     <string name="notes_filter_voice">Voice</string>
     <string name="notes_filter_reminders">Reminders</string>
@@ -1441,6 +1442,10 @@
         <item quantity="other">Passcode changed. %d notes use a different password and weren\'t changed.</item>
     </plurals>
     <string name="view_models_synced">Synced: %1$s sent, %2$s received</string>
+    <plurals name="view_models_synced_conflicts">
+        <item quantity="one">. %d note was changed on two devices: see Two versions in Notes.</item>
+        <item quantity="other">. %d notes were changed on two devices: see Two versions in Notes.</item>
+    </plurals>
 
     <!-- ui/ReminderUi.kt -->
     <string name="reminder_today">Today, %1$s</string>

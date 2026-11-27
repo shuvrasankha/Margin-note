@@ -670,7 +670,9 @@ class NotesViewModel @Inject constructor(
 /** Filter pills above a note list. Locked notes never count as checklists: their body can't be read. */
 enum class ListFilter(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
     ALL("All", com.margin.app.R.string.notes_filter_all), PINNED("Pinned", com.margin.app.R.string.notes_filter_pinned),
-    CHECKLISTS("Lists", com.margin.app.R.string.notes_filter_lists), PHOTOS("Photos", com.margin.app.R.string.notes_filter_photos),
+    CHECKLISTS("Lists", com.margin.app.R.string.notes_filter_lists),
+    // First of the optional pills: a sync conflict copy needs a look, and its note shows the compare-and-pick card.
+    CONFLICTS("Two versions", com.margin.app.R.string.notes_filter_conflicts), PHOTOS("Photos", com.margin.app.R.string.notes_filter_photos),
     VOICE("Voice", com.margin.app.R.string.notes_filter_voice), REMINDERS("Reminders", com.margin.app.R.string.notes_filter_reminders),
     LOCKED("Locked", com.margin.app.R.string.notes_filter_locked);
 
@@ -679,6 +681,7 @@ enum class ListFilter(val label: String, @androidx.annotation.StringRes val labe
         ALL -> true
         PINNED -> note.isPinned
         CHECKLISTS -> note.blocks.any { it.type == BlockType.CHECK }
+        CONFLICTS -> note.title.endsWith(CONFLICT_SUFFIX)
         PHOTOS -> note.blocks.any { it.attachment?.isImage == true }
         VOICE -> note.blocks.any { it.attachment?.mime?.startsWith("audio/") == true }
         REMINDERS -> note.id in reminded
@@ -2211,7 +2214,11 @@ class SettingsViewModel @Inject constructor(
         message = context.getString(R.string.view_models_signed_out_your_notes_stay)
     }
 
-    fun syncNow() = run { val r = sync.sync(); message = context.getString(R.string.view_models_synced, r.uploaded.toString(), r.downloaded.toString()) }
+    fun syncNow() = run {
+        val r = sync.sync()
+        message = context.getString(R.string.view_models_synced, r.uploaded.toString(), r.downloaded.toString()) +
+            if (r.conflicts > 0) context.resources.getQuantityString(R.plurals.view_models_synced_conflicts, r.conflicts, r.conflicts) else ""
+    }
 
     fun restore() = run { sync.restore(); message = context.getString(R.string.view_models_restored_from_your_google_account) }
 

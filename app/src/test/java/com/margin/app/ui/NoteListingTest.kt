@@ -161,5 +161,7 @@ class NoteListingTest {
         assertEquals(true, ListFilter.REMINDERS.matches(note("r"), setOf("r")))
         assertEquals(false, ListFilter.REMINDERS.matches(note("x"), setOf("r")))
         assertEquals(true, ListFilter.LOCKED.matches(note("l").copy(cipher = "c")))
+        assertEquals(true, ListFilter.CONFLICTS.matches(note("c").copy(title = "Plan (conflict)")))
+        assertEquals(false, ListFilter.CONFLICTS.matches(note("p").copy(title = "Plan")))
     }
 }
