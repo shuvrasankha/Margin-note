@@ -7,7 +7,7 @@ Everything Play Console asks for, in the order you meet it. The listing text and
 | | |
 |---|---|
 | Package name | `com.margin.note` (it can't change after the first upload; `com.margin.app` was taken). The code's own namespace stays `com.margin.app`. |
-| Version | 1.0.1 (versionCode 2). 1.0.0 (versionCode 1) went to internal testing first. |
+| Version | 1.1.0 (versionCode 4; code 3 was uploaded once and replaced). 1.0.1 (versionCode 2) came before it, and 1.0.0 (versionCode 1) went to internal testing first. |
 | Min / target SDK | 26 (Android 8.0) / 37 |
 | Upload file | `app/build/outputs/bundle/release/app-release.aab` (`./gradlew bundleRelease`) |
 | Upload key | `margin-release.jks` (with `keystore.properties`). Back up both somewhere safe, outside the repo. Losing them means asking Google for an upload key reset. |
