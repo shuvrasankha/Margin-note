@@ -97,8 +97,8 @@ fun PasscodePad(error: String?, enabled: Boolean, onComplete: (String) -> Unit, 
 
 /**
  * Full-screen passcode entry. CREATE asks twice (with [intro], or a warning that there's no recovery);
- * ENTER asks once and, with [onOldPassword], offers the old password field for notes locked before passcodes.
- * [onSubmit] returns an error to show, or null when done.
+ * ENTER asks once. Either mode offers a passphrase instead (with [onOldPassword], the caller shows that field),
+ * and starts on it when that's what was used last. [onSubmit] returns an error to show, or null when done.
  */
 @Composable
 fun PasscodeDialog(
@@ -110,15 +110,22 @@ fun PasscodeDialog(
     enterTitle: String = stringResource(R.string.passcode_enter_your_passcode),
     enterSub: String = stringResource(R.string.passcode_the_6_digits_for_your),
     cancel: String = stringResource(R.string.common_cancel),
+    /** CREATE takes a passphrase only (saved passwords need one); ENTER still starts on the remembered kind. */
+    passphraseOnly: Boolean = false,
     onSubmit: suspend (CharArray) -> String?,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var phrase by remember { mutableStateOf((passphraseOnly && mode == PasswordMode.CREATE) || usesPassphrase(context)) }
+    if (phrase && mode == PasswordMode.ENTER && onOldPassword != null) LaunchedEffect(Unit) { onOldPassword() }
+    val inline = phrase && onOldPassword == null // the passphrase field takes the pad's place
     var first by remember { mutableStateOf<String?>(null) } // CREATE: the code to confirm
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val title = when {
+        inline && mode == PasswordMode.ENTER && enterTitle == stringResource(R.string.passcode_enter_your_passcode) -> stringResource(R.string.editor_enter_your_old_notes_password)
         mode == PasswordMode.ENTER -> enterTitle
+        inline -> stringResource(R.string.passcode_choose_a_passphrase)
         first == null -> stringResource(R.string.passcode_create_a_notes_passcode)
         else -> stringResource(R.string.passcode_confirm_your_passcode)
     }
@@ -126,20 +133,23 @@ fun PasscodeDialog(
         Column(Modifier.fillMaxSize().background(jc.bg).systemBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
                 Box(Modifier.align(Alignment.CenterStart)) { TextAction(cancel, onDismiss) }
-                if (mode == PasswordMode.CREATE) Text(if (first == null) stringResource(R.string.passcode_step_1_of_2) else stringResource(R.string.passcode_step_2_of_2), style = JType.small, color = jc.muted)
+                if (mode == PasswordMode.CREATE && !inline) Text(if (first == null) stringResource(R.string.passcode_step_1_of_2) else stringResource(R.string.passcode_step_2_of_2), style = JType.small, color = jc.muted)
             }
             Box(Modifier.padding(top = 28.dp).size(56.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) {
                 JIcon(Ico.LOCK, jc.ink, size = 26.dp, stroke = 1.8f)
             }
             Text(title, Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = jc.ink, textAlign = TextAlign.Center)
             val sub = when {
+                inline && mode == PasswordMode.ENTER -> stringResource(R.string.passcode_enter_your_notes_passphrase)
+                inline -> intro ?: stringResource(R.string.passcode_passphrase_hint, com.margin.app.data.MIN_PASSPHRASE)
                 mode == PasswordMode.ENTER -> enterSub
                 first != null -> stringResource(R.string.passcode_enter_the_same_6_digits)
                 else -> intro ?: stringResource(R.string.passcode_use_it_to_open_locked)
             }
             // A fixed height keeps the dots in place between the create and confirm steps.
             Text(sub, Modifier.widthIn(max = 290.dp).heightIn(min = 63.dp).padding(bottom = 32.dp - 12.dp), style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
-            PasscodePad(error, enabled = !busy, onComplete = { code ->
+            if (inline) PassphraseForm(mode == PasswordMode.CREATE, onSubmit, Modifier.padding(top = 12.dp).widthIn(max = 360.dp).weight(1f))
+            else PasscodePad(error, enabled = !busy, onComplete = { code ->
                 error = null
                 when {
                     mode == PasswordMode.CREATE && first == null -> first = code
@@ -147,20 +157,29 @@ fun PasscodeDialog(
                     else -> scope.launch {
                         busy = true
                         error = onSubmit(code.toCharArray())
+                        if (error == null) rememberEntryKind(context, passphrase = false)
                         busy = false
                     }
                 }
             }, modifier = Modifier.padding(top = 12.dp).weight(1f), spread = true)
+            Box(Modifier.padding(top = 16.dp)) {
+                if (inline) { if (!passphraseOnly || mode == PasswordMode.ENTER) TextAction(stringResource(R.string.passcode_use_a_passcode_instead), { phrase = false }) }
+                else TextAction(stringResource(R.string.passcode_use_old_password), onOldPassword ?: { phrase = true })
+            }
             when {
-                onOldPassword != null -> Box(Modifier.padding(top = 16.dp)) { TextAction(stringResource(R.string.passcode_use_old_password), onOldPassword) }
-                mode == PasswordMode.CREATE -> Text(
+                mode == PasswordMode.CREATE && !inline -> Text(
                     stringResource(R.string.passcode_if_you_forget_this_passcode),
-                    Modifier.padding(top = 28.dp).widthIn(max = 300.dp), style = JType.small.copy(lineHeight = 18.sp), color = jc.muted, textAlign = TextAlign.Center,
+                    Modifier.padding(top = 12.dp).widthIn(max = 300.dp), style = JType.small.copy(lineHeight = 18.sp), color = jc.muted, textAlign = TextAlign.Center,
                 )
             }
         }
     }
 }
+
+// Which kind of notes password to ask for first. Not a secret: it only spares a passphrase user the pad.
+private fun entryPrefs(c: android.content.Context) = c.getSharedPreferences("lock_entry", android.content.Context.MODE_PRIVATE)
+internal fun usesPassphrase(c: android.content.Context) = entryPrefs(c).getBoolean("passphrase", false)
+internal fun rememberEntryKind(c: android.content.Context, passphrase: Boolean) = entryPrefs(c).edit().putBoolean("passphrase", passphrase).apply()
 
 /**
  * The app lock's screen, over everything (it's a window of its own, so it also covers an open PDF or photo).
@@ -193,7 +212,7 @@ fun AppLockScreen(appLock: com.margin.app.data.AppLock, fingerprint: String?, on
     if (pad) {
         PasscodeDialog(
             PasswordMode.ENTER, onDismiss = onLeave, enterTitle = stringResource(R.string.passcode_margin_is_locked), enterSub = stringResource(R.string.passcode_enter_your_passcode_to_open), cancel = stringResource(R.string.common_close),
-        ) { code -> if (appLock.unlock(code)) null.also { code.fill('\u0000') } else context.getString(R.string.passcode_wrong_passcode).also { code.fill('\u0000') } }
+        ) { code -> if (appLock.unlock(code)) null.also { code.fill('\u0000') } else com.margin.app.data.UnlockLimit.message(context, context.getString(R.string.passcode_wrong_passcode)).also { code.fill('\u0000') } }
     } else {
         // While the fingerprint prompt is (about to be) up: a cover, so nothing shows behind it, with the passcode
         // a tap away in case the prompt doesn't come.

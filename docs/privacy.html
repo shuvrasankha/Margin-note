@@ -17,14 +17,15 @@
   </header>
 
   <h1>Privacy policy</h1>
-  <p class="meta">Effective 19 November 2026</p>
+  <p class="meta">Effective 27 November 2026</p>
 
   <p>Margin ("the app") is a notes app for Android made by Shuvrasankha Paul ("we"). This policy explains what happens to your information when you use it. In short: your notes stay on your phone and, if you choose, in your own Google Drive or another storage place you pick. We don't run servers that store your notes, we don't show ads, and we don't track you.</p>
 
   <h2>What stays on your phone</h2>
   <p>Everything you put in the app is stored in the app's private storage on your phone: notes, checklists, tables, drawings, photos, scans, PDFs, voice recordings, reminders, your journal, habits, trackers, saved passwords and settings. This also includes data the app makes for you, such as earlier versions of your notes and the text it reads from your photos and PDFs so you can search them. We can't see any of it.</p>
-  <p>Locked notes are encrypted on your phone with a key made from your passcode. We never see your passcode.</p>
-  <p>Saved passwords in the app's password vault are stored as locked notes: everything about each login, including the site name, is encrypted with your passcode. Copied passwords are cleared from the clipboard after a short time.</p>
+  <p>Locked notes are encrypted on your phone with a key made from your passcode or passphrase. We never see it.</p>
+  <p>Saved passwords in the app's password vault are stored as locked notes: everything about each login, including the site name, is encrypted with your passphrase. Copied passwords are cleared from the clipboard after a short time.</p>
+  <p>If you choose Margin as your phone's autofill service, it sees which app or website you're signing in to, so it can offer the right login. That stays on your phone. When you save a login with a website address, the app fetches that site's icon from the site itself (see the table below).</p>
 
   <h2>Google sign-in and Drive backup</h2>
   <p>Backup is optional and off until you turn it on. When you sign in with Google, the app receives your Google account's email address and name, which it uses to show which account is backing up. It then asks for permission to use one hidden app-only folder in your Google Drive (the <code>drive.appdata</code> permission). The app can't see or change any of your other Drive files, and the folder doesn't appear in the Drive app.</p>
@@ -34,7 +35,7 @@
 
   <h2>Other backup places</h2>
   <p>You can also have the app copy full backups to a place you choose: a folder from the system file picker (for example Dropbox, OneDrive, Box or a folder on your phone) or a WebDAV server you give the address of. The backup goes from your phone straight to that place; it doesn't pass through us, and that service's own privacy policy applies to it. A WebDAV password you enter is encrypted on your phone with a key kept in the Android Keystore.</p>
-  <p>If you set a backup password, each backup is encrypted with it before it leaves your phone, so the place it's kept in can't read it. Without one, locked notes and saved passwords stay encrypted in the backup, but the rest of your notes can be read by anyone who can open the backup file.</p>
+  <p>If you set a backup password, each backup is encrypted with it before it leaves your phone, so the place it's kept in can't read it. Without one, locked notes stay encrypted in the backup, but the rest of your notes can be read by anyone who can open the backup file. Once you have saved passwords, the app won't make backups until you set a backup password.</p>
 
   <h2>Ask AI (optional)</h2>
   <p>Ask AI is off until you add an API key of your own from one of these providers: <a href="https://ai.google.dev/gemini-api/terms">Google Gemini</a>, <a href="https://openai.com/policies/privacy-policy">OpenAI</a>, <a href="https://www.anthropic.com/legal/privacy">Anthropic (Claude)</a>, <a href="https://groq.com/privacy-policy/">Groq</a> or <a href="https://www.nvidia.com/en-us/about-nvidia/privacy-policy/">NVIDIA</a>. Your key is encrypted on your phone with a key kept in the Android Keystore, and is never synced or sent to us.</p>
@@ -52,6 +53,9 @@
       <tr><td>Other backup places (optional)</td><td>A full backup of your notes, to the folder or WebDAV server you choose, as described above.</td></tr>
       <tr><td>Ask AI (optional, needs your own key)</td><td>The note text you ask about and your messages, to the AI provider you chose, as described above.</td></tr>
       <tr><td>Web links</td><td>When you add a web link, the app loads that page to show its title, description and picture. The website sees an ordinary request from your phone, like a browser visit.</td></tr>
+      <tr><td>Saved password icons</td><td>When you save a login with a website address, and when Passwords opens and finds a login without an icon, the app loads that site's icon from the site itself. The website sees an ordinary request from your phone, so it can tell that a phone at your internet address has a login saved for it. No other service is involved.</td></tr>
+      <tr><td>Place search</td><td>When you search for a place for a place reminder, the words you type are sent to your phone's geocoding service (on most phones, Google's, through Google Play services) to find matching places. Your own location isn't sent, even when you set a reminder for where you are now.</td></tr>
+      <tr><td>Voice commands</td><td>When you say a command (for example, to add to a list), the app uses your phone's speech recognition service, usually Google's. That service may process the audio online, under its own privacy policy. Voice notes you record are different: they stay in the app and aren't sent anywhere.</td></tr>
       <tr><td>Cloud grammar check (optional, off by default)</td><td>If you turn it on, the text of the note you are editing (never locked notes) is sent to <a href="https://languagetool.org/legal/privacy">LanguageTool</a> to find grammar mistakes. The basic grammar check works offline and sends nothing.</td></tr>
       <tr><td>Text recognition, document scanner, handwriting</td><td>These run on your phone using Google's ML Kit and Google Play services. Your photos, scans and handwriting are not uploaded. Google Play services may download the models these features need, and ML Kit may send Google basic usage and performance information, as described in <a href="https://developers.google.com/ml-kit/terms">ML Kit's terms</a>.</td></tr>
     </tbody>
@@ -63,6 +67,8 @@
     <li><strong>Notifications:</strong> for reminders.</li>
     <li><strong>Alarms and reminders:</strong> so reminders ring on time, and come back after the phone restarts.</li>
     <li><strong>Full-screen alerts:</strong> so a ringing reminder can fill the screen like an alarm clock when the phone is locked.</li>
+    <li><strong>Location (precise, and "all the time"):</strong> only for place reminders, which ring when you arrive at or leave a place. The app asks the first time you set one. It uses your location once to find where you are when you choose "current location", and Android and Google Play services watch for the places you set, even when the app is closed. Your location stays on your phone: the app doesn't keep a history of it or send it anywhere.</li>
+    <li><strong>Storage (Android 9 and older only):</strong> to save a note's share card to your photos. Newer versions of Android don't need this permission.</li>
     <li><strong>Calendar:</strong> only if you turn on "Add to phone calendar", to save reminders as events as described above.</li>
     <li><strong>Internet:</strong> for the features listed above.</li>
   </ul>

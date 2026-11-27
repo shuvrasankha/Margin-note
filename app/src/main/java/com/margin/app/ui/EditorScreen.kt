@@ -109,6 +109,8 @@ import androidx.fragment.app.FragmentActivity
 import com.margin.app.data.BlockType
 import com.margin.app.data.Drawing
 import com.margin.app.data.MAX_INDENT
+import com.margin.app.data.MIN_PASSPHRASE
+import com.margin.app.data.isPasscode
 import com.margin.app.data.Mark
 import com.margin.app.data.NoteEntity
 import com.margin.app.data.NoteTemplate
@@ -799,7 +801,7 @@ fun EditorScreen(
     passwordFor?.let { mode ->
         var old by remember { mutableStateOf(false) }
         val submit: suspend (CharArray) -> String? = { pw ->
-            if (vm.enterPassword(pw)) { passwordFor = null; vm.lock(); null } else if (old) context.getString(R.string.editor_wrong_password) else context.getString(R.string.editor_wrong_passcode)
+            if (vm.enterPassword(pw)) { passwordFor = null; vm.lock(); null } else com.margin.app.data.UnlockLimit.message(context, if (old) context.getString(R.string.editor_wrong_password) else context.getString(R.string.editor_wrong_passcode))
         }
         if (old) OldPasswordDialog(onDismiss = { passwordFor = null }, onSubmit = submit)
         else PasscodeDialog(mode, onDismiss = { passwordFor = null }, onOldPassword = if (mode == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit)
@@ -891,7 +893,7 @@ internal fun passwordColors() = OutlinedTextFieldDefaults.colors(
 internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var password by remember { mutableStateOf("") }
-    var old by remember { mutableStateOf(false) } // notes locked before passcodes
+    var old by remember { mutableStateOf(usesPassphrase(context)) } // a passphrase, or a password from before passcodes
     val activity = LocalContext.current as? FragmentActivity
     val canBio = fingerprint != null && activity != null
     var pad by remember { mutableStateOf(!canBio) } // with fingerprint unlock, the keypad is the fallback
@@ -956,38 +958,66 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
 enum class PasswordMode { CREATE, ENTER }
 
 /**
- * Asks for a notes password from before passcodes (notes locked with it still open with it). [onSubmit]
- * returns an error to show, or null when done.
+ * The notes password as text: a passphrase, or a password from before passcodes (notes locked with it still
+ * open with it). [create] asks twice and needs at least [MIN_PASSPHRASE] characters. [onSubmit] returns an
+ * error to show, or null when done.
  */
 @Composable
-internal fun OldPasswordDialog(onDismiss: () -> Unit, onSubmit: suspend (CharArray) -> String?) {
+internal fun OldPasswordDialog(onDismiss: () -> Unit, create: Boolean = false, onSubmit: suspend (CharArray) -> String?) {
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (create) R.string.passcode_choose_a_passphrase else R.string.editor_enter_your_old_notes_password)) },
+        text = { PassphraseForm(create, onSubmit) },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
+}
+
+/** The passphrase field (twice when [create]) and its OK button; see [OldPasswordDialog]. */
+@Composable
+internal fun PassphraseForm(create: Boolean, onSubmit: suspend (CharArray) -> String?, modifier: Modifier = Modifier) {
     var password by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    MarginDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.editor_enter_your_old_notes_password)) },
-        text = {
-            OutlinedTextField(
-                password, { password = it; error = null }, singleLine = true, label = { Text(stringResource(R.string.editor_password)) },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                isError = error != null, supportingText = error?.let { { Text(it) } },
-                shape = JShape.sm, colors = passwordColors(),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                scope.launch {
+    val context = LocalContext.current
+    val submit: () -> Unit = {
+        if (password.isNotEmpty() && !busy) {
+                error = when {
+                    create && password.length < MIN_PASSPHRASE -> context.getString(R.string.passcode_passphrase_too_short, MIN_PASSPHRASE)
+                    create && again != password -> context.getString(R.string.passcode_passphrases_didnt_match)
+                    else -> null
+                }
+                if (error == null) scope.launch {
                     busy = true
+                    // Before submitting: a create can take this form away while the notes are re-sealed.
+                    if (create) rememberEntryKind(context, passphrase = true)
                     error = onSubmit(password.toCharArray())
+                    if (error == null && !create) rememberEntryKind(context, passphrase = !isPasscode(password.toCharArray()))
                     busy = false
                 }
-            }, enabled = password.isNotEmpty() && !busy) { Text(if (busy) stringResource(R.string.editor_checking) else stringResource(R.string.common_ok), fontWeight = FontWeight.SemiBold) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
-    )
+        }
+    }
+    // The keyboard's Done key submits: on a phone the keyboard covers the OK button.
+    val field: @Composable (String, (String) -> Unit, String, String?, Boolean) -> Unit = { value, onValue, label, err, last ->
+        OutlinedTextField(
+            value, { onValue(it); error = null }, singleLine = true, label = { Text(label) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (last) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Next),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { submit() }),
+            isError = err != null, supportingText = err?.let { { Text(it) } },
+            shape = JShape.sm, colors = passwordColors(), modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        field(password, { password = it }, stringResource(if (create) R.string.passcode_passphrase else R.string.editor_old_notes_password), if (create) null else error, !create)
+        if (create) field(again, { again = it }, stringResource(R.string.passcode_type_it_again), error, true)
+        PrimaryButton(
+            if (busy) stringResource(R.string.editor_checking) else stringResource(R.string.common_ok),
+            submit, Modifier.fillMaxWidth(), enabled = password.isNotEmpty() && !busy,
+        )
+    }
 }
 
 /** Known tags that finish the one being typed; tapping one completes it. */

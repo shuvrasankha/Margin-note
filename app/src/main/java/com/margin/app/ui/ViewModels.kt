@@ -164,17 +164,24 @@ data class ListMatch(val note: NoteEntity, val list: com.margin.app.data.SharedL
 fun sharedIn(intent: android.content.Intent?, typeOf: (android.net.Uri) -> String? = { null }): SharedIn? {
     // "Open with Margin" on a PDF: opened to read at once (see OpenedPdfs), not filed like a share.
     if (intent?.action == android.content.Intent.ACTION_VIEW) {
-        val uri = intent.data ?: return null
+        val uri = intent.data?.takeIf(::fromOtherApp) ?: return null
         return if ((intent.type ?: typeOf(uri)) == "application/pdf") SharedIn(null, null, uri, pdf = true, open = true) else null
     }
     if (intent?.action != android.content.Intent.ACTION_SEND) return null
     // A shared photo or PDF is copied into the note.
     val image = if (intent.type?.startsWith("image/") == true || intent.type == "application/pdf")
-        androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java) else null
+        androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java)?.takeIf(::fromOtherApp) else null
     val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
     if (image == null && text.isNullOrBlank()) return null
     return SharedIn(intent.getStringExtra(android.content.Intent.EXTRA_SUBJECT), text, image, pdf = image != null && intent.type == "application/pdf")
 }
+
+/**
+ * Only another app's content:// file. Margin reads a shared URI with its own rights, so a file:// path or a URI
+ * on Margin's own provider could make it copy one of its private files into a note.
+ */
+private fun fromOtherApp(uri: android.net.Uri) =
+    uri.scheme == android.content.ContentResolver.SCHEME_CONTENT && uri.authority?.startsWith(com.margin.app.BuildConfig.APPLICATION_ID) != true
 
 class NavViewModel : ViewModel() {
     // All Notes is the home screen: Back there leaves the app; its Folders button opens the folders.
@@ -454,8 +461,9 @@ class NotesViewModel @Inject constructor(
                 val (blocks, swapped) = files.sealAll(note.blocks)
                 val cipher = withContext(Dispatchers.Default) { NoteCrypto.seal(blocks.drop(1), key, params) }
                 repo.saveNote(note.id, note.folderId, blocks, cipher)
-                // The readable copies of files that are now encrypted go at once, unless another note still uses them.
-                if (swapped.isNotEmpty()) files.dropUnused(swapped.keys, repo.attachmentsInUse())
+                // The readable copies of files that are now encrypted go at once, unless another note still uses them,
+                // and so does the text read from them for search.
+                if (swapped.isNotEmpty()) repo.attachmentsInUse().let { inUse -> files.dropUnused(swapped.keys, inUse); repo.forgetAttachmentText(swapped.keys - inUse) }
                 n++
             }
             onDone(n)
@@ -1088,7 +1096,7 @@ class EditorViewModel @Inject constructor(
             password.fill('\u0000')
             unlocking = false
             if (body == null) {
-                unlockError = if (wasPasscode) appContext.getString(R.string.view_models_wrong_passcode) else appContext.getString(R.string.view_models_wrong_password)
+                unlockError = com.margin.app.data.UnlockLimit.message(appContext, if (wasPasscode) appContext.getString(R.string.view_models_wrong_passcode) else appContext.getString(R.string.view_models_wrong_password))
             } else {
                 unlockError = null
                 files.reveal(body)
@@ -1983,8 +1991,9 @@ class EditorViewModel @Inject constructor(
             if (swapped.isNotEmpty() && id == noteId) swapAttachments(swapped, current, blocks)
             val cipher = sealWith?.let { (key, params) -> NoteCrypto.seal(blocks.drop(1), key, params).also { if (id == noteId) sealed = it } }
             repo.saveNote(id, folder, blocks, cipher)
-            // The readable copies of files that are now encrypted go at once, unless another note still uses them.
-            if (swapped.isNotEmpty() && sealWith != null) files.dropUnused(swapped.keys, repo.attachmentsInUse())
+            // The readable copies of files that are now encrypted go at once, unless another note still uses them,
+            // and so does the text read from them for search.
+            if (swapped.isNotEmpty() && sealWith != null) repo.attachmentsInUse().let { inUse -> files.dropUnused(swapped.keys, inUse); repo.forgetAttachmentText(swapped.keys - inUse) }
             saved = true; exists = true; if (createdAt == null) createdAt = System.currentTimeMillis()
         }
     }
@@ -2164,6 +2173,10 @@ class SettingsViewModel @Inject constructor(
     fun passwordForFingerprint(): CharArray? = session.passwordCopy()
     /** Unlocked with an old password: time to switch to a passcode. */
     val legacyPassword = session.legacy
+    val passphrase = session.passphrase
+    /** Whether any password is saved, so a 6-digit passcode isn't enough any more. */
+    val hasLogins: StateFlow<Boolean> = repo.liveNotes().map { n -> n.any { isLogin(it) && it.cipher != null } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
     fun setFingerprint(blob: String?) = appPrefs.setFingerprint(blob)
     val autoSortChecked = appPrefs.autoSortChecked
     val toggles = appPrefs.toggles

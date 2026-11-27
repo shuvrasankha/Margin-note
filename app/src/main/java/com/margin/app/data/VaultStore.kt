@@ -23,9 +23,11 @@ class VaultStore @Inject constructor(private val repo: NoteRepository) {
 
     /**
      * Saves [login] as a new entry ([id] null) or over [id]. The stored one is read back first, so a changed
-     * password always goes to its history, whoever saves it. Returns the id, or null when [session] is locked.
+     * password always goes to its history, whoever saves it. Returns the id, or null when [session] is locked
+     * or unlocked with a 6-digit passcode (too few to keep saved passwords safe once they sync or are backed up).
      */
     suspend fun save(session: LockSession, id: String?, login: Login, stamp: Boolean = true): String? {
+        if (!session.passphrase.value) return null
         val params = repo.liveNotes().first().firstOrNull { isLogin(it) && it.cipher != null }?.cipher?.let(NoteCrypto::paramsOf)
             ?: NoteCrypto.KeyParams(NoteCrypto.newSalt(), NoteCrypto.ITERATIONS)
         val key = session.key(params) ?: return null

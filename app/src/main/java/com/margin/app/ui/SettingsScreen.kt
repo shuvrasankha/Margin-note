@@ -420,8 +420,8 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
     askCurrent?.let { then ->
         var old by remember { mutableStateOf(false) }
         val submit: suspend (CharArray) -> String? = { pw ->
-            // An old password brings up the switch to a passcode (MarginRoot), which replaces this step.
-            if (vm.checkPassword(pw)) { askCurrent = null; if (!vm.legacyPassword.value) then(); null } else if (old) context.getString(R.string.settings_wrong_password) else context.getString(R.string.settings_wrong_passcode)
+            // An old password, or a passcode with saved passwords, brings up the switch (MarginRoot), which replaces this step.
+            if (vm.checkPassword(pw)) { askCurrent = null; if (!vm.legacyPassword.value && (vm.passphrase.value || !vm.hasLogins.value)) then(); null } else com.margin.app.data.UnlockLimit.message(context, if (old) context.getString(R.string.settings_wrong_password) else context.getString(R.string.settings_wrong_passcode))
         }
         if (old) OldPasswordDialog(onDismiss = { askCurrent = null }, onSubmit = submit)
         else PasscodeDialog(PasswordMode.ENTER, onDismiss = { askCurrent = null }, onOldPassword = { old = true }, onSubmit = submit)
@@ -432,11 +432,11 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
             intro = stringResource(R.string.settings_choose_a_passcode_to_open),
             enterSub = if (on) stringResource(R.string.settings_your_notes_passcode_will_open) else stringResource(R.string.settings_to_turn_off_the_app),
         ) { code ->
-            if (if (on) vm.turnOnAppLock(code) else vm.turnOffAppLock(code)) { appLockAsk = null; null } else context.getString(R.string.settings_wrong_passcode)
+            if (if (on) vm.turnOnAppLock(code) else vm.turnOffAppLock(code)) { appLockAsk = null; null } else com.margin.app.data.UnlockLimit.message(context, context.getString(R.string.settings_wrong_passcode))
         }
     }
     if (newPassword) {
-        PasscodeDialog(PasswordMode.CREATE, onDismiss = { newPassword = false }) { password ->
+        PasscodeDialog(PasswordMode.CREATE, onDismiss = { newPassword = false }, passphraseOnly = vm.hasLogins.collectAsState().value) { password ->
             vm.changePassword(password)
             newPassword = false
             null

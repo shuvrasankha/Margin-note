@@ -233,6 +233,11 @@ data class NoteEntity(
     @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
     /** Place in its folder when the folder is in your own order (schema v14); 0 = not placed yet, so it goes first. */
     @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /**
+     * Kept on this phone only (schema v15): plain-text edits that lost a sync conflict to a version locked on
+     * another phone. Not uploaded while unlocked and never synced, so they don't undo the lock elsewhere.
+     */
+    @ColumnInfo(defaultValue = "0") val localOnly: Boolean = false,
 )
 
 val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN
@@ -252,7 +257,10 @@ val NoteEntity.colorMark: NoteColor get() = color?.let { c -> NoteColor.entries.
 
 val NoteEntity.isLocked get() = cipher != null
 
-val NoteEntity.isDirty get() = updatedAt != syncedUpdatedAt
+val NoteEntity.isDirty get() = updatedAt != syncedUpdatedAt && !heldBack
+
+/** A [NoteEntity.localOnly] note that sync leaves alone: never uploaded, and still unlocked. Locking it lets it sync. */
+val NoteEntity.heldBack get() = localOnly && cipher == null && syncedUpdatedAt == null
 val FolderEntity.isDirty get() = updatedAt != syncedUpdatedAt
 
 val NoteEntity.lastEdited get() = if (editedAt > 0) editedAt else updatedAt

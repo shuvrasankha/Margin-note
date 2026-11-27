@@ -186,7 +186,7 @@ fun NoteListScreen(
     lockPasscode?.let { mode ->
         var old by remember { mutableStateOf(false) }
         val submit: suspend (CharArray) -> String? = { pw ->
-            if (vm.enterPassword(pw)) { lockPasscode = null; lockSelected(); null } else if (old) context.getString(R.string.notes_wrong_password) else context.getString(R.string.notes_wrong_passcode)
+            if (vm.enterPassword(pw)) { lockPasscode = null; lockSelected(); null } else com.margin.app.data.UnlockLimit.message(context, if (old) context.getString(R.string.notes_wrong_password) else context.getString(R.string.notes_wrong_passcode))
         }
         if (old) OldPasswordDialog(onDismiss = { lockPasscode = null }, onSubmit = submit)
         else PasscodeDialog(mode, onDismiss = { lockPasscode = null }, onOldPassword = if (mode == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit)

@@ -86,18 +86,21 @@ fun MarginRoot(
     var skipSwitch by remember { mutableStateOf(false) }
     val rootScope = rememberCoroutineScope()
     LaunchedEffect(legacy) { if (!legacy) skipSwitch = false }
+    val switchPassword: (CharArray) -> kotlinx.coroutines.Job = { code ->
+        rootScope.launch {
+            editor.saveNow() // an open locked note is saved with the old key before the notes are re-sealed
+            settings.changePassword(code).join()
+            editor.rekeyed()
+            Toast.makeText(context, settings.message ?: context.getString(R.string.margin_root_passcode_set), Toast.LENGTH_LONG).show()
+        }
+    }
     if (legacy && !skipSwitch) {
         PasscodeDialog(
             PasswordMode.CREATE, onDismiss = { skipSwitch = true },
             intro = stringResource(R.string.root_legacy_passcode_intro),
         ) { code ->
             skipSwitch = true
-            rootScope.launch {
-                editor.saveNow() // an open locked note is saved with the old key before the notes are re-sealed
-                settings.changePassword(code).join()
-                editor.rekeyed()
-                Toast.makeText(context, settings.message ?: context.getString(R.string.margin_root_passcode_set), Toast.LENGTH_LONG).show()
-            }
+            switchPassword(code)
             null
         }
     }
@@ -173,6 +176,20 @@ fun MarginRoot(
             if (nav.stack.getOrNull(nav.stack.lastIndex - 1) is Screen.Editor) editor.close() else leaveEditor()
         }
         nav.pop()
+    }
+    // Saved passwords need a passphrase: a 6-digit passcode is guessed offline in hours once the vault syncs or
+    // is backed up. On Passwords it's required; elsewhere (saved ones exist) it's asked once per unlock.
+    val passphrase by settings.passphrase.collectAsState()
+    val unlocked by settings.unlocked.collectAsState()
+    val hasLogins by settings.hasLogins.collectAsState()
+    var skipVault by remember { mutableStateOf(false) }
+    LaunchedEffect(unlocked) { if (!unlocked) skipVault = false }
+    val onPasswords = nav.current == Screen.Passwords
+    if (unlocked && !passphrase && !(legacy && !skipSwitch) && (onPasswords || (hasLogins && !skipVault))) {
+        PasscodeDialog(
+            PasswordMode.CREATE, onDismiss = { if (onPasswords) back() else skipVault = true }, passphraseOnly = true,
+            intro = stringResource(R.string.root_passwords_need_a_passphrase, com.margin.app.data.MIN_PASSPHRASE),
+        ) { phrase -> switchPassword(phrase).join(); null } // the dialog stays busy until the notes are re-sealed
     }
     fun listName(folderId: String) = when {
         folderId == TRASH_ID -> context.getString(R.string.margin_root_recently_deleted)
@@ -301,7 +318,7 @@ fun MarginRoot(
             }
             Screen.Passwords -> JournalGate(
                 editor, fingerprint, onCancel = ::back,
-                intro = stringResource(R.string.margin_root_passwords_are_locked_choose_a),
+                intro = stringResource(R.string.margin_root_passwords_are_locked_choose_a, com.margin.app.data.MIN_PASSPHRASE), passphraseOnly = true,
             ) { PasswordsScreen(vault, onBack = ::back, backLabel = backTo(below)) }
             Screen.Habits -> {
                 val all by folders.liveNotes.collectAsState()

@@ -1,6 +1,7 @@
 package com.margin.app.sync
 
 import com.margin.app.R
+import com.margin.app.data.needsBackupPassword
 
 import android.content.Context
 import android.net.Uri
@@ -354,6 +355,12 @@ class BackupManager @Inject constructor(
         val stamp = dataStamp()
         val due = targets.filter { force || (prefs.status.value[it.id]?.dataStamp ?: 0) < stamp || prefs.status.value[it.id]?.lastError != null }
         if (due.isEmpty()) return BackupRun(0, targets.size, 0)
+        // Saved passwords leave the phone only inside an encrypted backup: their notes passcode alone is too weak a lock.
+        if (needsBackupPassword(db.notes().all(), prefs.backupPassword() != null)) {
+            val why = context.getString(R.string.backups_set_a_backup_password_first)
+            due.forEach { prefs.record(it.id, (prefs.status.value[it.id] ?: BackupStatus()).copy(lastError = why)) }
+            return BackupRun(0, targets.size - due.size, due.size)
+        }
         _running.value = true
         val zip = File(context.cacheDir, "backup-out.zip")
         val sealedZip = File(context.cacheDir, "backup-out.sealed")

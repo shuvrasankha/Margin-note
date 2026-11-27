@@ -74,6 +74,9 @@ const val LOGIN_TITLE = "Saved password"
 fun isLoginId(id: String) = id.startsWith(LOGIN_PREFIX)
 fun isLogin(note: NoteEntity) = isLoginId(note.id)
 
+/** Saved passwords may only be backed up encrypted with a backup password (their notes passcode may be 6 digits). */
+fun needsBackupPassword(notes: List<NoteEntity>, hasBackupPassword: Boolean) = !hasBackupPassword && notes.any { isLogin(it) && it.cipher != null }
+
 /** A login as the note body to seal: one line holding it as JSON. */
 fun loginBody(login: Login): List<Block> = listOf(Block(text = MarginJson.encodeToString(Login.serializer(), login)))
 

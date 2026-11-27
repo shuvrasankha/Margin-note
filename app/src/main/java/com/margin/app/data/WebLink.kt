@@ -110,7 +110,7 @@ private fun fetch(url: String, acceptHeader: String, max: Int, whole: Boolean = 
 }.getOrNull()
 
 /** InputStream.readNBytes needs API 33. */
-private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
+internal fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
     val out = java.io.ByteArrayOutputStream()
     val buf = ByteArray(16 * 1024)
     while (out.size() < max) {

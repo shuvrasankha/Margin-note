@@ -34,8 +34,18 @@ class FakeDrive : DriveStore {
         ensureOnline()
         val id = fileId ?: "file-${nextId++}"
         files[id] = File(name, content, updatedAt)
+        revisions[id] = revisions.getOrDefault(id, emptyList()) + content
         return id
     }
+
+    override suspend fun delete(fileId: String) { ensureOnline(); files.remove(fileId); revisions.remove(fileId) }
+
+    /** Every version of each file, oldest first, as Drive's revision history keeps them. */
+    val revisions = mutableMapOf<String, List<String>>()
+
+    override suspend fun dropOldRevisions(fileId: String) { ensureOnline(); revisions[fileId] = listOfNotNull(revisions[fileId]?.last()) }
+
+    fun noteRevisions(id: String) = files.entries.first { it.value.name == noteFileName(id) }.key.let { revisions.getValue(it) }
 
     fun note(id: String): NoteEntity? =
         files.values.firstOrNull { it.name == noteFileName(id) }?.let { MarginJson.decodeFromString<NoteEntity>(it.content) }
@@ -90,6 +100,12 @@ class Device(drive: FakeDrive, private val clock: Clock, name: String) {
         )
         val blocks = listOf(Block(id = "$id-t", type = BlockType.TITLE, text = title), Block(id = "$id-b", text = body))
         store.notes[id] = base.withBlocks(blocks, now)
+    }
+
+    /** Locks the note: only the title stays readable; the body becomes a (fake) sealed string. */
+    fun lock(id: String) {
+        val n = store.notes.getValue(id)
+        store.notes[id] = n.copy(blocks = n.blocks.take(1), searchText = "", cipher = "j1.sealed", updatedAt = clock.tick())
     }
 
     fun deleteForever(id: String) { store.notes[id] = store.notes.getValue(id).toTombstone(clock.tick()) }

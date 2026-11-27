@@ -74,6 +74,7 @@ import androidx.compose.ui.res.pluralStringResource
 fun JournalGate(
     editor: EditorViewModel, fingerprint: String?, onCancel: () -> Unit,
     intro: String = stringResource(R.string.journal_the_journal_is_locked_choose),
+    passphraseOnly: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -91,12 +92,12 @@ fun JournalGate(
         }
         mode = if (has) PasswordMode.ENTER else PasswordMode.CREATE
     }
-    val submit: suspend (CharArray) -> String? = { pw -> if (editor.enterPassword(pw)) null else if (old) context.getString(R.string.journal_wrong_password) else context.getString(R.string.journal_wrong_passcode) }
+    val submit: suspend (CharArray) -> String? = { pw -> if (editor.enterPassword(pw)) null else com.margin.app.data.UnlockLimit.message(context, if (old) context.getString(R.string.journal_wrong_password) else context.getString(R.string.journal_wrong_passcode)) }
     mode?.let { m ->
         if (old) OldPasswordDialog(onDismiss = onCancel, onSubmit = submit)
         else PasscodeDialog(
             m, onDismiss = onCancel,
-            intro = intro,
+            intro = intro, passphraseOnly = passphraseOnly,
             onOldPassword = if (m == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit,
         )
     }

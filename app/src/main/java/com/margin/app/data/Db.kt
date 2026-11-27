@@ -102,7 +102,7 @@ interface NoteDao {
     suspend fun markSynced(id: String, syncedAt: Long)
 
     /** Notes changed since the last sync, deletions included (the offline queue). */
-    @Query("SELECT COUNT(*) FROM notes WHERE syncedUpdatedAt IS NULL OR syncedUpdatedAt != updatedAt")
+    @Query("SELECT COUNT(*) FROM notes WHERE (syncedUpdatedAt IS NULL OR syncedUpdatedAt != updatedAt) AND NOT (localOnly = 1 AND cipher IS NULL AND syncedUpdatedAt IS NULL)")
     fun observeDirtyCount(): Flow<Int>
 }
 
@@ -158,7 +158,7 @@ interface NoteVersionDao {
     suspend fun allBlocks(): List<String>
 }
 
-@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 14, exportSchema = true)
+@Database(entities = [FolderEntity::class, NoteEntity::class, AttachmentText::class, NoteVersion::class], version = 15, exportSchema = true)
 @TypeConverters(Converters::class)
 abstract class MarginDatabase : RoomDatabase() {
     abstract fun folders(): FolderDao
@@ -192,6 +192,13 @@ val MIGRATION_9_10 = object : Migration(9, 10) {
 val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE notes ADD COLUMN streak INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+/** v15: conflict copies kept on this phone only (sync conflict with a locked note). */
+val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE notes ADD COLUMN localOnly INTEGER NOT NULL DEFAULT 0")
     }
 }
 

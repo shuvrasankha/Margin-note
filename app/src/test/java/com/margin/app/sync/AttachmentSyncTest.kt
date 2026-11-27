@@ -24,6 +24,22 @@ class AttachmentSyncTest {
         assertArrayEquals(bytes, File(phoneB, "abc.jpg").readBytes())
     }
 
+    @Test fun removesFilesNoNoteUsesFromDrive() = runBlocking {
+        val drive = FakeDrive()
+        val phone = Files.createTempDirectory("p").toFile()
+        File(phone, "plain.jpg").writeBytes(byteArrayOf(1))
+        File(phone, "kept.jpg").writeBytes(byteArrayOf(2))
+        syncAttachments(drive, phone, setOf("plain.jpg", "kept.jpg"))
+        // The note was locked: its photo is now "sealed.jpg", and nothing uses the readable "plain.jpg".
+        File(phone, "sealed.jpg").writeBytes(byteArrayOf(3))
+        syncAttachments(drive, phone, setOf("sealed.jpg", "kept.jpg"))
+        assertEquals(setOf("att-sealed.jpg", "att-kept.jpg"), drive.files.values.map { it.name }.toSet())
+        // Deleted for good (or emptied from Recently Deleted): its files go too; notes' own files are left alone.
+        drive.upload("note-x", null, "{}", 0)
+        syncAttachments(drive, phone, emptySet())
+        assertEquals(setOf("note-x"), drive.files.values.map { it.name }.toSet())
+    }
+
     @Test fun refusesNamesThatCouldLeaveTheFolder() {
         assertTrue(isSafeAttachmentName("0b9e-11ef.jpg"))
         assertTrue(isSafeAttachmentName("abc"))

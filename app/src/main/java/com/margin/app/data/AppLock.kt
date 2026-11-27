@@ -28,7 +28,9 @@ class AppLock @Inject constructor(private val prefs: AppPrefs, private val repo:
      */
     suspend fun unlock(code: CharArray): Boolean {
         val own = prefs.appLock.value ?: return true.also { _open.value = true }
+        if (UnlockLimit.waitMs() > 0) return false
         val ok = opens(code, own) || repo.lockedNotes().firstOrNull()?.cipher?.let { opens(code, it) }?.also { if (it) reseal(code) } == true
+        UnlockLimit.record(ok)
         if (ok) _open.value = true
         return ok
     }

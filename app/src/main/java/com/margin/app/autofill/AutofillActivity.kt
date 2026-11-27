@@ -153,22 +153,29 @@ class AutofillActivity : FragmentActivity() {
                     val code = String(r.bytes, Charsets.UTF_8).toCharArray().also { r.bytes.fill(0) }
                     val ok = session.unlock(code, s) != null
                     code.fill('\u0000')
-                    if (ok) { step = Step.Working; return@LaunchedEffect onUnlocked() }
+                    if (ok && session.passphrase.value) { step = Step.Working; return@LaunchedEffect onUnlocked() }
                 }
             }
             mode = PasswordMode.ENTER
         }
+        val submit: suspend (CharArray) -> String? = { code ->
+            val s = sample
+            val ok = if (s == null) { session.startWith(code); true } else session.unlock(code, s) != null
+            code.fill('\u0000')
+            when {
+                !ok -> com.margin.app.data.UnlockLimit.message(context, context.getString(R.string.autofill_wrong_passcode))
+                // Saved passwords need a passphrase; the switch re-seals every locked note, so it's made in the app.
+                !session.passphrase.value -> { session.lock(); context.getString(R.string.autofill_open_margin_to_set_a_passphrase) }
+                else -> { step = Step.Working; onUnlocked(); null }
+            }
+        }
         mode?.let { m ->
             PasscodeDialog(
-                m, onDismiss = ::cancel,
-                intro = stringResource(R.string.autofill_choose_a_passcode_to_keep),
+                m, onDismiss = ::cancel, passphraseOnly = true,
+                intro = stringResource(R.string.autofill_choose_a_passcode_to_keep, com.margin.app.data.MIN_PASSPHRASE),
                 enterTitle = stringResource(R.string.autofill_unlock_margin), enterSub = stringResource(R.string.autofill_enter_your_notes_passcode_to),
-            ) { code ->
-                val s = sample
-                val ok = if (s == null) { session.startWith(code); true } else session.unlock(code, s) != null
-                code.fill('\u0000')
-                if (ok) { step = Step.Working; onUnlocked(); null } else context.getString(R.string.autofill_wrong_passcode)
-            }
+                onSubmit = submit,
+            )
         }
     }
 

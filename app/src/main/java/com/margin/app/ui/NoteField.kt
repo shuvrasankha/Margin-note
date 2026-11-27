@@ -1118,8 +1118,9 @@ internal fun AttachmentCard(a: Attachment, file: java.io.File, onOpen: (Drawing?
         val context = LocalContext.current
         val url by produceState<String?>(null, file) { value = withContext(Dispatchers.IO) { runCatching { file.readText().trim() }.getOrNull() } }
         // The page's picture and description, fetched once and kept in the cache; the card shows without them until then.
+        // None in a locked note: fetching would tell the site, and the cache would keep the page readable.
         val preview by produceState<LoadedPreview?>(null, url) {
-            val u = url ?: return@produceState
+            val u = url?.takeIf { !a.isSealed } ?: return@produceState
             value = withContext(Dispatchers.IO) { runCatching { LinkPreviews(context.cacheDir).load(u) }.getOrNull() }
         }
         val thumb = remember(preview) { preview?.image?.asImageBitmap() }

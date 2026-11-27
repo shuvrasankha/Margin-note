@@ -819,14 +819,14 @@
     <string name="editor_this_note_is_locked">This note is locked.</string>
     <string name="editor_view_note">View note</string>
     <string name="editor_enter_passcode_instead">Enter passcode instead</string>
-    <string name="editor_old_notes_password">Old notes password</string>
+    <string name="editor_old_notes_password">Passphrase</string>
     <string name="editor_unlocking">Unlocking…</string>
     <string name="editor_unlock">Unlock</string>
     <string name="editor_use_passcode">Use passcode</string>
-    <string name="editor_use_old_password">Use old password</string>
+    <string name="editor_use_old_password">Use passphrase</string>
     <string name="editor_use_fingerprint">Use fingerprint</string>
     <string name="editor_locked_notes_are_encrypted_on">Locked notes are encrypted, on this device and in your Google Drive backup. Only the title is visible in your list and in search.</string>
-    <string name="editor_enter_your_old_notes_password">Enter your old notes password</string>
+    <string name="editor_enter_your_old_notes_password">Enter your passphrase</string>
     <string name="editor_password">Password</string>
     <string name="editor_checking">Checking…</string>
     <string name="common_ok">OK</string>
@@ -1079,12 +1079,12 @@
     <string name="passwords_no_password_is_used_twice">No password is used twice.</string>
     <string name="passwords_no_weak_passwords">No weak passwords.</string>
     <string name="passwords_password">Password</string>
-    <string name="passwords_encrypted_with_your_notes_passcode">Encrypted with your notes passcode</string>
+    <string name="passwords_encrypted_with_your_notes_passcode">Encrypted with your notes passphrase</string>
     <string name="passwords_saved">Saved</string>
     <string name="passwords_reused">Reused</string>
     <string name="passwords_weak">Weak</string>
     <string name="passwords_no_passwords_yet">No passwords yet</string>
-    <string name="passwords_save_logins_here_theyre_encrypted">Save logins here. They\'re encrypted with your notes passcode and sync to your other devices.</string>
+    <string name="passwords_save_logins_here_theyre_encrypted">Save logins here. They\'re encrypted with your notes passphrase and sync to your other devices.</string>
     <string name="passwords_add_a_password">Add a Password</string>
     <string name="passwords_copy_password_for">Copy password for %1$s</string>
     <string name="passwords_discard_this_password">Discard this password?</string>
@@ -1517,7 +1517,7 @@
     <string name="margin_root_features">Features</string>
     <string name="margin_root_to_dos">To-dos</string>
     <string name="margin_root_library">Library</string>
-    <string name="margin_root_passwords_are_locked_choose_a">Passwords are locked. Choose a passcode to open them; locked notes use the same one.</string>
+    <string name="margin_root_passwords_are_locked_choose_a">Choose a passphrase of at least %1$d characters to keep your saved passwords encrypted. Locked notes use the same one.</string>
     <string name="margin_root_trackers">Trackers</string>
     <string name="margin_root_open_it_in_passwords">Open it in Passwords</string>
     <string name="margin_root_recover_it_to_see_it">Recover it to see it in Passwords</string>
@@ -1528,7 +1528,7 @@
     <string name="margin_root_no_note_open">No note open</string>
     <string name="margin_root_pick_a_note_from_the">Pick a note from the list, or start a new one.</string>
     <string name="margin_root_new_note">New Note</string>
-    <string name="root_legacy_passcode_intro">Locked notes now use a 6-digit passcode. Choose one and your locked notes will be re-encrypted with it. Other devices will need the new passcode too.</string>
+    <string name="root_legacy_passcode_intro">Locked notes now use a 6-digit passcode or a passphrase. Choose one and your locked notes will be re-encrypted with it. Other devices will need it too.</string>
     <plurals name="root_share_adds">
         <item quantity="one">Adds %d item. Nothing is removed.</item>
         <item quantity="other">Adds %d items. Nothing is removed.</item>
@@ -1885,7 +1885,19 @@
     <string name="passcode_enter_the_same_6_digits">Enter the same 6 digits again.</string>
     <string name="passcode_use_it_to_open_locked">Use it to open locked notes on all your devices. It\'s separate from your phone passcode.</string>
     <string name="passcode_passcodes_didnt_match_try_again">Passcodes didn\'t match. Try again.</string>
-    <string name="passcode_use_old_password">Use old password</string>
+    <string name="passcode_choose_a_passphrase">Choose a passphrase</string>
+    <string name="passcode_too_many_tries">Too many wrong tries. Try again in %1$s.</string>
+    <string name="passcode_passphrase">Passphrase</string>
+    <string name="passcode_enter_your_notes_passphrase">Enter your notes passphrase.</string>
+    <string name="passcode_type_it_again">Type it again</string>
+    <string name="passcode_passphrase_hint">At least %1$d characters. A few unrelated words are easy to remember and hard to guess. Use it to open locked notes on all your devices; if you forget it, they can\'t be recovered.</string>
+    <string name="passcode_passphrase_too_short">Use at least %1$d characters</string>
+    <string name="passcode_passphrases_didnt_match">The two didn\'t match</string>
+    <string name="passcode_use_a_passcode_instead">Use a 6-digit passcode instead</string>
+    <string name="root_passwords_need_a_passphrase">Saved passwords need a passphrase of at least %1$d characters: a 6-digit passcode can be guessed in hours by anyone who gets a copy of your synced or backed-up notes. Your locked notes will be re-encrypted with it, and other devices will need it too.</string>
+    <string name="autofill_open_margin_to_set_a_passphrase">Saved passwords now need a passphrase. Open Margin to set one.</string>
+    <string name="backups_set_a_backup_password_first">saved passwords need a backup password (Backup password, below).</string>
+    <string name="passcode_use_old_password">Use a passphrase instead</string>
     <string name="passcode_if_you_forget_this_passcode">If you forget this passcode, locked notes can\'t be recovered — not even by us.</string>
     <string name="passcode_margin_is_locked">Margin is locked</string>
     <string name="passcode_enter_your_passcode_to_open">Enter your passcode to open your notes.</string>
@@ -2021,7 +2033,7 @@
     <string name="kit_current">Current</string>
 
     <!-- autofill/AutofillActivity.kt -->
-    <string name="autofill_choose_a_passcode_to_keep">Choose a passcode to keep your passwords encrypted. Locked notes use the same one.</string>
+    <string name="autofill_choose_a_passcode_to_keep">Choose a passphrase of at least %1$d characters to keep your passwords encrypted. Locked notes use the same one.</string>
     <string name="autofill_unlock_margin">Unlock Margin</string>
     <string name="autofill_enter_your_notes_passcode_to">Enter your notes passcode to use your passwords.</string>
     <string name="autofill_wrong_passcode">Wrong passcode</string>
@@ -2077,6 +2089,7 @@
     <string name="widget_today_written">Written</string>
     <string name="widget_today_write_today">Write today</string>
     <string name="widget_recent_locked">Locked</string>
+    <string name="widget_open_margin_to_see">Open Margin to see</string>
     <string name="sync_offline_title">You\'re offline</string>
     <string name="sync_offline_text">Keep writing. Changes are saved on this phone and sync when you\'re back online.</string>
     <string name="sync_failed_text">Couldn\'t sync with Google Drive. Tap to try again.</string>

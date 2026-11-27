@@ -16,7 +16,8 @@ import javax.crypto.spec.SecretKeySpec
  * "j1.<iterations>.<salt>.<iv>.<ciphertext>" (base64url). Only the password can open it, on any device.
  */
 object NoteCrypto {
-    const val ITERATIONS = 120_000
+    // New seals only: older notes and backups keep the count they were sealed with (it travels in the cipher).
+    const val ITERATIONS = 600_000
     private const val VERSION = "j1"
     private val random = SecureRandom()
     private val b64e = Base64.getUrlEncoder().withoutPadding()
@@ -24,7 +25,7 @@ object NoteCrypto {
 
     fun newSalt(): ByteArray = ByteArray(16).also(random::nextBytes)
 
-    /** Slow on purpose (about a tenth of a second or more); call it off the main thread. */
+    /** Slow on purpose (about half a second on a phone); call it off the main thread. */
     fun deriveKey(password: CharArray, salt: ByteArray, iterations: Int = ITERATIONS): SecretKey {
         val spec = PBEKeySpec(password, salt, iterations, 256)
         try {

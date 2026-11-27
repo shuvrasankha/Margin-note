@@ -45,6 +45,7 @@ import androidx.compose.ui.res.pluralStringResource
 class ListWidgetConfigActivity : ComponentActivity() {
     @Inject lateinit var repo: NoteRepository
     @Inject lateinit var appPrefs: AppPrefs
+    @Inject lateinit var appLock: com.margin.app.data.AppLock
 
     /** The note widget shares this picker: any note, not just lists. */
     private val forNote by lazy { AppWidgetManager.getInstance(this).getAppWidgetInfo(widgetId)?.provider?.className == NoteWidget::class.java.name }
@@ -57,8 +58,14 @@ class ListWidgetConfigActivity : ComponentActivity() {
         setResult(RESULT_CANCELED, result())
         if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return finish()
         enableEdgeToEdge()
+        appLock.relock() // App Lock asks here too: the list below shows note titles
         setContent {
             val appearance by appPrefs.appearance.collectAsState()
+            val open by appLock.open.collectAsState()
+            if (!open) {
+                MarginTheme(appearance) { AppLockScreen(appLock, null, onLeave = ::finish) }
+                return@setContent
+            }
             val notes by repo.liveNotes().collectAsState(emptyList())
             val lists = if (forNote) NoteWidget.choices(notes).sortedByDescending { it.lastEdited } else ListWidgetData.lists(notes)
             MarginTheme(appearance) {
@@ -103,6 +110,11 @@ class ListWidgetConfigActivity : ComponentActivity() {
             setResult(RESULT_OK, result())
             finish()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) appLock.relock() // unlocking here doesn't open the app later
     }
 
     private fun result() = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)

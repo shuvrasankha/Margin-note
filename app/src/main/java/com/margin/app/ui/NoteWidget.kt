@@ -72,7 +72,9 @@ class NoteWidget : AppWidgetProvider() {
             // Locked, archived or deleted since it was picked: ask for another, and show nothing of it.
             val shown = note?.takeIf { it.trashedAt == null && !it.archived && !it.isLocked }
             v.setTextViewText(R.id.note_title, shown?.displayTitle ?: context.getString(R.string.note_widget_pick))
-            v.setTextViewText(R.id.note_body, shown?.let(::text)?.ifEmpty { null } ?: context.getString(if (shown == null) R.string.note_widget_empty else R.string.widget_no_text))
+            val body = if (shown != null && com.margin.app.data.appLockOn(context)) context.getString(R.string.widget_open_margin_to_see) // App Lock: title only
+                else shown?.let(::text)?.ifEmpty { null } ?: context.getString(if (shown == null) R.string.note_widget_empty else R.string.widget_no_text)
+            v.setTextViewText(R.id.note_body, body)
             v.setOnClickPendingIntent(R.id.note_pick, PendingIntent.getActivity(
                 context, widgetId,
                 Intent(context, ListWidgetConfigActivity::class.java).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),

@@ -67,6 +67,7 @@ class RecentWidget : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ))
             v.setViewVisibility(R.id.empty, if (latest.isEmpty()) View.VISIBLE else View.GONE)
+            val hideText = com.margin.app.data.appLockOn(context) // App Lock: titles only on the home screen
             ROWS.forEachIndexed { i, (row, title, body) ->
                 val n = latest.getOrNull(i)
                 // Empty rows stay (invisible) so the shown ones keep their height.
@@ -74,7 +75,7 @@ class RecentWidget : AppWidgetProvider() {
                 if (n == null) return@forEachIndexed
                 v.setTextViewText(title, n.displayTitle)
                 // The same second line as the note list.
-                v.setTextViewText(body, if (n.isLocked) context.getString(R.string.widget_recent_locked) else n.searchText.lineSequence().firstOrNull { it.isNotBlank() } ?: context.getString(R.string.notes_snippet_no_text))
+                v.setTextViewText(body, if (n.isLocked) context.getString(R.string.widget_recent_locked) else if (hideText) context.getString(R.string.widget_open_margin_to_see) else n.searchText.lineSequence().firstOrNull { it.isNotBlank() } ?: context.getString(R.string.notes_snippet_no_text))
                 v.setOnClickPendingIntent(row, open(context, i + 1, Intent(ACTION_OPEN).putExtra(EXTRA_NOTE, n.id).putExtra(EXTRA_FOLDER, n.folderId)))
             }
             manager.updateAppWidget(ids, v)

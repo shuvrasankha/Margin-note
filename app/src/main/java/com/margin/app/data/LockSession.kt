@@ -14,6 +14,12 @@ const val PASSCODE_LENGTH = 6
 /** A 6-digit passcode, as opposed to a password from before passcodes. */
 fun isPasscode(p: CharArray) = p.size == PASSCODE_LENGTH && p.all { it in '0'..'9' }
 
+/** The shortest notes password that counts as a passphrase: long enough that guessing it offline isn't practical. */
+const val MIN_PASSPHRASE = 12
+
+/** Long enough to protect notes that leave the phone (sync, backups); required for Passwords. */
+fun isPassphrase(p: CharArray) = p.size >= MIN_PASSPHRASE
+
 /**
  * Holds the notes password in memory while locked notes are unlocked. The app locks again when it goes
  * to the background ([lock]). Derived keys are cached per note salt, so saving an open locked note never
@@ -28,12 +34,18 @@ class LockSession @Inject constructor() {
     private val _legacy = MutableStateFlow(false)
     /** Unlocked with an old-style password: the app asks to switch to a passcode. */
     val legacy: StateFlow<Boolean> = _legacy
+    private val _passphrase = MutableStateFlow(false)
+    /** Unlocked with a passphrase rather than a 6-digit passcode. */
+    val passphrase: StateFlow<Boolean> = _passphrase
 
     /** Opens [sealed] with [candidate]; on success the session is unlocked with that password. */
     suspend fun unlock(candidate: CharArray, sealed: String): List<Block>? {
+        if (UnlockLimit.waitMs() > 0) return null
         val params = NoteCrypto.paramsOf(sealed)
         val key = withContext(Dispatchers.Default) { NoteCrypto.deriveKey(candidate, params.salt, params.iterations) }
-        val body = NoteCrypto.open(sealed, key) ?: return null
+        val body = NoteCrypto.open(sealed, key)
+        UnlockLimit.record(body != null)
+        if (body == null) return null
         set(candidate)
         keys[params] = key
         return body
@@ -47,7 +59,8 @@ class LockSession @Inject constructor() {
         password = newPassword.copyOf()
         keys.clear()
         _unlocked.value = true
-        _legacy.value = !isPasscode(newPassword)
+        _passphrase.value = isPassphrase(newPassword)
+        _legacy.value = !isPasscode(newPassword) && !_passphrase.value
     }
 
     fun lock() {
@@ -56,6 +69,7 @@ class LockSession @Inject constructor() {
         keys.clear()
         _unlocked.value = false
         _legacy.value = false
+        _passphrase.value = false
     }
 
     /** A copy of the password, for fingerprint setup. Null when locked. */

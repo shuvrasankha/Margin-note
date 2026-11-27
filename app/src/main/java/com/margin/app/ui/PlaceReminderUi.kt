@@ -298,7 +298,10 @@ private fun openAppSettings(context: Context) {
     runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }
 }
 
-/** Where the phone is now, named by its address when Android can tell; null if it can't be found. */
+/**
+ * Where the phone is now, named by its coordinates (the user names it next); null if it can't be found. Not looked up
+ * as an address: that would send where the user is to the geocoder, and the location must stay on the phone.
+ */
 @SuppressLint("MissingPermission") // asked for before
 private fun currentPlace(context: Context, onResult: (Place?) -> Unit) {
     val client = LocationServices.getFusedLocationProviderClient(context)
@@ -306,10 +309,7 @@ private fun currentPlace(context: Context, onResult: (Place?) -> Unit) {
         client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, CancellationTokenSource().token)
             .addOnSuccessListener { loc ->
                 if (loc == null) return@addOnSuccessListener onResult(null)
-                kotlinx.coroutines.MainScope().launch {
-                    val label = addressAt(context, loc.latitude, loc.longitude) ?: "%.5f, %.5f".format(loc.latitude, loc.longitude)
-                    onResult(Place(loc.latitude, loc.longitude, label))
-                }
+                onResult(Place(loc.latitude, loc.longitude, "%.5f, %.5f".format(loc.latitude, loc.longitude)))
             }
             .addOnFailureListener { onResult(null) }
     }.onFailure { onResult(null) }
@@ -320,19 +320,6 @@ private fun Address.short(): String =
     listOfNotNull(featureName?.takeIf { it != thoroughfare && it != subThoroughfare && it.any(Char::isLetter) },
         listOfNotNull(subThoroughfare, thoroughfare).joinToString(" ").takeIf { it.isNotBlank() }, locality)
         .distinct().joinToString(", ").ifBlank { getAddressLine(0) ?: "" }
-
-@Suppress("DEPRECATION")
-private suspend fun addressAt(context: Context, lat: Double, lng: Double): String? {
-    if (!Geocoder.isPresent()) return null
-    val g = Geocoder(context)
-    val list: List<Address>? = if (Build.VERSION.SDK_INT >= 33) suspendCancellableCoroutine { c ->
-        g.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
-            override fun onGeocode(addresses: MutableList<Address>) { c.resume(addresses) }
-            override fun onError(errorMessage: String?) { c.resume(null) }
-        })
-    } else withContext(Dispatchers.IO) { runCatching { g.getFromLocation(lat, lng, 1) }.getOrNull() }
-    return list?.firstOrNull()?.short()?.takeIf { it.isNotBlank() }
-}
 
 /** Places matching [query] (Android's geocoder: no account or key, but it needs the internet); null if searching failed. */
 @Suppress("DEPRECATION")

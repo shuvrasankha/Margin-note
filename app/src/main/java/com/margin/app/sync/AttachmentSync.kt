@@ -11,7 +11,9 @@ const val ATTACHMENT_PREFIX = "att-"
  * missing, download the ones this device is missing. Files go up as base64 text through the same calls
  * as notes.
  * shortcut: base64 in memory, fine up to the 20 MB attachment limit; switch to binary/resumable uploads for bigger files.
- * shortcut: files removed from every note stay in Drive; add a Drive clean-up if storage use matters.
+ * A file in Drive that no note uses any more is deleted: the readable copies of a note that was locked (its
+ * files were re-encrypted under new names) or deleted for good. [referenced] is read after the notes synced, so
+ * it covers every device's notes; a file another device still has is uploaded again by that device.
  */
 suspend fun syncAttachments(drive: DriveStore, dir: File, referenced: Set<String>): Int {
     val remote = drive.list().filter { it.name.startsWith(ATTACHMENT_PREFIX) }.associateBy { it.name.removePrefix(ATTACHMENT_PREFIX) }
@@ -30,5 +32,6 @@ suspend fun syncAttachments(drive: DriveStore, dir: File, referenced: Set<String
             moved++
         }
     }
+    for ((name, file) in remote) if (name !in referenced) drive.delete(file.fileId)
     return moved
 }

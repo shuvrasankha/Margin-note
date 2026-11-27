@@ -69,4 +69,16 @@ class BackupTest {
         val pruned = backupsToPrune(names, 10)
         assertEquals(names.take(2).toSet(), pruned.toSet())
     }
+
+    @Test(expected = NotABackupException::class)
+    fun `a note entry over the size cap is refused, not read into memory`() {
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("notes/big.json"))
+            val zeros = ByteArray(1024 * 1024)
+            repeat(MAX_JSON_ENTRY / zeros.size + 1) { zip.write(zeros) } // compresses to a few KB
+            zip.closeEntry()
+        }
+        readBackup(ByteArrayInputStream(out.toByteArray())) { _, _ -> }
+    }
 }

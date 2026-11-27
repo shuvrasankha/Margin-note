@@ -1,17 +1,18 @@
 package com.margin.app.data
 
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
@@ -38,11 +39,38 @@ object VaultIcons {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     }.getOrNull()
 
-    /** Whether [pkg] is a web browser, whose reported web addresses can be trusted. */
+    private var browsers: Map<String, Set<String>>? = null
+
+    /**
+     * Whether [pkg] is a known browser, signed with its maker's own key, so the web address it reports can be
+     * trusted. Any app can claim any address (and handle https links), so a name match alone isn't enough.
+     * The list is Google's privileged-browsers list for passwords and passkeys (assets/trusted_browsers.json,
+     * from gstatic.com/gpm-passkeys-privileged-apps/apps.json); a browser not on it fills by app, not by site.
+     */
     fun isBrowser(context: Context, pkg: String): Boolean = runCatching {
-        val view = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).addCategory(Intent.CATEGORY_BROWSABLE)
-        context.packageManager.queryIntentActivities(view, PackageManager.MATCH_ALL).any { it.activityInfo.packageName == pkg }
+        val all = browsers ?: trustedBrowsers(context.assets.open("trusted_browsers.json").bufferedReader().use { it.readText() }).also { browsers = it }
+        val certs = all[pkg] ?: return false
+        val pm = context.packageManager
+        if (android.os.Build.VERSION.SDK_INT >= 28) certs.any { pm.hasSigningCertificate(pkg, hex(it), PackageManager.CERT_INPUT_SHA256) }
+        else {
+            @Suppress("DEPRECATION")
+            val sigs = pm.getPackageInfo(pkg, PackageManager.GET_SIGNATURES).signatures.orEmpty()
+            sigs.isNotEmpty() && sigs.all { sha256Hex(it.toByteArray()) in certs }
+        }
     }.getOrDefault(false)
+
+    /** Package to release-key SHA-256 digests (lower-case hex) from the privileged-apps JSON. Debug keys are left out. */
+    fun trustedBrowsers(json: String): Map<String, Set<String>> =
+        kotlinx.serialization.json.Json.parseToJsonElement(json).jsonObject["apps"]!!.jsonArray
+            .map { it.jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "android" }
+            .groupBy({ it["info"]!!.jsonObject["package_name"]!!.jsonPrimitive.content }) { app ->
+                app["info"]!!.jsonObject["signatures"]!!.jsonArray.map { it.jsonObject }
+                    .filter { it["build"]?.jsonPrimitive?.content == "release" }
+                    .map { it["cert_fingerprint_sha256"]!!.jsonPrimitive.content.replace(":", "").lowercase() }
+            }.mapValues { it.value.flatten().toSet() }.filterValues { it.isNotEmpty() }
+
+    private fun hex(s: String) = ByteArray(s.length / 2) { s.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+    private fun sha256Hex(b: ByteArray) = java.security.MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) }
 
     /** [site]'s icon: its apple-touch-icon or the icon its home page names, else /favicon.ico. Null offline. */
     suspend fun ofSite(site: String): String? {

@@ -27,17 +27,23 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
 
     init { File(context.cacheDir, "unsealed").deleteRecursively() }
 
+    /**
+     * [name] when it's a plain attachment name. A name from synced or restored JSON could be "../databases/…", so
+     * anything else becomes one no file has (the leading dot never passes the check), and nothing outside the folder is reached.
+     */
+    private fun safe(name: String) = name.takeIf(::isSafeAttachmentName) ?: ".invalid"
+
     /** Where to read [a]: its stored file, or for an encrypted one the decrypted copy [reveal] made. */
-    fun file(a: Attachment) = if (a.isSealed) File(plainDir, a.file) else File(dir, a.file)
+    fun file(a: Attachment) = if (a.isSealed) File(plainDir, safe(a.file)) else File(dir, safe(a.file))
 
     /** Decrypts the encrypted files of an opened locked note's [blocks], so they can be shown. */
     suspend fun reveal(blocks: List<Block>) = withContext(Dispatchers.IO) {
         blocks.mapNotNull { it.attachment }.filter { it.isSealed }.forEach { a ->
-            val target = File(plainDir, a.file)
+            val target = File(plainDir, safe(a.file))
             if (target.exists()) return@forEach
-            val stored = File(dir, a.file).takeIf { it.exists() } ?: return@forEach
+            val stored = File(dir, safe(a.file)).takeIf { it.exists() } ?: return@forEach
             val plain = NoteCrypto.openBytes(stored.readBytes(), a.key!!) ?: return@forEach
-            File(plainDir, "${a.file}.part").apply { writeBytes(plain) }.renameTo(target)
+            File(plainDir, "${safe(a.file)}.part").apply { writeBytes(plain) }.renameTo(target)
         }
     }
 
@@ -53,10 +59,12 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         val out = blocks.map { b ->
             val a = b.attachment?.takeIf { !it.isSealed && it.mime != SEALED_MIME } ?: return@map b
             val new = swapped[a.file] ?: run {
-                val src = File(dir, a.file).takeIf { it.exists() } ?: return@map b
+                val src = File(dir, safe(a.file)).takeIf { it.exists() } ?: return@map b
                 val key = NoteCrypto.newFileKey()
                 val name = "${newId()}.mlk"
                 val plain = src.readBytes()
+                // A link now in a locked note: its preview mustn't stay readable in the cache.
+                if (a.isLink) LinkPreviews(context.cacheDir).forget(String(plain).trim())
                 File(dir, "$name.part").apply { writeBytes(NoteCrypto.sealBytes(plain, key)) }.renameTo(File(dir, name))
                 // The note stays open: it keeps showing the file from the decrypted copy.
                 File(plainDir, "$name.part").apply { writeBytes(plain) }.renameTo(File(plainDir, name))
@@ -73,8 +81,8 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         val out = blocks.map { b ->
             val a = b.attachment?.takeIf { it.isSealed } ?: return@map b
             val new = swapped[a.file] ?: run {
-                val plain = File(plainDir, a.file).takeIf { it.exists() }?.readBytes()
-                    ?: File(dir, a.file).takeIf { it.exists() }?.readBytes()?.let { NoteCrypto.openBytes(it, a.key!!) }
+                val plain = File(plainDir, safe(a.file)).takeIf { it.exists() }?.readBytes()
+                    ?: File(dir, safe(a.file)).takeIf { it.exists() }?.readBytes()?.let { NoteCrypto.openBytes(it, a.key!!) }
                     ?: return@map b
                 val ext = a.name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: extensionFor(a.mime)
                 val name = "${newId()}.$ext"
@@ -210,6 +218,12 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         out.recycle()
         write(bytes, if (png) "png" else "jpg", a.name, if (png) "image/png" else "image/jpeg")
     }
+
+    /**
+     * Deletes every exported file (shares, prints, note cards). They can hold an open locked note's text, so they
+     * don't outlive the share: cleared when Margin comes back to the front and when it starts.
+     */
+    fun clearExports() { File(context.cacheDir, "exports").listFiles()?.forEach { it.delete() } }
 
     /** A file in the exports cache folder, replacing any older one of that name. */
     fun exportFile(name: String): File = File(File(context.cacheDir, "exports").apply { mkdirs() }, name)

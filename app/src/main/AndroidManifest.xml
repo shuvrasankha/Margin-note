@@ -37,7 +37,8 @@
         </intent>
     </queries>
 
-    <!-- Backup is handled by Margin's own Google Drive sync, not Android Auto Backup. -->
+    <!-- Backup is handled by Margin's own Google Drive sync, not Android Auto Backup. Phone-to-phone transfer
+         (Android 12+) still copies Margin's data, on purpose; locked notes stay sealed, and Keystore keys don't move. -->
     <application
         android:name=".MarginApp"
         android:allowBackup="false"

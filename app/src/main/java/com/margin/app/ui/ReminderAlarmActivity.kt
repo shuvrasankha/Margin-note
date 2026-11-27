@@ -68,7 +68,8 @@ class ReminderAlarmActivity : ComponentActivity() {
         val noteId = intent.getStringExtra(ReminderReceiver.EXTRA_NOTE) ?: return finish()
         val folderId = intent.getStringExtra(EXTRA_FOLDER).orEmpty()
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-        val body = intent.getStringExtra(EXTRA_BODY)
+        // Over the lock screen anyone can read it, so only the title shows there; the note's first line waits for the unlock.
+        val body = intent.getStringExtra(EXTRA_BODY).takeIf { !getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked }
         val repeat = intent.getStringExtra(EXTRA_REPEAT)?.let { runCatching { Repeat.valueOf(it) }.getOrNull() } ?: Repeat.NEVER
         setContent {
             val appearance by appPrefs.appearance.collectAsState()

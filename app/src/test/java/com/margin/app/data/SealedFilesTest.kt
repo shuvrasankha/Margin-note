@@ -40,4 +40,10 @@ class SealedFilesTest {
         assertTrue("x.mlk" in referencedAttachments(listOf(note)))
         assertNull(MarginJson.decodeFromString<Attachment>("""{"file":"a.jpg","name":"a","mime":"image/jpeg"}""").key)
     }
+
+    @Test
+    fun `attachment names from synced or restored notes can't leave the attachments folder`() {
+        assertTrue(isSafeAttachmentName("a1b2-c3.jpg"))
+        listOf("../databases/margin.db", "..", "/etc/hosts", "a/b.jpg", "", ".invalid", "x.mlk\u0000").forEach { assertFalse(it, isSafeAttachmentName(it)) }
+    }
 }

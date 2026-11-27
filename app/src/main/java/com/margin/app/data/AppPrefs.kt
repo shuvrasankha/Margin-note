@@ -10,6 +10,9 @@ import com.margin.app.R
 
 /** App-wide preferences (device-local, not synced). */
 @Singleton
+/** Whether App Lock is on, for code without the injected [AppPrefs] (widgets). */
+fun appLockOn(context: Context) = context.getSharedPreferences("jotter_app", Context.MODE_PRIVATE).getString(AppPrefs.K_APP_LOCK, null) != null
+
 class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     // Stored under the app's old name (Jotter); renaming it would lose what is saved.
     private val prefs = context.getSharedPreferences("jotter_app", Context.MODE_PRIVATE)
@@ -124,7 +127,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     private inline fun <reified T : Enum<T>> enumOr(name: String?, fallback: T): T =
         runCatching { enumValueOf<T>(name!!) }.getOrDefault(fallback)
 
-    private companion object {
+    internal companion object {
         const val K_THEME = "theme"
         const val K_TEXT_SIZE = "textSize"
         const val K_PREVIEW_LINES = "previewLines"

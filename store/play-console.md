@@ -87,7 +87,7 @@ Choose these answers. They match the privacy policy, and Play checks the two aga
 | Files and docs → **Files and docs** | Attached files and PDFs are copied to the user's Drive or backup place. |
 | Calendar → **Calendar events** | Only if the user turns on "Add to phone calendar". The event is written to the phone's calendar, which may sync it to the user's account. |
 
-**Not collected:** location, contacts, financial info, health, messages, web history, app info and performance, device or other IDs.
+**Not collected:** location (place reminders keep it on the phone; the current spot is not looked up as an address, and only typed place searches go to the phone's geocoder), contacts, financial info, health, messages, web history, app info and performance, device or other IDs.
 
 Why "Not shared": Google counts transfers that the user starts and expects (sending a note to the AI provider they chose, or a backup to their own Drive) as not sharing. If you'd rather be stricter, also tick **Shared** for "Other user-generated content" for Ask AI. That's also accurate.
 
@@ -107,6 +107,13 @@ Play Console shows these forms once the AAB is uploaded (App content → Sensiti
 
 ### Exact alarms: `SCHEDULE_EXACT_ALARM`
 No form needed. It's the user-granted version (not `USE_EXACT_ALARM`). The app asks the user to allow it and still works without it, with reminders that may arrive a few minutes late.
+
+### Location: `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`
+Background location needs the **Location permissions** declaration (App content → Sensitive permissions) before a release that requests it can be reviewed.
+- Core feature: **place reminders**. A note can remind you when you arrive at or leave a place, including when Margin is closed, which needs location all the time.
+- In-app disclosure: the prompt before the system one (`place_location_background_explain` in `strings.xml`). It says why, that it works when the app is closed, and that the location stays on the phone.
+- Video: a short screen recording that sets a place reminder, shows that prompt, chooses "Allow all the time" and shows the reminder ringing on arrival. Upload it unlisted (for example on YouTube) and paste the link.
+- Data safety stays "location not collected": it never leaves the phone. The privacy policy names the permission (Permissions → Location).
 
 ### Calendar: `READ_CALENDAR`, `WRITE_CALENDAR`
 No declaration form. It's covered by the Data safety answers and the privacy policy, and it's only requested when the user turns on "Add to phone calendar".
