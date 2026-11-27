@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The list widget's add button: a 52dp amber circle. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="2dp">
+    <shape android:shape="oval">
+        <solid android:color="@color/widget_accent" />
+    </shape>
+</inset>

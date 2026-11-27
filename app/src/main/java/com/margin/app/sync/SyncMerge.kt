@@ -3,6 +3,7 @@ package com.margin.app.sync
 import com.margin.app.data.BlockType
 import com.margin.app.data.FolderEntity
 import com.margin.app.data.NoteEntity
+import com.margin.app.data.isLocked
 import com.margin.app.data.withBlocks
 import com.margin.app.data.lastEdited
 
@@ -31,9 +32,18 @@ data class NoteConflictResult(val localWins: Boolean, val conflictCopy: NoteEnti
  * Both copies changed since the last sync. Last write (higher updatedAt) wins; a tie goes to the
  * remote copy so every device picks the same winner. The losing copy is kept as a new note titled
  * "<title> (conflict)", unless it's a tombstone (nothing to keep) or both copies are identical.
+ *
+ * A lock sticks: when only one side is locked (and neither is deleted), the locked one wins whatever its time, so
+ * the plain text never replaces it. Plain-text edits made here are kept as a [NoteEntity.localOnly] copy that
+ * never syncs; plain text that came from Drive isn't copied, so it can't reappear beside the locked note.
  */
 fun resolveNoteConflict(local: NoteEntity, remote: NoteEntity, copyId: String, now: Long): NoteConflictResult {
     if (sameContent(local, remote)) return NoteConflictResult(localWins = false, conflictCopy = null)
+    if (local.isLocked != remote.isLocked && !local.deleted && !remote.deleted) {
+        if (local.isLocked) return NoteConflictResult(localWins = true, conflictCopy = null)
+        val copy = if (isEmptyVersionOf(local, remote)) null else conflictCopyOf(local, copyId, now).copy(localOnly = true)
+        return NoteConflictResult(localWins = false, conflictCopy = copy)
+    }
     val localWins = local.updatedAt > remote.updatedAt
     val loser = if (localWins) remote else local
     val winner = if (localWins) local else remote

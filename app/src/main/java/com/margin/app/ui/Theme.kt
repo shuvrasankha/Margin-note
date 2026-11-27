@@ -39,7 +39,7 @@ data class MarginColors(
     val accent: Color,
     val danger: Color,
     /** Something worked (a connection test passed). */
-    val success: Color = Color(0xFF1E8E3E),
+    val success: Color = Color(0xFF1A7D37),
     /** Background of grouped screens (Settings), with [card] for the groups on it. */
     val page: Color,
     val card: Color,
@@ -50,14 +50,14 @@ data class MarginColors(
 
 private val Light = MarginColors(
     bg = Color(0xFFFFFFFF), surface = Color(0xFFF2F2F4), ink = Color(0xFF111111), muted = Color(0xFF5C5C63),
-    line = Color(0xFFE6E6EA), accent = Color(0xFFB25E00), danger = Color(0xFFC4291C),
+    line = Color(0xFFE6E6EA), accent = Color(0xFFA75800), danger = Color(0xFFC4291C),
     page = Color(0xFFF2F2F4), card = Color(0xFFFFFFFF), selected = Color(0xFFFBF1E6), switchOff = Color(0xFFD4D4D8),
 )
 
 private val Dark = MarginColors(
     bg = Color(0xFF0B0B0C), surface = Color(0xFF1C1C1E), ink = Color(0xFFF5F5F7), muted = Color(0xFFA1A1A8),
     line = Color(0xFF2A2A2E), accent = Color(0xFFFFB340), danger = Color(0xFFFF6B5E), success = Color(0xFF4CD964),
-    page = Color(0xFF000000), card = Color(0xFF1C1C1E), selected = Color(0xFF2E2416), switchOff = Color(0xFF3A3A3E),
+    page = Color(0xFF0B0B0C), card = Color(0xFF1C1C1E), selected = Color(0xFF2E2416), switchOff = Color(0xFF3A3A3E),
 )
 
 private val LocalMarginColors = staticCompositionLocalOf { Light }
@@ -75,7 +75,7 @@ val Inter = FontFamily(
 )
 
 object JType {
-    val pageTitle = TextStyle(fontFamily = Inter, fontSize = 34.sp, lineHeight = 41.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em)
+    val pageTitle = TextStyle(fontFamily = Inter, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em)
     val noteTitle = TextStyle(fontFamily = Inter, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.02).em)
     val heading = TextStyle(fontFamily = Inter, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Bold)
     val subheading = TextStyle(fontFamily = Inter, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold)
@@ -85,6 +85,8 @@ object JType {
     val secondary = TextStyle(fontFamily = Inter, fontSize = 15.sp, lineHeight = 20.sp)
     val small = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp)
     val section = TextStyle(fontFamily = Inter, fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    /** A group heading above a card or list ("BACKUPS", "PINNED"): small capitals, spaced out. Pass the text uppercased. */
+    val groupLabel = TextStyle(fontFamily = Inter, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.06.em)
     /** A denser row (cards, grid titles, options). */
     val item = TextStyle(fontFamily = Inter, fontSize = 16.sp, lineHeight = 22.sp)
     val itemTitle = TextStyle(fontFamily = Inter, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)

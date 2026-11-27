@@ -51,13 +51,16 @@ import com.margin.app.data.invoke
 import com.margin.app.data.isLocked
 import com.margin.app.data.lastEdited
 import com.margin.app.data.plainText
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 internal const val DAY = 24 * 60 * 60 * 1000L
 
 /** List time: "9:41 AM" today, "Yesterday", a weekday within the week, a date before that. */
 internal fun listTime(context: android.content.Context, time: Long): String = when {
     DateUtils.isToday(time) -> DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_TIME)
-    DateUtils.isToday(time + DAY) -> "Yesterday"
+    DateUtils.isToday(time + DAY) -> context.getString(R.string.common_yesterday)
     System.currentTimeMillis() - time < 6 * DAY -> DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_WEEKDAY)
     else -> DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH)
 }
@@ -66,13 +69,11 @@ internal fun listTime(context: android.content.Context, time: Long): String = wh
 internal fun fullTime(context: android.content.Context, time: Long): String {
     val clock = DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_TIME)
     return when {
-        DateUtils.isToday(time) -> "Today, $clock"
-        DateUtils.isToday(time + DAY) -> "Yesterday, $clock"
-        else -> DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH) + ", " + clock
+        DateUtils.isToday(time) -> context.getString(R.string.common_today_at, clock)
+        DateUtils.isToday(time + DAY) -> context.getString(R.string.common_yesterday_at, clock)
+        else -> context.getString(R.string.common_date_at, DateUtils.formatDateTime(context, time, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_ABBREV_MONTH), clock)
     }
 }
-
-internal fun plural(n: Int, one: String, many: String = one + "s") = "$n " + if (n == 1) one else many
 
 /** A conical flask. */
 internal fun templateIcon(t: NoteTemplate) = when (t) {
@@ -109,15 +110,15 @@ internal fun PhoneActions(number: String, onEdit: (() -> Unit)?, onDismiss: () -
         }
     }
     val actions = listOfNotNull(
-        Triple(ICON_CALL, "Call") { open(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + dialable(number))), "No app on this phone can make calls.") },
-        Triple(ICON_MESSAGE, "Message") { open(Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:" + dialable(number))), "No app on this phone can send messages.") },
+        Triple(ICON_CALL, stringResource(R.string.screen_common_call)) { open(Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + dialable(number))), context.getString(R.string.screen_common_no_app_on_this_phone)) },
+        Triple(ICON_MESSAGE, stringResource(R.string.screen_common_message)) { open(Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:" + dialable(number))), context.getString(R.string.screen_common_no_app_on_this_phone_2)) },
         Triple(ICON_CHAT, "WhatsApp") { onDismiss(); openWhatsApp(context, number) },
-        Triple(Ico.COPY, "Copy number") {
+        Triple(Ico.COPY, stringResource(R.string.screen_common_copy_number)) {
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(number.trim()))
             onDismiss()
-            if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show() // 13+ shows its own
+            if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(context, context.getString(R.string.screen_common_number_copied), Toast.LENGTH_SHORT).show() // 13+ shows its own
         },
-        onEdit?.let { Triple(ICON_EDIT, "Edit number") { it() } },
+        onEdit?.let { Triple(ICON_EDIT, stringResource(R.string.screen_common_edit_number)) { it() } },
     )
     MarginDialog(
         onDismissRequest = onDismiss,
@@ -136,7 +137,7 @@ internal fun PhoneActions(number: String, onEdit: (() -> Unit)?, onDismiss: () -
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -156,7 +157,7 @@ internal fun openWhatsApp(context: android.content.Context, number: String) {
     for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b", null)) {
         try { context.startActivity(Intent(Intent.ACTION_VIEW, uri).apply { pkg?.let(::setPackage) }); return } catch (_: android.content.ActivityNotFoundException) { }
     }
-    Toast.makeText(context, "WhatsApp isn't installed.", Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, context.getString(R.string.common_whatsapp_missing), Toast.LENGTH_SHORT).show()
 }
 
 /**
@@ -187,22 +188,22 @@ internal fun LinkedNotePreview(note: NoteEntity, onOpen: () -> Unit, onDismiss: 
         title = { Text(note.displayTitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Edited " + fullTime(context, note.lastEdited), style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.common_edited_at, fullTime(context, note.lastEdited)), style = JType.small, color = jc.muted)
                 when {
                     note.isLocked -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         JIcon(Ico.LOCK, jc.muted, size = 15.dp, stroke = 2f)
-                        Text("This note is locked.", style = JType.secondary, color = jc.muted)
+                        Text(stringResource(R.string.screen_common_this_note_is_locked), style = JType.secondary, color = jc.muted)
                     }
-                    body.isEmpty() && attachments == 0 -> Text("No text yet.", style = JType.secondary, color = jc.muted)
+                    body.isEmpty() && attachments == 0 -> Text(stringResource(R.string.screen_common_no_text_yet), style = JType.secondary, color = jc.muted)
                     else -> {
                         if (body.isNotEmpty()) Text(body, style = JType.secondary, color = jc.ink, maxLines = 8, overflow = TextOverflow.Ellipsis)
-                        if (attachments > 0) Text(plural(attachments, "attachment"), style = JType.small, color = jc.muted)
+                        if (attachments > 0) Text(pluralStringResource(R.plurals.common_attachments, attachments, attachments), style = JType.small, color = jc.muted)
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onOpen) { Text("Open") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onOpen) { Text(stringResource(R.string.common_open)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) } },
     )
 }
 
@@ -254,16 +255,16 @@ internal fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Uni
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Column(Modifier.fillMaxWidth().padding(top = 72.dp, start = 16.dp, end = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             JIcon(Ico.SEARCH, jc.muted, size = 48.dp, stroke = 1.3f)
-            Text("No notes match “$query”", Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading, color = jc.ink, textAlign = TextAlign.Center)
-            Text("Searched titles, text, checklists and attachments.", style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.common_no_notes_match, query), Modifier.padding(top = 20.dp, bottom = 8.dp), style = JType.heading, color = jc.ink, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.screen_common_searched_titles_text_checklists_and), style = JType.para, color = jc.muted, textAlign = TextAlign.Center)
         }
         val word = query.split(' ').firstOrNull { it.isNotBlank() }?.takeIf { it != query }
         val tries = listOfNotNull(
-            word?.let { Triple(it, "Search one word", Ico.SEARCH) to { onTry(it) } },
-            if (showTrash) Triple("Recently Deleted", "Check notes you removed", Ico.TRASH) to onTrash else null,
+            word?.let { Triple(it, stringResource(R.string.screen_common_search_one_word), Ico.SEARCH) to { onTry(it) } },
+            if (showTrash) Triple(stringResource(R.string.screen_common_recently_deleted), stringResource(R.string.screen_common_check_notes_you_removed), Ico.TRASH) to onTrash else null,
         )
         if (tries.isNotEmpty()) {
-            Text("Try", Modifier.padding(top = 40.dp, bottom = 4.dp), style = JType.section, color = jc.muted)
+            Text(stringResource(R.string.screen_common_try), Modifier.padding(top = 40.dp, bottom = 4.dp), style = JType.section, color = jc.muted)
             tries.forEach { (t, onClick) ->
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button, onClick = onClick),
@@ -284,7 +285,7 @@ internal fun NoResults(query: String, showTrash: Boolean, onTry: (String) -> Uni
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             JIcon(Ico.COMPOSE, jc.ink, size = 18.dp, stroke = 2f)
-            Text("New note “$query”", style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.common_new_note_named, query), style = JType.item, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

@@ -36,6 +36,10 @@ fun List<NoteEntity>.sortedFor(sortBy: NoteSort, ascending: Boolean): List<NoteE
     return sortedWith(compareByDescending<NoteEntity> { it.isPinned }.then(directed).thenBy { it.id })
 }
 
+/** Your own order: pinned first, then by place; notes not placed yet (0) go first, newest first. */
+fun List<NoteEntity>.manualOrder(): List<NoteEntity> =
+    sortedWith(compareByDescending<NoteEntity> { it.isPinned }.thenBy { it.sortOrder }.thenByDescending { it.lastEdited }.thenBy { it.id })
+
 /**
  * Date header for a note: Today, Yesterday, Previous 7 Days, Previous 30 Days, then the month name
  * for the rest of this year, then the year. Future times (another device's clock ahead) count as Today.
@@ -71,9 +75,11 @@ fun buildListing(
     pinnedCollapsed: Boolean = false,
     groupByDate: Boolean = true,
     pinnedSection: Boolean = true,
+    /** The folder is in your own order: by [NoteEntity.sortOrder], no date headers. */
+    manual: Boolean = false,
 ): List<ListEntry> {
     if (isTrash) return notes.map { ListEntry.Row(it) }
-    val sorted = notes.sortedFor(sortBy, ascending)
+    val sorted = if (manual) notes.manualOrder() else notes.sortedFor(sortBy, ascending)
     // [pinnedSection] false (the Pinned list, where every note is pinned): no section, just the dates.
     val pinned = if (pinnedSection) sorted.filter { it.isPinned } else emptyList()
     val others = if (pinnedSection) sorted.filterNot { it.isPinned } else sorted
@@ -82,7 +88,7 @@ fun buildListing(
         result += ListEntry.Header("Pinned", collapsed = pinnedCollapsed)
         if (!pinnedCollapsed) pinned.mapTo(result) { ListEntry.Row(it) }
     }
-    if (groupByDate && sortBy != NoteSort.TITLE) {
+    if (groupByDate && !manual && sortBy != NoteSort.TITLE) {
         var last: String? = null
         others.forEach { note ->
             val label = dateGroup(note.sortTime(sortBy), now, zone, locale)
@@ -98,7 +104,11 @@ fun buildListing(
 }
 
 /** Which results search shows, from the pills above them. */
-enum class SearchScope(val label: String) { TOP("Top results"), NOTES("Notes"), ATTACHMENTS("Attachments") }
+enum class SearchScope(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    TOP("Top results", com.margin.app.R.string.notes_scope_top),
+    NOTES("Notes", com.margin.app.R.string.notes_scope_notes),
+    ATTACHMENTS("Attachments", com.margin.app.R.string.notes_scope_attachments),
+}
 
 /** Search results: notes whose title or text matches, and attachments whose name matches. A note can be in both. */
 data class SearchResults(

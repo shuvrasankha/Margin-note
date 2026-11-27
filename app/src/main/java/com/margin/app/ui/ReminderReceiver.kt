@@ -32,13 +32,18 @@ import javax.inject.Inject
 class ReminderReceiver : BroadcastReceiver() {
     @Inject lateinit var reminders: Reminders
     @Inject lateinit var repo: NoteRepository
+    @Inject lateinit var places: com.margin.app.data.PlaceReminders
 
     override fun onReceive(context: Context, intent: Intent) {
         val noteId = intent.getStringExtra(EXTRA_NOTE)
         when (intent.action) {
             // Also when "Alarms & reminders" is turned on: alarms set before then were inexact, so set them again.
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED,
-            android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> reminders.rescheduleAll()
+            android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> {
+                reminders.rescheduleAll()
+                // Geofences are dropped on a restart or an update too.
+                if (intent.action != android.app.AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) places.registerAll()
+            }
             // The nudge rings once a day, so skipping is just putting it away until tomorrow's.
             ACTION_SKIP_JOURNAL -> NotificationManagerCompat.from(context).cancel(JOURNAL_REMINDER, NOTIFICATION_ID)
             ACTION_SNOOZE -> if (noteId != null) {
@@ -78,10 +83,12 @@ class ReminderReceiver : BroadcastReceiver() {
                         if (isHabit(note)) {
                             val days = habitDays(note)
                             val today = java.time.LocalDate.now()
-                            if (today !in days) nudge(context, noteId, note.displayTitle, habitStreak(days, today))
+                            // No nudge on a day off.
+                            val on = habitSchedule(note)
+                            if (today.dayOfWeek in on && today !in days) nudge(context, noteId, note.displayTitle, habitStreak(days, today, on))
                             return@launch
                         }
-                        val body = if (note.isLocked) "Locked note" else note.searchText.lineSequence().map { it.trim() }
+                        val body = if (note.isLocked) context.getString(R.string.reminder_receiver_locked_note) else note.searchText.lineSequence().map { it.trim() }
                             .firstOrNull { it.isNotEmpty() && it != note.title.trim() }
                         ring(context, noteId, note.folderId, note.displayTitle, body, reminders.repeatOf(noteId))
                     } finally {
@@ -109,7 +116,7 @@ class ReminderReceiver : BroadcastReceiver() {
         /** The daily journal nudge: a plain notification that opens the Journal. */
         private fun journalNudge(c: Context) {
             c.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(JOURNAL_CHANNEL, "Journal reminder", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "A daily nudge to write today's journal entry" },
+                NotificationChannel(JOURNAL_CHANNEL, c.getString(R.string.reminder_receiver_journal_reminder), NotificationManager.IMPORTANCE_DEFAULT).apply { description = c.getString(R.string.reminder_receiver_a_daily_nudge_to_write) },
             )
             val open = PendingIntent.getActivity(
                 c, JOURNAL_REMINDER.hashCode(),
@@ -123,12 +130,12 @@ class ReminderReceiver : BroadcastReceiver() {
             )
             val n = NotificationCompat.Builder(c, JOURNAL_CHANNEL)
                 .setSmallIcon(R.drawable.ic_reminder)
-                .setContentTitle("Time to journal")
-                .setContentText("You haven't written today's entry yet.")
+                .setContentTitle(c.getString(R.string.reminder_receiver_time_to_journal))
+                .setContentText(c.getString(R.string.reminder_receiver_you_havent_written_todays_entry))
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .addAction(0, "Skip today", skip)
+                .addAction(0, c.getString(R.string.reminder_receiver_skip_today), skip)
                 .build()
             runCatching { NotificationManagerCompat.from(c).notify(JOURNAL_REMINDER, NOTIFICATION_ID, n) }
         }
@@ -139,7 +146,7 @@ class ReminderReceiver : BroadcastReceiver() {
         /** A habit's daily nudge: a plain notification (no alarm sound, no full screen) with Done to tick today. */
         private fun nudge(c: Context, noteId: String, title: String, streak: Int) {
             c.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(HABIT_CHANNEL, "Habit reminders", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "Daily nudges for habits not ticked yet" },
+                NotificationChannel(HABIT_CHANNEL, c.getString(R.string.reminder_receiver_habit_reminders), NotificationManager.IMPORTANCE_DEFAULT).apply { description = c.getString(R.string.reminder_receiver_daily_nudges_for_habits_not) },
             )
             val open = PendingIntent.getActivity(
                 c, noteId.hashCode(),
@@ -154,11 +161,11 @@ class ReminderReceiver : BroadcastReceiver() {
             val n = NotificationCompat.Builder(c, HABIT_CHANNEL)
                 .setSmallIcon(R.drawable.ic_reminder)
                 .setContentTitle(title)
-                .setContentText(if (streak > 0) "Keep your ${plural(streak, "day")} streak going." else "Not done yet today.")
+                .setContentText(if (streak > 0) c.resources.getQuantityString(R.plurals.reminder_keep_streak, streak, streak) else c.getString(R.string.reminder_receiver_not_done_yet_today))
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
-                .addAction(0, "Done", doneIntent)
+                .addAction(0, c.getString(R.string.common_done), doneIntent)
                 .build()
             runCatching { NotificationManagerCompat.from(c).notify(noteId, NOTIFICATION_ID, n) }
         }
@@ -167,8 +174,8 @@ class ReminderReceiver : BroadcastReceiver() {
             val nm = c.getSystemService(NotificationManager::class.java)
             nm.deleteNotificationChannel(OLD_CHANNEL)
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Note reminders you set"
+                NotificationChannel(CHANNEL, c.getString(R.string.reminder_receiver_reminders), NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = c.getString(R.string.reminder_receiver_note_reminders_you_set)
                     // The alarm sound, played as an alarm: heard even when notification sounds are turned down.
                     setSound(
                         RingtoneManager.getActualDefaultRingtoneUri(c, RingtoneManager.TYPE_ALARM)
@@ -212,8 +219,8 @@ class ReminderReceiver : BroadcastReceiver() {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setFullScreenIntent(alarm, true)
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-                .addAction(0, "Snooze 10 min", action(ACTION_SNOOZE, 1))
-                .addAction(0, "Done", action(ACTION_DONE, 2))
+                .addAction(0, c.getString(R.string.reminder_receiver_snooze_10_min), action(ACTION_SNOOZE, 1))
+                .addAction(0, c.getString(R.string.common_done), action(ACTION_DONE, 2))
                 .build()
             runCatching { NotificationManagerCompat.from(c).notify(noteId, NOTIFICATION_ID, n) } // no POST_NOTIFICATIONS: nothing shown
         }

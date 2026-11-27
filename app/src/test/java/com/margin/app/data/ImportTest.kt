@@ -45,7 +45,8 @@ class ImportTest {
         assertEquals(3, r.file(photo.file)?.size)
         assertEquals("#Home_stuff", shop.blocks.last().text.substringBefore(" #2024").trim()) // a label with no letter isn't a tag
         assertFalse("#2024" in shop.blocks.last().text)
-        val idea = r.notes.first { it.folder == listOf(KEEP_FOLDER, "Archive") }
+        val idea = r.notes.first { it.archived }
+        assertEquals(listOf(KEEP_FOLDER), idea.folder)
         assertEquals(listOf("Old idea", "second line"), idea.texts()) // no title: the first line becomes it
     }
 

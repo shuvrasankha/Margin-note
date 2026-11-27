@@ -1,5 +1,12 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.unit.sp
+
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -64,6 +71,9 @@ import com.margin.app.data.invoke
 import com.margin.app.sync.signInWithGoogle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 // ---------- Settings ----------
 
@@ -83,7 +93,7 @@ internal val GoogleG: androidx.compose.ui.graphics.vector.ImageVector by lazy {
 
 @Composable
 internal fun SettingsLabel(text: String) {
-    Text(text, Modifier.padding(start = 16.dp, top = 28.dp, bottom = 8.dp), style = JType.section, color = jc.muted)
+    Text(text.uppercase(), Modifier.padding(start = 16.dp, top = 28.dp, bottom = 8.dp), style = JType.groupLabel, color = jc.muted)
 }
 
 @Composable
@@ -123,12 +133,13 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
         vm.consentIntent?.let { consentLauncher.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
     }
 
+    val pageScroll = rememberScrollState()
     Scaffold(
         containerColor = jc.page,
-        topBar = { Box(Modifier.background(jc.page)) { NavBar(null, {}, color = jc.page) { TextAction("Done", onBack, bold = true) } } },
+        topBar = { if (LocalTabRoot.current) TabTop() else NavBar(null, {}, color = jc.page) { TextAction(stringResource(R.string.common_done), onBack, bold = true) } },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
-            PageTitle("Settings")
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(pageScroll)) {
+            PageTitle(stringResource(R.string.common_settings))
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 48.dp)) {
                 // Account and sync, compact: status with a sync button, then Restore and Sign out side by side.
                 val signIn = {
@@ -138,7 +149,7 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                             .onFailure {
                                 // Backing out of the account picker is not an error.
                                 vm.message = if (it is androidx.credentials.exceptions.GetCredentialCancellationException) null
-                                else "Sign-in failed: ${it.message ?: it.javaClass.simpleName}"
+                                else context.getString(R.string.settings_sign_in_failed, it.message ?: it.javaClass.simpleName)
                             }
                     }
                     Unit
@@ -147,64 +158,86 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                     Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         // Google's "G" on a white tile, as Google's sign-in branding asks.
                         Box(Modifier.size(30.dp).clip(JShape.xs).background(Color.White), contentAlignment = Alignment.Center) {
-                            androidx.compose.foundation.Image(GoogleG, contentDescription = "Google", modifier = Modifier.size(18.dp))
+                            androidx.compose.foundation.Image(GoogleG, contentDescription = stringResource(R.string.settings_google), modifier = Modifier.size(18.dp))
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             if (status.signedIn) {
-                                val waiting = if (pending == 1) "1 change" else "$pending changes"
+                                val waiting = pluralStringResource(R.plurals.settings_changes, pending, pending)
                                 Text(
                                     when {
-                                        !online -> if (pending > 0) "Offline · $waiting waiting" else "Offline"
-                                        pending > 0 -> "$waiting waiting to sync"
-                                        else -> "Everything is synced"
+                                        !online -> if (pending > 0) stringResource(R.string.settings_offline_waiting, waiting) else stringResource(R.string.settings_offline)
+                                        pending > 0 -> stringResource(R.string.settings_waiting_to_sync, waiting)
+                                        else -> stringResource(R.string.settings_everything_is_synced)
                                     },
                                     style = JType.item, color = jc.ink,
                                 )
                                 Text(
                                     // The time first: a long email is what gets cut.
-                                    listOfNotNull("Last sync " + (status.lastSyncAt?.let { listTime(context, it) } ?: "never"), status.email ?: status.name).joinToString(" · "),
+                                    listOfNotNull(status.lastSyncAt?.let { stringResource(R.string.settings_last_sync, listTime(context, it)) } ?: stringResource(R.string.settings_last_sync_never), status.email ?: status.name).joinToString(" · "),
                                     style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             } else {
-                                Text("Back up to Google Drive", style = JType.item, color = jc.ink)
-                                Text("Optional. Notes go to hidden app storage in your Drive.", style = JType.small, color = jc.muted)
+                                Text(stringResource(R.string.settings_back_up_to_google_drive), style = JType.item, color = jc.ink)
+                                Text(stringResource(R.string.settings_optional_notes_go_to_hidden), style = JType.small, color = jc.muted)
                             }
                         }
-                        if (!status.signedIn) TextAction("Sign in", signIn, bold = true)
+                        if (!status.signedIn) TextAction(stringResource(R.string.settings_sign_in), signIn, bold = true)
                         else if (vm.busy) Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
                             androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), color = jc.accent, strokeWidth = 2.dp)
-                        } else IconAction(Ico.SYNC, "Sync now", { vm.syncNow() }, size = 20.dp)
+                        } else Box(
+                            Modifier.size(44.dp).clip(CircleShape).background(jc.line).clickable(role = Role.Button) { vm.syncNow() }
+                                .semantics { contentDescription = context.getString(R.string.settings_sync_now) },
+                            contentAlignment = Alignment.Center,
+                        ) { JIcon(Ico.SYNC, jc.ink, size = 20.dp, stroke = 1.8f) }
                     }
                     if (status.signedIn) {
                         CardDivider()
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            TextAction("Restore from Drive", { if (!vm.busy) confirmRestore = true })
-                            TextAction("Sign out", { if (!vm.busy) vm.signOut() }, color = jc.danger)
+                        // Two equal halves with a rule between them.
+                        Row(Modifier.fillMaxWidth().height(48.dp)) {
+                            @Composable fun half(label: String, color: Color, onClick: () -> Unit) = Box(
+                                Modifier.weight(1f).fillMaxHeight().clickable(role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center,
+                            ) { Text(label, style = JType.item.copy(fontSize = 15.sp), color = color, fontWeight = FontWeight.Medium, maxLines = 1) }
+                            half(stringResource(R.string.settings_restore_from_drive), jc.accent) { if (!vm.busy) confirmRestore = true }
+                            Box(Modifier.width(1.dp).fillMaxHeight().background(jc.line))
+                            half(stringResource(R.string.settings_sign_out), jc.danger) { if (!vm.busy) vm.signOut() }
                         }
                     }
                 }
-                status.lastError?.let { Text("Last error: $it", Modifier.padding(start = 16.dp, top = 8.dp), style = JType.small, color = jc.danger) }
+                status.lastError?.let { Text(stringResource(R.string.settings_last_error, it), Modifier.padding(start = 16.dp, top = 8.dp), style = JType.small, color = jc.danger) }
                 vm.message?.let { Text(it, Modifier.padding(start = 16.dp, top = 8.dp), style = JType.small, color = jc.muted) }
 
                 BackupsSection(backups)
 
-                SettingsLabel("Appearance")
+                SettingsLabel(stringResource(R.string.settings_appearance))
                 Card {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         @Composable
                         fun <T> choices(icon: String, title: String, options: List<Pair<T, String>>, current: T, onPick: (T) -> Unit) {
                             IconTitle(icon, title)
-                            Row(Modifier.padding(start = 42.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                options.forEach { (value, label) -> Pill(label, value == current, { onPick(value) }) }
+                            // One segmented track: the choice sits on a raised segment, the rest are muted.
+                            Row(
+                                Modifier.padding(start = 42.dp).fillMaxWidth().height(40.dp).clip(JShape.sm).background(jc.page).padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                options.forEach { (value, label) ->
+                                    val on = value == current
+                                    Box(
+                                        Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp)).background(if (on) jc.line else Color.Transparent)
+                                            .clickable(role = Role.RadioButton) { onPick(value) }.semantics { selected = on },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(label, style = JType.small.copy(fontSize = 14.sp), color = if (on) jc.ink else jc.muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+                                    }
+                                }
                             }
                         }
-                        choices(Ico.MOON, "Theme", listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark"), appearance.theme) {
+                        choices(Ico.MOON, stringResource(R.string.settings_theme), listOf(ThemeMode.SYSTEM to stringResource(R.string.settings_system), ThemeMode.LIGHT to stringResource(R.string.settings_light), ThemeMode.DARK to stringResource(R.string.settings_dark)), appearance.theme) {
                             vm.setAppearance(appearance.copy(theme = it))
                         }
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconTitle(Ico.TEXT_SIZE, "Text size", Modifier.weight(1f))
-                            Text(appearance.textSize.label, style = JType.secondary, color = jc.muted)
+                            IconTitle(Ico.TEXT_SIZE, stringResource(R.string.settings_text_size), Modifier.weight(1f))
+                            Text(stringResource(appearance.textSize.labelRes), style = JType.secondary, color = jc.muted)
                         }
                         Row(Modifier.padding(start = 42.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("A", style = JType.small, color = jc.muted)
@@ -213,7 +246,7 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                                 onValueChange = { vm.setAppearance(appearance.copy(textSize = TextSize.entries[it.roundToInt()])) },
                                 valueRange = 0f..TextSize.entries.lastIndex.toFloat(),
                                 steps = TextSize.entries.size - 2,
-                                modifier = Modifier.weight(1f).semantics { stateDescription = appearance.textSize.label },
+                                modifier = Modifier.weight(1f).semantics { stateDescription = context.getString(appearance.textSize.labelRes) },
                                 colors = SliderDefaults.colors(thumbColor = jc.accent, activeTrackColor = jc.accent, inactiveTrackColor = jc.line),
                                 thumb = { Box(Modifier.size(24.dp).shadow(JElevation.card, CircleShape).background(jc.bg, CircleShape).border(2.dp, jc.accent, CircleShape)) },
                                 track = { state -> SizeTrack(state.value, state.valueRange.endInclusive) },
@@ -221,78 +254,78 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                             Text("A", style = JType.heading, color = jc.muted)
                         }
                         Spacer(Modifier.height(6.dp))
-                        choices(Ico.LINES, "Preview lines in lists", listOf(0 to "None", 1 to "1 line", 2 to "2 lines"), appearance.previewLines) {
+                        choices(Ico.LINES, stringResource(R.string.settings_preview_lines_in_lists), listOf(0 to stringResource(R.string.settings_none), 1 to stringResource(R.string.settings_1_line), 2 to stringResource(R.string.settings_2_lines)), appearance.previewLines) {
                             vm.setAppearance(appearance.copy(previewLines = it))
                         }
                     }
                 }
 
-                SettingsLabel("Writing")
+                SettingsLabel(stringResource(R.string.settings_writing))
                 Card {
-                    CardRow("Move checked items to the bottom", icon = Ico.SINK, sub = "In checklists, ticked items sink below the rest.") {
+                    CardRow(stringResource(R.string.settings_move_checked_items_to_the), icon = Ico.SINK, sub = stringResource(R.string.settings_in_checklists_ticked_items_sink)) {
                         JSwitch(autoSort, { vm.setAutoSortChecked(it) })
                     }
                     CardDivider()
-                    CardRow("Smart checklists", icon = Ico.CHECKLIST, sub = "Lines that start with [ ] become checkboxes.") {
+                    CardRow(stringResource(R.string.settings_smart_checklists), icon = Ico.CHECKLIST, sub = stringResource(R.string.settings_lines_that_start_with_become)) {
                         JSwitch(toggles(Toggle.SMART_CHECKLISTS), { vm.setToggle(Toggle.SMART_CHECKLISTS, it) })
                     }
                     CardDivider()
-                    CardRow("Link with [[ ]]", icon = Ico.LINK, sub = "Type two brackets to link another note.") {
+                    CardRow(stringResource(R.string.settings_link_with), icon = Ico.LINK, sub = stringResource(R.string.settings_type_two_brackets_to_link)) {
                         JSwitch(toggles(Toggle.LINKS), { vm.setToggle(Toggle.LINKS, it) })
                     }
                     CardDivider()
-                    CardRow("Check grammar", icon = Ico.GRAMMAR, sub = "Underlines common mistakes in blue. Tap one to fix it. Works offline.") {
+                    CardRow(stringResource(R.string.settings_check_grammar), icon = Ico.GRAMMAR, sub = stringResource(R.string.settings_underlines_common_mistakes_in_blue)) {
                         JSwitch(toggles(Toggle.GRAMMAR), { vm.setToggle(Toggle.GRAMMAR, it) })
                     }
                     CardDivider()
                     CardRow(
-                        "Better grammar checking", icon = Ico.CLOUD,
-                        sub = "Sends note text to LanguageTool (languagetool.org) for a fuller check. Locked notes are never sent.",
+                        stringResource(R.string.settings_better_grammar_checking), icon = Ico.CLOUD,
+                        sub = stringResource(R.string.settings_sends_note_text_to_languagetool),
                     ) {
                         JSwitch(toggles(Toggle.CLOUD_GRAMMAR), { vm.setToggle(Toggle.CLOUD_GRAMMAR, it) }, enabled = toggles(Toggle.GRAMMAR))
                     }
                 }
 
-                SettingsLabel("AI")
+                SettingsLabel(stringResource(R.string.settings_ai))
                 AiSettingsCard(vm.ai)
 
-                SettingsLabel("Notes list")
+                SettingsLabel(stringResource(R.string.settings_notes_list))
                 Card {
                     val (sortBy, ascending) = defaultSort
-                    val key = when (sortBy) { NoteSort.EDITED -> "Date edited"; NoteSort.CREATED -> "Date created"; NoteSort.TITLE -> "Title" }
-                    val direction = if (sortBy == NoteSort.TITLE) (if (ascending) "A to Z" else "Z to A")
-                    else if (ascending) "oldest first" else "newest first"
-                    CardRow("Sort new folders by", icon = Ico.SORT, sub = "$key, $direction") {
-                        SortMenu(sortBy, ascending, label = "Change", onChange = vm::setDefaultSort)
+                    val key = when (sortBy) { NoteSort.EDITED -> stringResource(R.string.settings_date_edited); NoteSort.CREATED -> stringResource(R.string.settings_date_created); NoteSort.TITLE -> stringResource(R.string.settings_title) }
+                    val direction = if (sortBy == NoteSort.TITLE) (if (ascending) stringResource(R.string.settings_a_to_z) else stringResource(R.string.settings_z_to_a))
+                    else if (ascending) stringResource(R.string.settings_oldest_first) else stringResource(R.string.settings_newest_first)
+                    CardRow(stringResource(R.string.settings_sort_new_folders_by), icon = Ico.SORT, sub = "$key, $direction") {
+                        SortMenu(sortBy, ascending, label = stringResource(R.string.common_change), onChange = vm::setDefaultSort)
                     }
                     CardDivider()
-                    CardRow("Group by date", icon = Ico.CALENDAR, sub = "Today, Yesterday, Previous 7 Days, …") {
+                    CardRow(stringResource(R.string.settings_group_by_date), icon = Ico.CALENDAR, sub = stringResource(R.string.settings_today_yesterday_previous_7_days)) {
                         JSwitch(toggles(Toggle.GROUP_BY_DATE), { vm.setToggle(Toggle.GROUP_BY_DATE, it) })
                     }
                 }
 
-                SettingsLabel("Privacy & data")
+                SettingsLabel(stringResource(R.string.settings_privacy_data))
                 Card {
-                    CardRow("Hide locked notes in search", icon = Ico.EYE_OFF) {
+                    CardRow(stringResource(R.string.settings_hide_locked_notes_in_search), icon = Ico.EYE_OFF) {
                         JSwitch(toggles(Toggle.HIDE_LOCKED_IN_SEARCH), { vm.setToggle(Toggle.HIDE_LOCKED_IN_SEARCH, it) })
                     }
                     CardDivider()
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        IconTitle(Ico.TRASH, "Keep deleted notes")
+                        IconTitle(Ico.TRASH, stringResource(R.string.settings_keep_deleted_notes))
                         Row(Modifier.padding(start = 42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             // Shorter removes older deleted notes for good, so it asks first.
-                            KEEP_DELETED_DAYS.forEach { d -> Pill("$d days", d == keepDays, { if (d < keepDays) shorterKeep = d else vm.setKeepDeletedDays(d) }) }
+                            KEEP_DELETED_DAYS.forEach { d -> Pill(pluralStringResource(R.plurals.settings_keep_days_pill, d, d), d == keepDays, { if (d < keepDays) shorterKeep = d else vm.setKeepDeletedDays(d) }) }
                         }
                     }
                     CardDivider()
                     CardRow(
-                        "Export all as Markdown", icon = Ico.ARCHIVE, sub = "A zip of every note with its photos and files. Locked notes export only their title.",
-                        labelColor = jc.accent, onClick = { exportTo.launch("Margin export ${java.time.LocalDate.now()}.zip") },
+                        stringResource(R.string.settings_export_all_as_markdown), icon = Ico.ARCHIVE, sub = stringResource(R.string.settings_a_zip_of_every_note),
+                        onClick = { exportTo.launch(context.getString(R.string.settings_margin_export_zip, java.time.LocalDate.now())) },
                     )
                     CardDivider()
                     CardRow(
-                        if (vm.importing) "Importing…" else "Import notes", icon = Ico.ARROW_DOWN,
-                        sub = "From Google Keep (the Takeout zip), Evernote (.enex), or Markdown, text and HTML files. Each source gets its own folder.",
+                        if (vm.importing) stringResource(R.string.settings_importing) else stringResource(R.string.settings_import_notes), icon = Ico.ARROW_DOWN,
+                        sub = stringResource(R.string.settings_from_google_keep_the_takeout),
                         labelColor = if (vm.importing) jc.muted else jc.accent,
                         onClick = if (vm.importing) null else ({ importFrom.launch(arrayOf("*/*")) }),
                     )
@@ -303,7 +336,7 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                     val activity = context as? FragmentActivity
                     if (activity != null && Biometric.available(activity)) {
                         CardDivider()
-                        CardRow("Unlock with fingerprint", icon = Ico.FINGERPRINT) {
+                        CardRow(stringResource(R.string.settings_unlock_with_fingerprint), icon = Ico.FINGERPRINT) {
                             JSwitch(fingerprint != null, { on ->
                                 if (!on) {
                                     vm.setFingerprint(null)
@@ -332,12 +365,11 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                         }
                     }
                 }
-                SettingsLabel("App lock")
+                SettingsLabel(stringResource(R.string.settings_app_lock))
                 Card {
                     CardRow(
-                        "Lock Margin", icon = Ico.LOCK,
-                        sub = "Asks for your notes passcode every time Margin opens or you come back to it." +
-                            if (fingerprint != null) " Your fingerprint works too." else "",
+                        stringResource(R.string.settings_lock_margin), icon = Ico.LOCK,
+                        sub = stringResource(if (fingerprint != null) R.string.settings_lock_margin_sub_fingerprint else R.string.settings_lock_margin_sub),
                     ) {
                         JSwitch(appLockOn, { on ->
                             scope.launch { appLockAsk = (if (on && !vm.hasPasscode()) PasswordMode.CREATE else PasswordMode.ENTER) to on }
@@ -346,41 +378,40 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
                     if (appLockOn && lockedCount == 0) fingerprintRow()
                 }
 
-                SettingsLabel("Locked notes")
+                SettingsLabel(stringResource(R.string.settings_locked_notes))
                 Card {
                     if (lockedCount == 0) {
                         CardRow(
-                            "No locked notes", icon = Ico.LOCK,
-                            sub = "Lock a note from the ⋯ menu in the editor. " +
-                                if (appLockOn) "It uses your app lock passcode." else "You'll create a 6-digit passcode the first time.",
+                            stringResource(R.string.settings_no_locked_notes), icon = Ico.LOCK,
+                            sub = stringResource(if (appLockOn) R.string.settings_lock_a_note_app_lock else R.string.settings_lock_a_note_new),
                         )
                     } else {
                         CardRow(
-                            plural(lockedCount, "locked note"), icon = Ico.LOCK,
-                            sub = if (unlocked) "Unlocked until you leave the note or Margin." else "Your passcode opens them and the journal.",
+                            pluralStringResource(R.plurals.settings_locked_notes_count, lockedCount, lockedCount), icon = Ico.LOCK,
+                            sub = if (unlocked) stringResource(R.string.settings_unlocked_until_you_leave_the) else stringResource(R.string.settings_your_passcode_opens_them_and),
                         )
                         if (unlocked) {
                             CardDivider()
-                            CardRow("Lock now", icon = Ico.LOCK, labelColor = jc.accent, onClick = vm::lockNow)
+                            CardRow(stringResource(R.string.settings_lock_now), icon = Ico.LOCK, onClick = vm::lockNow)
                         }
                         CardDivider()
-                        CardRow("Change passcode", icon = Ico.KEY, labelColor = jc.accent, onClick = {
+                        CardRow(stringResource(R.string.settings_change_passcode), icon = Ico.KEY, onClick = {
                             if (vm.busy) return@CardRow
                             if (unlocked) newPassword = true else askCurrent = { newPassword = true }
                         })
                         fingerprintRow()
                     }
                 }
-                SettingsLabel("About")
+                SettingsLabel(stringResource(R.string.settings_about))
                 Card {
-                    CardRow("What Margin can do", icon = Ico.SPARKLE, sub = "Every feature, in one list.", onClick = onFeatures) {
+                    CardRow(stringResource(R.string.settings_what_margin_can_do), icon = Ico.SPARKLE, sub = stringResource(R.string.settings_every_feature_in_one_list), onClick = onFeatures) {
                         JIcon(Ico.CHEVRON, jc.muted, size = 18.dp)
                     }
                 }
                 // Who and which version, quietly at the end.
                 Column(Modifier.fillMaxWidth().padding(top = 28.dp, bottom = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     MarginMark(36.dp)
-                    Text("Margin " + com.margin.app.BuildConfig.VERSION_NAME, Modifier.padding(top = 8.dp), style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.settings_version, com.margin.app.BuildConfig.VERSION_NAME), Modifier.padding(top = 8.dp), style = JType.small, color = jc.muted)
                 }
             }
         }
@@ -389,8 +420,8 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
     askCurrent?.let { then ->
         var old by remember { mutableStateOf(false) }
         val submit: suspend (CharArray) -> String? = { pw ->
-            // An old password brings up the switch to a passcode (MarginRoot), which replaces this step.
-            if (vm.checkPassword(pw)) { askCurrent = null; if (!vm.legacyPassword.value) then(); null } else if (old) "Wrong password" else "Wrong passcode"
+            // An old password, or a passcode with saved passwords, brings up the switch (MarginRoot), which replaces this step.
+            if (vm.checkPassword(pw)) { askCurrent = null; if (!vm.legacyPassword.value && (vm.passphrase.value || !vm.hasLogins.value)) then(); null } else com.margin.app.data.UnlockLimit.message(context, if (old) context.getString(R.string.settings_wrong_password) else context.getString(R.string.settings_wrong_passcode))
         }
         if (old) OldPasswordDialog(onDismiss = { askCurrent = null }, onSubmit = submit)
         else PasscodeDialog(PasswordMode.ENTER, onDismiss = { askCurrent = null }, onOldPassword = { old = true }, onSubmit = submit)
@@ -398,14 +429,14 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
     appLockAsk?.let { (mode, on) ->
         PasscodeDialog(
             mode, onDismiss = { appLockAsk = null },
-            intro = "Choose a passcode to open Margin. Locked notes, the journal and Passwords will use the same one.",
-            enterSub = if (on) "Your notes passcode will open Margin." else "To turn off the app lock.",
+            intro = stringResource(R.string.settings_choose_a_passcode_to_open),
+            enterSub = if (on) stringResource(R.string.settings_your_notes_passcode_will_open) else stringResource(R.string.settings_to_turn_off_the_app),
         ) { code ->
-            if (if (on) vm.turnOnAppLock(code) else vm.turnOffAppLock(code)) { appLockAsk = null; null } else "Wrong passcode"
+            if (if (on) vm.turnOnAppLock(code) else vm.turnOffAppLock(code)) { appLockAsk = null; null } else com.margin.app.data.UnlockLimit.message(context, context.getString(R.string.settings_wrong_passcode))
         }
     }
     if (newPassword) {
-        PasscodeDialog(PasswordMode.CREATE, onDismiss = { newPassword = false }) { password ->
+        PasscodeDialog(PasswordMode.CREATE, onDismiss = { newPassword = false }, passphraseOnly = vm.hasLogins.collectAsState().value) { password ->
             vm.changePassword(password)
             newPassword = false
             null
@@ -414,19 +445,19 @@ fun SettingsScreen(vm: SettingsViewModel, backups: BackupsViewModel, onBack: () 
     shorterKeep?.let { d ->
         MarginDialog(
             onDismissRequest = { shorterKeep = null },
-            title = { Text("Keep deleted notes for $d days?") },
-            text = { Text("Notes in Recently Deleted for longer than $d days are removed for good now.") },
-            confirmButton = { TextButton(onClick = { vm.setKeepDeletedDays(d); shorterKeep = null }) { Text("Keep $d days", color = jc.danger) } },
-            dismissButton = { TextButton(onClick = { shorterKeep = null }) { Text("Cancel") } },
+            title = { Text(stringResource(R.string.settings_keep_deleted_notes_for_days, d)) },
+            text = { Text(stringResource(R.string.settings_notes_in_recently_deleted_for, d)) },
+            confirmButton = { TextButton(onClick = { vm.setKeepDeletedDays(d); shorterKeep = null }) { Text(stringResource(R.string.settings_keep_days, d), color = jc.danger) } },
+            dismissButton = { TextButton(onClick = { shorterKeep = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
     if (confirmRestore) {
         MarginDialog(
             onDismissRequest = { confirmRestore = false },
-            title = { Text("Restore from Google account?") },
-            text = { Text("Notes saved in your Google account replace the copies on this device. Notes that exist only on this device are kept.") },
-            confirmButton = { TextButton(onClick = { vm.restore(); confirmRestore = false }) { Text("Restore", fontWeight = FontWeight.SemiBold) } },
-            dismissButton = { TextButton(onClick = { confirmRestore = false }) { Text("Cancel") } },
+            title = { Text(stringResource(R.string.settings_restore_from_google_account)) },
+            text = { Text(stringResource(R.string.settings_notes_saved_in_your_google)) },
+            confirmButton = { TextButton(onClick = { vm.restore(); confirmRestore = false }) { Text(stringResource(R.string.common_restore), fontWeight = FontWeight.SemiBold) } },
+            dismissButton = { TextButton(onClick = { confirmRestore = false }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 }

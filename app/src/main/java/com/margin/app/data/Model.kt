@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import java.util.UUID
+import com.margin.app.R
 
 /** Fixed ID so every device agrees on the one default "Notes" folder. */
 const val DEFAULT_FOLDER_ID = "00000000-0000-0000-0000-000000000001"
@@ -97,6 +98,8 @@ data class Block(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val ai: Boolean = false,
     /** On the first line of an AI card: the card is folded down to its badge. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val folded: Boolean = false,
+    /** A task's due date, as an epoch day. Older versions don't know it and keep the task as is. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val due: Long? = null,
 )
 
 /** True for a line that is one card (attachment or table) rather than text. */
@@ -158,6 +161,8 @@ data class FolderEntity(
     val smartFilter: SmartFilter? = null,
     /** Position among the folders it's listed with (schema v4); ties go A to Z. Set by Edit folders. */
     @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /** Notes in your own order (schema v14), set by Arrange notes; [sortBy] is then ignored. A flag, not a [NoteSort], so older versions read it. */
+    @ColumnInfo(defaultValue = "0") val manualOrder: Boolean = false,
     /** What a new note here starts from (schema v9): a [templateKey]; null = blank. Older versions ignore it. */
     val template: String? = null,
 )
@@ -210,23 +215,60 @@ data class NoteEntity(
      * turned off again. Older versions ignore it when syncing.
      */
     @ColumnInfo(defaultValue = "0") val viewOnly: Boolean = false,
+    /**
+     * A checklist that unticks itself each round (schema v11): a [ListRepeat] encoded, or null. Older versions
+     * ignore it when syncing.
+     */
+    val resetEvery: String? = null,
+    /** When the list last unticked for a new round, or its repeat was turned on (epoch millis). */
+    @ColumnInfo(defaultValue = "0") val resetAt: Long = 0,
+    /** Rounds of a repeating list fully ticked off in a row, up to its last reset (schema v12). */
+    @ColumnInfo(defaultValue = "0") val streak: Int = 0,
+    /**
+     * A colour to mark the note by (schema v13): a [NoteColor] name, or null for none. A string, so a colour
+     * added later reads as none here. Older versions ignore it when syncing.
+     */
+    val color: String? = null,
+    /** Archived (schema v14): out of every list but Archive and search, without being deleted. */
+    @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
+    /** Place in its folder when the folder is in your own order (schema v14); 0 = not placed yet, so it goes first. */
+    @ColumnInfo(defaultValue = "0") val sortOrder: Int = 0,
+    /**
+     * Kept on this phone only (schema v15): plain-text edits that lost a sync conflict to a version locked on
+     * another phone. Not uploaded while unlocked and never synced, so they don't undo the lock elsewhere.
+     */
+    @ColumnInfo(defaultValue = "0") val localOnly: Boolean = false,
 )
 
 val NoteEntity.paperStyle: Paper get() = paper?.let { p -> Paper.entries.firstOrNull { it.name == p } } ?: Paper.PLAIN
 
 /** Typefaces a note can be written in; all built into the phone, so nothing to download. */
-enum class NoteFont(val label: String) { DEFAULT("Default"), SANS("Phone font"), SERIF("Serif"), MONO("Mono"), HANDWRITING("Handwriting") }
+enum class NoteFont(val label: String, @androidx.annotation.StringRes val labelRes: Int) { DEFAULT("Default", R.string.font_default), SANS("Phone font", R.string.font_sans), SERIF("Serif", R.string.font_serif), MONO("Mono", R.string.font_mono), HANDWRITING("Handwriting", R.string.font_handwriting) }
 
 val NoteEntity.fontStyle: NoteFont get() = font?.let { f -> NoteFont.entries.firstOrNull { it.name == f } } ?: NoteFont.DEFAULT
 
+/** Colours a note can be marked with; [argb] is mixed into the card colour, so it reads in light and dark. */
+enum class NoteColor(val label: String, @androidx.annotation.StringRes val labelRes: Int, val argb: Long) {
+    NONE("None", R.string.color_none, 0), RED("Red", R.string.color_red, 0xFFE5484D), ORANGE("Orange", R.string.color_orange, 0xFFF76B15), YELLOW("Yellow", R.string.color_yellow, 0xFFFFC53D),
+    GREEN("Green", R.string.color_green, 0xFF30A46C), TEAL("Teal", R.string.color_teal, 0xFF12A594), BLUE("Blue", R.string.color_blue, 0xFF0090FF), PURPLE("Purple", R.string.color_purple, 0xFF8E4EC6), PINK("Pink", R.string.color_pink, 0xFFD6409F),
+}
+
+val NoteEntity.colorMark: NoteColor get() = color?.let { c -> NoteColor.entries.firstOrNull { it.name == c } } ?: NoteColor.NONE
+
 val NoteEntity.isLocked get() = cipher != null
 
-val NoteEntity.isDirty get() = updatedAt != syncedUpdatedAt
+val NoteEntity.isDirty get() = updatedAt != syncedUpdatedAt && !heldBack
+
+/** A [NoteEntity.localOnly] note that sync leaves alone: never uploaded, and still unlocked. Locking it lets it sync. */
+val NoteEntity.heldBack get() = localOnly && cipher == null && syncedUpdatedAt == null
 val FolderEntity.isDirty get() = updatedAt != syncedUpdatedAt
 
 val NoteEntity.lastEdited get() = if (editedAt > 0) editedAt else updatedAt
 
-val NoteEntity.displayTitle get() = title.ifBlank { "New Note" }
+/** The name shown for a note with no title. [com.margin.app.MarginApp] sets it from the app's strings, so it follows the app's language. */
+@Volatile var untitledNoteName = "New Note"
+
+val NoteEntity.displayTitle get() = title.ifBlank { untitledNoteName }
 val NoteEntity.snippet get() = searchText.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
 
 fun NoteEntity.withBlocks(blocks: List<Block>, now: Long) = copy(

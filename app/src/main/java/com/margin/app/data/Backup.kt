@@ -81,7 +81,13 @@ fun writeBackup(
 
 private fun safeEntry(id: String) = id.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
+internal const val MAX_JSON_ENTRY = 16 * 1024 * 1024
+internal const val MAX_JSON_TOTAL = 128 * 1024 * 1024
+
 class NotABackupException : Exception("That file isn't a Margin backup")
+
+/** A backup from a newer version of Margin, which this one can't read. */
+class NewerBackupException : Exception("This backup was made by a newer version of Margin. Update the app to restore it.")
 
 /** What a backup holds; its files were handed to the reader's [onFile] as they were read. */
 data class BackupContents(val info: BackupInfo, val notes: List<NoteEntity>)
@@ -93,20 +99,28 @@ data class BackupContents(val info: BackupInfo, val notes: List<NoteEntity>)
 fun readBackup(input: InputStream, onFile: (String, InputStream) -> Unit): BackupContents {
     var info: BackupInfo? = null
     val notes = mutableListOf<NoteEntity>()
+    var budget = MAX_JSON_TOTAL
+    // A crafted zip can inflate one small entry to gigabytes: read JSON only up to the caps, else refuse the file.
+    fun ZipInputStream.json(): String {
+        val bytes = readNBytesCompat(minOf(MAX_JSON_ENTRY, budget) + 1)
+        if (bytes.size > minOf(MAX_JSON_ENTRY, budget)) throw NotABackupException()
+        budget -= bytes.size
+        return bytes.toString(Charsets.UTF_8)
+    }
     ZipInputStream(input).use { zip ->
         while (true) {
             val e = zip.nextEntry ?: break
             when {
                 e.isDirectory -> Unit
-                e.name == INFO_ENTRY -> info = MarginJson.decodeFromString(BackupInfo.serializer(), zip.readBytes().toString(Charsets.UTF_8))
+                e.name == INFO_ENTRY -> info = MarginJson.decodeFromString(BackupInfo.serializer(), zip.json())
                 e.name.startsWith(NOTES_DIR) && e.name.endsWith(".json") ->
-                    notes += MarginJson.decodeFromString(NoteEntity.serializer(), zip.readBytes().toString(Charsets.UTF_8))
+                    notes += MarginJson.decodeFromString(NoteEntity.serializer(), zip.json())
                 e.name.startsWith(FILES_DIR) -> e.name.removePrefix(FILES_DIR).takeIf(::isSafeAttachmentName)?.let { onFile(it, zip) }
             }
         }
     }
     val found = info ?: throw NotABackupException()
-    if (found.format > BACKUP_FORMAT) throw Exception("This backup was made by a newer version of Margin. Update the app to restore it.")
+    if (found.format > BACKUP_FORMAT) throw NewerBackupException()
     return BackupContents(found, notes)
 }
 

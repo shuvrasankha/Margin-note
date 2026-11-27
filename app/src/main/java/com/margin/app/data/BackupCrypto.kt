@@ -72,7 +72,7 @@ object BackupCrypto {
         val data = DataInputStream(input)
         val magic = ByteArray(MAGIC.size).also { data.readFully(it) }
         if (!isSealed(magic)) throw NotABackupException()
-        if (data.readByte() > FORMAT) throw Exception("This backup was made by a newer version of Margin. Update the app to restore it.")
+        if (data.readByte() > FORMAT) throw NewerBackupException()
         val iterations = data.readInt()
         if (iterations !in 10_000..10_000_000) throw WrongBackupPasswordException()
         val salt = ByteArray(16).also { data.readFully(it) }

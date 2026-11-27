@@ -28,6 +28,9 @@ class LinkPreviews(cacheDir: File) {
         return LoadedPreview(preview.description, image)
     }
 
+    /** Deletes [url]'s cached preview: its link is now in a locked note. */
+    fun forget(url: String) { val key = key(url); File(dir, "$key.json").delete(); File(dir, "$key.png").delete() }
+
     private fun fetch(url: String, meta: File, picture: File): PagePreview? {
         val preview = pagePreview(fetchHtml(url) ?: return null, url)
         dir.mkdirs()

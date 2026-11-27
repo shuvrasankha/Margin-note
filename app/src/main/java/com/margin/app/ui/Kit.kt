@@ -1,9 +1,11 @@
 package com.margin.app.ui
 
+
 import androidx.compose.animation.togetherWith
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.runtime.getValue
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -74,6 +77,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /** Line icons on a 24-unit grid, drawn with round caps. */
 object Ico {
@@ -90,6 +95,10 @@ object Ico {
     const val MOVE = "M3 6h7l2 2h9v11H3zM10 13h6M13 10l3 3-3 3"
     const val TRASH = "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"
     const val PIN = "M9 3h6M10 3v5.5L7 12h10l-3-3.5V3M12 12v9"
+    /** A map pin, for place reminders. */
+    val PLACE = "M12 21s-6.5-5.7-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 15.3 12 21 12 21z" + circle(12f, 9.8f, 2.3f)
+    /** Where I am now: a crosshair. */
+    val LOCATE = circle(12f, 12f, 6.5f) + "M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" + circle(12f, 12f, 1.6f)
     const val SHARE = "M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1"
     const val LINK = "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"
     const val ATTACH = "M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"
@@ -135,6 +144,7 @@ object Ico {
     const val LOCK = "M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v2"
     const val LOCK_OPEN = "M7 11V8a5 5 0 0 1 9.6-1.9M5 11h14v10H5zM12 15v2"
     const val CHECK = "M5 12l5 5 9-10"
+    const val STAR = "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"
     const val CLOSE = "M6 6l12 12M18 6L6 18"
     const val PLUS = "M12 5v14M5 12h14"
     const val EMPTY_NOTE = "M5 3h10l4 4v14H5zM15 3v4h4M9 12h6M9 16h4"
@@ -182,7 +192,7 @@ fun JIcon(d: String, color: Color, modifier: Modifier = Modifier, size: Dp = 22.
  * ("3 Notes"); the whole label rolls, so a plural changes with its number.
  */
 @Composable
-fun CountText(n: Int, style: TextStyle, color: Color, modifier: Modifier = Modifier, text: (Int) -> String = { "$it" }) {
+fun CountText(n: Int, style: TextStyle, color: Color, modifier: Modifier = Modifier, text: @Composable (Int) -> String = { "$it" }) {
     androidx.compose.animation.AnimatedContent(
         n, modifier,
         transitionSpec = {
@@ -229,17 +239,20 @@ fun IconAction(d: String, label: String, onClick: () -> Unit, color: Color = jc.
     ) { JIcon(d, if (enabled) color else jc.muted.copy(alpha = 0.4f), size = size, fill = fill) }
 }
 
-/** A 56dp round button in the accent colour, floating over a list (the home screen's New note). */
+/**
+ * A 56dp round button floating over a list (the home screen's New note): a soft circle with an accent icon, like
+ * the round buttons in the top bar.
+ */
 @Composable
 fun FloatingAction(d: String, label: String, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
+    val fill = Modifier.shadow(6.dp, CircleShape).clip(CircleShape).background(jc.card)
     Box(
-        Modifier.size(56.dp).pressScale(press, 0.9f)
-            .shadow(6.dp, CircleShape).clip(CircleShape).background(jc.accent)
+        Modifier.size(56.dp).pressScale(press, 0.9f).then(fill)
             .clickable(press, androidx.compose.material3.ripple(), role = Role.Button, onClick = tapped(onClick))
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
-    ) { JIcon(d, jc.bg, size = 26.dp, stroke = 2.2f) }
+    ) { JIcon(d, jc.accent, size = 26.dp, stroke = 2.2f) }
 }
 
 /** Plain text button in the accent colour (or [color]). */
@@ -267,19 +280,34 @@ fun NavBar(
         Modifier.fillMaxWidth().background(color).statusBarsPadding().height(52.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (backLabel != null) {
+        if (backLabel != null && !LocalTabRoot.current) {
             Row(
                 Modifier.heightIn(min = 44.dp).widthIn(max = 220.dp).clip(JShape.xs)
                     .clickable(role = Role.Button, onClick = onBack).padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                JIcon(Ico.BACK, jc.accent, stroke = 2.2f)
-                Text(backLabel, style = JType.row, color = jc.accent, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                JIcon(Ico.BACK, jc.ink, stroke = 2.2f)
+                Text(backLabel, style = JType.row, color = jc.ink, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         leading?.invoke(this)
         Spacer(Modifier.weight(1f))
         actions()
+    }
+}
+
+/** A tab root's top bar: only the status bar's room, so the title row sits at the top with its actions beside it. */
+@Composable
+fun TabTop() {
+    Box(Modifier.fillMaxWidth().background(jc.page).statusBarsPadding().height(8.dp))
+}
+
+/** A page title with the screen's actions level with it on the right, in place of a top bar. */
+@Composable
+fun TitleWithActions(title: @Composable () -> Unit, actions: @Composable RowScope.() -> Unit) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Box(Modifier.weight(1f)) { title() }
+        Row(Modifier.padding(end = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
 
@@ -291,12 +319,17 @@ fun PageTitle(text: String, modifier: Modifier = Modifier) {
 /** Uppercase grey label above a group of rows. */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text, modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp), style = JType.section, color = jc.muted)
+    Text(text.uppercase(), modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp), style = JType.groupLabel, color = jc.muted)
 }
 
 /** The rounded grey search field. */
 @Composable
-fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false, fill: Color = jc.surface) {
+fun SearchField(
+    query: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false, fill: Color = jc.surface,
+    /** Shows a microphone (for voice commands) while the field is empty. */
+    onVoice: (() -> Unit)? = null,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val focus = remember { FocusRequester() }
     if (autoFocus) LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
@@ -313,11 +346,20 @@ fun SearchField(query: String, onChange: (String) -> Unit, placeholder: String, 
             )
         }
         if (query.isNotEmpty()) {
+            // The bar's full height and a wider slot take the tap; the grey dot stays small.
             Box(
-                Modifier.size(20.dp).clip(CircleShape).background(jc.muted).clickable(role = Role.Button) { onChange("") }
-                    .semantics { contentDescription = "Clear search" },
+                Modifier.fillMaxHeight().width(44.dp)
+                    .clickable(remember { MutableInteractionSource() }, androidx.compose.material3.ripple(bounded = false, radius = 20.dp), role = Role.Button) { onChange("") }
+                    .semantics { contentDescription = context.getString(R.string.kit_clear_search) },
                 contentAlignment = Alignment.Center,
-            ) { JIcon(Ico.CLOSE, jc.bg, size = 10.dp, stroke = 3.5f) }
+            ) { Box(Modifier.size(20.dp).clip(CircleShape).background(jc.muted), contentAlignment = Alignment.Center) { JIcon(Ico.CLOSE, jc.bg, size = 10.dp, stroke = 3.5f) } }
+        } else if (onVoice != null) {
+            Box(
+                Modifier.fillMaxHeight().width(44.dp)
+                    .clickable(remember { MutableInteractionSource() }, androidx.compose.material3.ripple(bounded = false, radius = 20.dp), role = Role.Button, onClick = onVoice)
+                    .semantics { contentDescription = context.getString(R.string.kit_voice_command) },
+                contentAlignment = Alignment.Center,
+            ) { JIcon(Ico.MIC, jc.accent, size = 20.dp, stroke = 2f) }
         }
     }
 }
@@ -363,7 +405,7 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
  * with a hairline edge on dark pages so it stands off them.
  */
 @Composable
-fun MarginMark(size: Dp, modifier: Modifier = Modifier) {
+fun MarginMark(size: Dp, modifier: Modifier = Modifier, drawn: () -> Float = { 1f }) {
     // The ink icon on both themes (same as the launcher icon); on a dark page a hairline edge keeps it off the page.
     val dark = jc.bg.luminance() < 0.5f
     val ground = Color(0xFF111111)
@@ -374,9 +416,13 @@ fun MarginMark(size: Dp, modifier: Modifier = Modifier) {
         drawRoundRect(ground, cornerRadius = CornerRadius(230 * k))
         if (dark) drawRoundRect(Color(0xFF2A2A2E), Offset(4 * k, 4 * k), Size(1016 * k, 1016 * k), CornerRadius(228 * k), style = Stroke(8 * k))
         val w = 56 * k
-        drawLine(rule, Offset(302 * k, 232 * k), Offset(302 * k, 792 * k), w, StrokeCap.Round)
-        listOf(360f to 722f, 512f to 662f, 664f to 562f).forEach { (y, x2) ->
-            drawLine(ink, Offset(402 * k, y * k), Offset(x2 * k, y * k), w, StrokeCap.Round)
+        // [drawn] 0..1 writes the mark in: the rule grows down over the first half, then each line writes out in turn.
+        val t = drawn()
+        val r = (t * 2f).coerceIn(0f, 1f)
+        if (r > 0f) drawLine(rule, Offset(302 * k, 232 * k), Offset(302 * k, (232 + 560 * r) * k), w, StrokeCap.Round)
+        listOf(360f to 722f, 512f to 662f, 664f to 562f).forEachIndexed { i, (y, x2) ->
+            val l = ((t - 0.3f - i * 0.15f) / 0.4f).coerceIn(0f, 1f)
+            if (l > 0f) drawLine(ink, Offset(402 * k, y * k), Offset((402 + (x2 - 402) * l) * k, y * k), w, StrokeCap.Round)
         }
     }
 }
@@ -388,17 +434,23 @@ fun Pill(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifi
     val edge by animateColorAsState(if (selected) jc.ink else jc.line, JMotion.standard(), label = "pillEdge")
     val text by animateColorAsState(if (selected) jc.bg else jc.ink, JMotion.standard(), label = "pillText")
     val press = remember { MutableInteractionSource() }
+    // The tap area is 48dp tall (Android's minimum); the pill drawn inside it stays 32dp.
     Box(
-        modifier.height(32.dp).pressScale(press, 0.94f).clip(JShape.pill)
-            .background(fill)
-            .border(1.dp, edge, JShape.pill)
-            .clickable(press, androidx.compose.material3.ripple(), role = Role.RadioButton, onClick = tapped(onClick)).padding(horizontal = 14.dp),
+        modifier.height(48.dp).clickable(press, null, role = Role.RadioButton, onClick = tapped(onClick)),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label, style = JType.label, color = text,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1,
-        )
+        Box(
+            Modifier.height(32.dp).pressScale(press, 0.94f).clip(JShape.pill)
+                .background(fill)
+                .border(1.dp, edge, JShape.pill)
+                .indication(press, androidx.compose.material3.ripple()).padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label, style = JType.label, color = text,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1,
+            )
+        }
     }
 }
 
@@ -424,21 +476,26 @@ private fun Modifier.combinedClickableCompat(press: MutableInteractionSource, on
 
 /** Round checkbox: filled accent with a tick when checked, an empty ring when not. */
 @Composable
-fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 22.dp) {
+fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 22.dp, soft: Boolean = false) {
     val k by animateFloatAsState(if (checked) 1f else 0f, if (checked) JMotion.bounce() else JMotion.quick(), label = "check")
-    Box(modifier.size(size).border(1.5.dp, jc.muted.copy(alpha = 1f - k.coerceIn(0f, 1f)), CircleShape), contentAlignment = Alignment.Center) {
+    // [soft] (in a note): a fainter ring, so open tasks read as quiet slots rather than bright outlines.
+    val ring = if (soft) 0.6f else 1f
+    Box(modifier.size(size).border(1.5.dp, jc.muted.copy(alpha = ring * (1f - k.coerceIn(0f, 1f))), CircleShape), contentAlignment = Alignment.Center) {
         if (k > 0.01f) Box(
-            Modifier.size(size).graphicsLayer { scaleX = k; scaleY = k }.clip(CircleShape).background(jc.accent),
+            // [soft]: a done line steps back (a faint amber disc) so the open ones lead; elsewhere a solid tick.
+            Modifier.size(size).graphicsLayer { scaleX = k; scaleY = k }.clip(CircleShape).background(if (soft) jc.accent.copy(alpha = 0.2f) else jc.accent),
             contentAlignment = Alignment.Center,
-        ) { JIcon(Ico.CHECK, jc.bg, size = size * 0.6f, stroke = 3.2f) }
+        ) { JIcon(Ico.CHECK, if (soft) jc.accent else jc.bg, size = size * 0.6f, stroke = 3.2f) }
     }
 }
 
 @Composable
-fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+fun JSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true, label: String? = LocalSwitchLabel.current) {
     val view = LocalView.current
     Switch(
         checked = checked, onCheckedChange = { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, enabled = enabled,
+        // The switch is its own TalkBack stop, apart from the row's text, so it carries the row's name.
+        modifier = if (label != null) Modifier.semantics { contentDescription = label } else Modifier,
         colors = SwitchDefaults.colors(
             checkedTrackColor = jc.ink, checkedThumbColor = jc.bg, checkedBorderColor = jc.ink,
             uncheckedTrackColor = jc.switchOff, uncheckedThumbColor = Color.White, uncheckedBorderColor = jc.switchOff,
@@ -463,9 +520,9 @@ fun <T> DividedCard(items: List<T>, inset: androidx.compose.ui.unit.Dp, modifier
     }
 }
 
-/** A row's icon on a soft tinted square, as in Settings. */
+/** A row's icon, quiet grey on a faint square: the accent is kept for actions and state. */
 @Composable
-fun IconTile(icon: String, color: Color = jc.accent, size: androidx.compose.ui.unit.Dp = 30.dp) {
+fun IconTile(icon: String, color: Color = jc.muted, size: androidx.compose.ui.unit.Dp = 30.dp) {
     Box(
         Modifier.size(size).clip(if (size > 36.dp) JShape.sm else JShape.xs).background(color.copy(alpha = 0.13f)),
         contentAlignment = Alignment.Center,
@@ -481,7 +538,9 @@ fun ProgressRing(
     fraction: Float, modifier: Modifier = Modifier, color: Color = jc.accent, stroke: androidx.compose.ui.unit.Dp = 8.dp,
     content: @Composable () -> Unit = {},
 ) {
-    val grown by animateFloatAsState(fraction.coerceIn(0f, 1f), androidx.compose.animation.core.tween(700, 80, JMotion.ease), label = "ring")
+    // Grows in from empty when first shown, then follows changes.
+    val ring = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(fraction) { ring.animateTo(fraction.coerceIn(0f, 1f), androidx.compose.animation.core.tween(700, 80, JMotion.ease)) }
     val track = color.copy(alpha = 0.16f)
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.matchParentSize()) {
@@ -489,6 +548,7 @@ fun ProgressRing(
             val d = size.minDimension - w
             val tl = Offset((size.width - d) / 2, (size.height - d) / 2)
             drawArc(track, 0f, 360f, false, tl, Size(d, d), style = Stroke(w))
+            val grown = ring.value
             if (grown > 0f) drawArc(color, -90f, 360f * grown, false, tl, Size(d, d), style = Stroke(w, cap = StrokeCap.Round))
         }
         content()
@@ -528,14 +588,17 @@ fun CardRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        icon?.let { IconTile(it, if (labelColor == jc.danger) jc.danger else jc.accent) }
+        icon?.let { IconTile(it, if (labelColor == jc.danger) jc.danger else jc.muted) }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(label, style = JType.item, color = labelColor)
             sub?.let { Text(it, style = JType.small, color = jc.muted) }
         }
-        trailing()
+        androidx.compose.runtime.CompositionLocalProvider(LocalSwitchLabel provides label) { trailing() }
     }
 }
+
+/** The name a [JSwitch] gives TalkBack when none is passed: its [CardRow]'s label. */
+val LocalSwitchLabel = androidx.compose.runtime.compositionLocalOf<String?> { null }
 
 /**
  * Bottom sheet for choosing a folder: [rows] indented as in the folder tree, the [currentId] folder marked
@@ -559,7 +622,7 @@ fun FolderSheet(
     ) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
             Box(Modifier.fillMaxWidth().height(52.dp)) {
-                Box(Modifier.align(Alignment.CenterStart)) { TextAction("Cancel", onDismiss) }
+                Box(Modifier.align(Alignment.CenterStart)) { TextAction(stringResource(R.string.common_cancel), onDismiss) }
                 Text(title, Modifier.align(Alignment.Center).padding(horizontal = 80.dp), style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             }
             if (subject != null) {
@@ -571,7 +634,7 @@ fun FolderSheet(
                     subjectNote?.let { Text(it, style = JType.small, color = jc.muted) }
                 }
             }
-            Text("Choose a folder", Modifier.padding(top = 12.dp, bottom = 4.dp), style = JType.section, color = jc.muted)
+            Text(stringResource(R.string.kit_choose_a_folder), Modifier.padding(top = 12.dp, bottom = 4.dp), style = JType.section, color = jc.muted)
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 @Composable
                 fun row(name: String, depth: Int, note: String?, icon: String, onClick: (() -> Unit)?) {
@@ -587,10 +650,10 @@ fun FolderSheet(
                     }
                     HorizontalDivider(Modifier.padding(start = 20.dp * depth), color = jc.line)
                 }
-                if (topLevel) row("Top level", 0, null, Ico.FOLDER) { onPick(null) }
+                if (topLevel) row(stringResource(R.string.kit_top_level), 0, null, Ico.FOLDER) { onPick(null) }
                 rows.forEach { r ->
                     val current = r.folder.id == currentId
-                    row(r.folder.name, r.depth, if (current) "Current" else null, Ico.FOLDER, if (current) null else ({ onPick(r.folder.id) }))
+                    row(r.folder.name, r.depth, if (current) stringResource(R.string.kit_current) else null, Ico.FOLDER, if (current) null else ({ onPick(r.folder.id) }))
                 }
             }
             Spacer(Modifier.width(1.dp).navigationBarsPadding())
@@ -657,3 +720,17 @@ fun MarginDialog(
         }
     }
 }
+
+/** A drop-down menu for the button it sits beside (in the same Box). */
+@Composable
+fun JMenu(
+    expanded: Boolean, onDismissRequest: () -> Unit, width: Dp = 262.dp,
+    /** False leaves the keyboard up while the menu is open. */
+    focusable: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) = androidx.compose.material3.DropdownMenu(
+    expanded = expanded, onDismissRequest = onDismissRequest,
+    modifier = Modifier.width(width), shape = JShape.md, containerColor = jc.bg,
+    border = androidx.compose.foundation.BorderStroke(1.dp, jc.line), shadowElevation = 12.dp,
+    properties = androidx.compose.ui.window.PopupProperties(focusable = focusable), content = content,
+)

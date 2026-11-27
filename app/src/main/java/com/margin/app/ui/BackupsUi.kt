@@ -53,6 +53,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 @HiltViewModel
 class BackupsViewModel @Inject constructor(
@@ -74,7 +76,7 @@ class BackupsViewModel @Inject constructor(
 
     fun setBackupPassword(password: String?, onDone: (String) -> Unit) {
         prefs.setBackupPassword(password)
-        onDone(if (password == null) "Backups are no longer protected with a password" else "From now on, backups are protected with your password")
+        onDone(if (password == null) context.getString(R.string.backups_backups_are_no_longer_protected) else context.getString(R.string.backups_from_now_on_backups_are))
         if (prefs.targets.value.isNotEmpty()) BackupWorker.runSoon(context)
     }
 
@@ -84,11 +86,11 @@ class BackupsViewModel @Inject constructor(
     fun addFolder(tree: Uri, onDone: (String) -> Unit) {
         runCatching {
             context.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }.onFailure { onDone("That place can't keep backups. Try another folder or app."); return }
+        }.onFailure { onDone(context.getString(R.string.backups_that_place_cant_keep_backups)); return }
         val target = BackupTarget.Folder(newBackupId(), folderLabel(tree), tree.toString())
         prefs.add(target)
         reschedule()
-        onDone("Added. Making the first backup…")
+        onDone(context.getString(R.string.backups_added_making_the_first_backup))
         backUp(target.id, onDone)
     }
 
@@ -100,28 +102,28 @@ class BackupsViewModel @Inject constructor(
             val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
             context.contentResolver.query(doc, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         }.getOrNull()
-        return listOfNotNull(app ?: "This phone", folder).joinToString(" · ")
+        return listOfNotNull(app ?: context.getString(R.string.backups_this_phone), folder).joinToString(" · ")
     }
 
     /** Checks the server and sign-in (making the folder if needed) before adding it. */
     fun addWebDav(url: String, user: String, password: String, onError: (String) -> Unit, onDone: (String) -> Unit) = viewModelScope.launch {
         val address = url.trim().let { if ("://" in it) it else "https://$it" }
         try {
-            WebDavDestination(address, user.trim(), password).connect()
+            WebDavDestination(context, address, user.trim(), password).connect()
         } catch (e: Exception) {
             onError(when (e) {
-                is java.net.UnknownHostException -> "Couldn't find that server. Check the address, and that you're online."
-                is java.net.SocketTimeoutException, is java.net.ConnectException -> "The server didn't answer. Check the address and try again."
-                is javax.net.ssl.SSLException -> "Couldn't make a secure connection to that server."
-                is com.margin.app.sync.WebDavException -> e.message ?: "The server refused"
-                else -> "Couldn't reach the server"
+                is java.net.UnknownHostException -> context.getString(R.string.backups_couldnt_find_that_server_check)
+                is java.net.SocketTimeoutException, is java.net.ConnectException -> context.getString(R.string.backups_the_server_didnt_answer_check)
+                is javax.net.ssl.SSLException -> context.getString(R.string.backups_couldnt_make_a_secure_connection)
+                is com.margin.app.sync.WebDavException -> errorText(context, e) ?: context.getString(R.string.backups_the_server_refused)
+                else -> context.getString(R.string.backups_couldnt_reach_the_server)
             }); return@launch
         }
         val host = runCatching { Uri.parse(address).host }.getOrNull() ?: address
         val target = BackupTarget.WebDav(newBackupId(), "WebDAV · " + host.removePrefix("www."), address, user.trim())
         prefs.add(target, password)
         reschedule()
-        onDone("Added. Making the first backup…")
+        onDone(context.getString(R.string.backups_added_making_the_first_backup))
         backUp(target.id, onDone)
     }
 
@@ -136,9 +138,9 @@ class BackupsViewModel @Inject constructor(
     fun backUp(only: String? = null, onDone: (String) -> Unit) = viewModelScope.launch {
         val run = backups.backUp(only, force = true)
         onDone(when {
-            run.failed > 0 && run.made == 0 -> "Backup failed. See the error under the place."
-            run.failed > 0 -> "Backed up to ${run.made}, ${run.failed} failed"
-            else -> "Backed up"
+            run.failed > 0 && run.made == 0 -> context.getString(R.string.backups_backup_failed_see_the_error)
+            run.failed > 0 -> context.getString(R.string.backups_backed_up_to_failed, run.made, run.failed)
+            else -> context.getString(R.string.backups_backed_up)
         })
     }
 
@@ -149,13 +151,13 @@ class BackupsViewModel @Inject constructor(
         restoring = true
         val msg = try {
             val n = if (t != null && name != null) backups.restore(t, name, password) else backups.restore(uri!!, password)
-            if (n == 0) "Restored. This device already had everything in that backup." else "Restored ${plural(n, "note")}"
+            if (n == 0) context.getString(R.string.backups_restored_this_device_already_had) else context.resources.getQuantityString(R.plurals.backups_restored_notes, n, n)
         } catch (_: BackupPasswordNeededException) {
             asking = PasswordAsk(t, name, uri, wrong = false); null
         } catch (_: WrongBackupPasswordException) {
             asking = PasswordAsk(t, name, uri, wrong = true); null
         } catch (e: Exception) {
-            "Restore failed: ${e.message ?: e.javaClass.simpleName}"
+            context.getString(R.string.backups_restore_failed, errorText(context, e) ?: e.javaClass.simpleName)
         }
         restoring = false
         msg?.let(onDone)
@@ -186,19 +188,19 @@ fun BackupsSection(vm: BackupsViewModel) {
     if (settingPassword) BackupPasswordDialog(changing = sealed, onDismiss = { settingPassword = false }) { settingPassword = false; vm.setBackupPassword(it, toast) }
     if (clearingPassword) MarginDialog(
         onDismissRequest = { clearingPassword = false },
-        title = { Text("Stop protecting backups?") },
-        text = { Text("New backups will be readable by anyone with access to the place they're kept. Backups already made keep their password.") },
-        confirmButton = { TextButton(onClick = { clearingPassword = false; vm.setBackupPassword(null, toast) }) { Text("Turn Off", color = jc.danger) } },
-        dismissButton = { TextButton(onClick = { clearingPassword = false }) { Text("Cancel") } },
+        title = { Text(stringResource(R.string.backups_stop_protecting_backups)) },
+        text = { Text(stringResource(R.string.backups_new_backups_will_be_readable)) },
+        confirmButton = { TextButton(onClick = { clearingPassword = false; vm.setBackupPassword(null, toast) }) { Text(stringResource(R.string.backups_turn_off), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { clearingPassword = false }) { Text(stringResource(R.string.common_cancel)) } },
     )
     vm.asking?.let { ask ->
         RestorePasswordDialog(ask.wrong, onDismiss = vm::cancelAsk) { pw -> vm.restore(ask.target, ask.name, ask.uri, toast, pw) }
     }
     restoreUri?.let { uri ->
-        RestoreConfirm("the file you picked", onDismiss = { restoreUri = null }) { restoreUri = null; vm.restore(null, null, uri, toast) }
+        RestoreConfirm(stringResource(R.string.backups_the_file_you_picked), onDismiss = { restoreUri = null }) { restoreUri = null; vm.restore(null, null, uri, toast) }
     }
 
-    SettingsLabel("Backups")
+    SettingsLabel(stringResource(R.string.backups_backups))
     Card {
         targets.forEachIndexed { i, t ->
             if (i > 0) CardDivider()
@@ -206,28 +208,28 @@ fun BackupsSection(vm: BackupsViewModel) {
             CardRow(
                 t.label, icon = if (t is BackupTarget.WebDav) Ico.GLOBE else Ico.CLOUD,
                 sub = when {
-                    s?.lastError != null -> "Couldn't back up: " + s.lastError
-                    s?.lastAt != null -> "Last backup " + listTime(context, s.lastAt)
-                    else -> "No backup yet"
+                    s?.lastError != null -> stringResource(R.string.backups_couldnt_back_up, s.lastError)
+                    s?.lastAt != null -> stringResource(R.string.backups_last_backup, listTime(context, s.lastAt))
+                    else -> stringResource(R.string.backups_no_backup_yet)
                 },
                 onClick = { opened = t },
             ) { JIcon(Ico.CHEVRON, jc.muted, size = 16.dp, stroke = 2f) }
         }
         if (targets.isNotEmpty()) CardDivider()
         CardRow(
-            "Add a cloud or folder", icon = Ico.PLUS, labelColor = jc.accent,
-            sub = "Dropbox, OneDrive, Box, Nextcloud, MEGA or any app in the file picker, or a folder on this phone.",
+            stringResource(R.string.backups_add_a_cloud_or_folder), icon = Ico.PLUS,
+            sub = stringResource(R.string.backups_dropbox_onedrive_box_nextcloud_mega),
             onClick = { pickFolder.launch(null) },
         )
         CardDivider()
         CardRow(
-            "Add a WebDAV server", icon = Ico.GLOBE, labelColor = jc.accent,
-            sub = "Nextcloud, ownCloud, Koofr, a home NAS…", onClick = { addingWebDav = true },
+            stringResource(R.string.backups_add_a_webdav_server), icon = Ico.GLOBE,
+            sub = stringResource(R.string.backups_nextcloud_owncloud_koofr_a_home), onClick = { addingWebDav = true },
         )
         CardDivider()
         CardRow(
-            "Backup password", icon = Ico.LOCK,
-            sub = if (sealed) "On. Backups can only be opened with it." else "Off. Anyone who can open the place a backup is kept can read your notes.",
+            stringResource(R.string.backups_backup_password), icon = Ico.LOCK,
+            sub = if (sealed) stringResource(R.string.backups_on_backups_can_only_be) else stringResource(R.string.backups_off_anyone_who_can_open),
             onClick = { settingPassword = true },
         ) {
             JSwitch(sealed, { on -> if (on) settingPassword = true else clearingPassword = true })
@@ -235,23 +237,23 @@ fun BackupsSection(vm: BackupsViewModel) {
         if (targets.isNotEmpty()) {
             CardDivider()
             CardRow(
-                if (running) "Backing up…" else "Back up now", icon = Ico.ARCHIVE,
+                if (running) stringResource(R.string.backups_backing_up) else stringResource(R.string.backups_back_up_now), icon = Ico.ARCHIVE,
                 labelColor = if (running) jc.muted else jc.accent,
-                sub = "Daily on its own, when something changed. Each place keeps the last $KEEP_BACKUPS.",
+                sub = stringResource(R.string.backups_daily_on_its_own_when, KEEP_BACKUPS),
                 onClick = if (running) null else ({ vm.backUp(null, toast) }),
             ) { if (running) CircularProgressIndicator(Modifier.size(18.dp), color = jc.accent, strokeWidth = 2.dp) }
         }
         CardDivider()
         CardRow(
-            if (vm.restoring) "Restoring…" else "Restore from a backup file", icon = Ico.ARROW_DOWN,
-            labelColor = if (vm.restoring) jc.muted else jc.accent,
-            sub = "A margin-backup zip from anywhere, Google Drive's app included.",
+            if (vm.restoring) stringResource(R.string.backups_restoring) else stringResource(R.string.backups_restore_from_a_backup_file), icon = Ico.ARROW_DOWN,
+            labelColor = if (vm.restoring) jc.muted else jc.ink,
+            sub = stringResource(R.string.backups_a_margin_backup_zip_from),
             onClick = if (vm.restoring) null else ({ pickFile.launch(arrayOf("application/zip", "application/octet-stream")) }),
         )
     }
     Text(
-        if (sealed) "Backups hold every note and file, sealed with your backup password (AES-256)."
-        else "Backups hold every note and file. Locked notes and saved passwords stay encrypted in them; turn on a backup password to seal the rest.",
+        if (sealed) stringResource(R.string.backups_backups_hold_every_note_and)
+        else stringResource(R.string.backups_backups_hold_every_note_and_2),
         Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp), style = JType.small, color = jc.muted,
     )
 }
@@ -259,10 +261,10 @@ fun BackupsSection(vm: BackupsViewModel) {
 @Composable
 private fun RestoreConfirm(what: String, onDismiss: () -> Unit, onConfirm: () -> Unit) = MarginDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Restore from $what?") },
-    text = { Text("Notes and folders this phone doesn't have, or has an older copy of, come back and sync to your other devices. Anything changed here since the backup stays as it is.") },
-    confirmButton = { TextButton(onClick = onConfirm) { Text("Restore", fontWeight = FontWeight.SemiBold) } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    title = { Text(stringResource(R.string.backups_restore_from, what)) },
+    text = { Text(stringResource(R.string.backups_notes_and_folders_this_phone)) },
+    confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_restore), fontWeight = FontWeight.SemiBold) } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
 )
 
 /** One place: its state, Back up now, its backups to restore from, and Remove. */
@@ -275,7 +277,7 @@ private fun TargetSheet(vm: BackupsViewModel, t: BackupTarget, s: BackupStatus?,
     var removing by remember { mutableStateOf(false) }
     LaunchedEffect(t.id, s?.lastAt) {
         names = null
-        runCatching { vm.list(t) }.onSuccess { names = it; error = null }.onFailure { error = it.message ?: "Couldn't read the backups there" }
+        runCatching { vm.list(t) }.onSuccess { names = it; error = null }.onFailure { error = errorText(context, it) ?: context.getString(R.string.backups_couldnt_read_the_backups_there) }
     }
     restoring?.let { name ->
         RestoreConfirm(backupTimeOf(name)?.let { fullTime(context, it) } ?: name, onDismiss = { restoring = null }) {
@@ -284,10 +286,10 @@ private fun TargetSheet(vm: BackupsViewModel, t: BackupTarget, s: BackupStatus?,
     }
     if (removing) MarginDialog(
         onDismissRequest = { removing = false },
-        title = { Text("Stop backing up here?") },
-        text = { Text("Backups already made there stay where they are.") },
-        confirmButton = { TextButton(onClick = { removing = false; onDismiss(); vm.remove(t) }) { Text("Remove", color = jc.danger) } },
-        dismissButton = { TextButton(onClick = { removing = false }) { Text("Cancel") } },
+        title = { Text(stringResource(R.string.backups_stop_backing_up_here)) },
+        text = { Text(stringResource(R.string.backups_backups_already_made_there_stay)) },
+        confirmButton = { TextButton(onClick = { removing = false; onDismiss(); vm.remove(t) }) { Text(stringResource(R.string.common_remove), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { removing = false }) { Text(stringResource(R.string.common_cancel)) } },
     )
     MarginDialog(
         onDismissRequest = onDismiss,
@@ -296,26 +298,26 @@ private fun TargetSheet(vm: BackupsViewModel, t: BackupTarget, s: BackupStatus?,
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     when {
-                        s?.lastError != null -> "The last backup failed: ${s.lastError}"
-                        s?.lastAt != null -> "Last backup " + fullTime(context, s.lastAt) + "."
-                        else -> "No backup here yet."
+                        s?.lastError != null -> stringResource(R.string.backups_the_last_backup_failed, s.lastError)
+                        s?.lastAt != null -> stringResource(R.string.backups_last_backup_full, fullTime(context, s.lastAt))
+                        else -> stringResource(R.string.backups_no_backup_here_yet)
                     },
                     color = if (s?.lastError != null) jc.danger else jc.muted,
                 )
-                if (t is BackupTarget.WebDav) Text("${t.user} at ${t.url}", style = JType.small, color = jc.muted)
-                Text("RESTORE FROM", Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
+                if (t is BackupTarget.WebDav) Text(stringResource(R.string.backups_at, t.user, t.url), style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.backups_restore_from_2), Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
                 when {
                     error != null -> Text(error!!, style = JType.small, color = jc.danger)
                     names == null -> Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(Modifier.size(20.dp), color = jc.accent, strokeWidth = 2.dp)
                     }
-                    names!!.isEmpty() -> Text("No backups there yet.", style = JType.small, color = jc.muted)
+                    names!!.isEmpty() -> Text(stringResource(R.string.backups_no_backups_there_yet), style = JType.small, color = jc.muted)
                     else -> Card {
                         names!!.forEachIndexed { i, n ->
                             if (i > 0) CardDivider()
                             CardRow(
                                 backupTimeOf(n)?.let { fullTime(context, it) } ?: n,
-                                sub = if (i == 0) "Newest" else null, onClick = { restoring = n },
+                                sub = if (i == 0) stringResource(R.string.backups_newest) else null, onClick = { restoring = n },
                             ) { JIcon(Ico.ARROW_DOWN, jc.accent, size = 18.dp, stroke = 2f) }
                         }
                     }
@@ -323,9 +325,9 @@ private fun TargetSheet(vm: BackupsViewModel, t: BackupTarget, s: BackupStatus?,
             }
         },
         confirmButton = {
-            TextButton(onClick = { vm.backUp(t.id, toast) }, enabled = !running) { Text(if (running) "Backing up…" else "Back Up Now", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = { vm.backUp(t.id, toast) }, enabled = !running) { Text(if (running) stringResource(R.string.backups_backing_up) else stringResource(R.string.backups_back_up_now_2), fontWeight = FontWeight.SemiBold) }
         },
-        dismissButton = { TextButton(onClick = { removing = true }) { Text("Remove", color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { removing = true }) { Text(stringResource(R.string.common_remove), color = jc.danger) } },
     )
 }
 
@@ -342,22 +344,22 @@ private fun WebDavDialog(vm: BackupsViewModel, onDismiss: () -> Unit, onAdded: (
         // bottom of it is out of sight.
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Add a WebDAV server")
+                Text(stringResource(R.string.backups_add_a_webdav_server))
                 error?.let { Text(it, color = jc.danger, style = JType.small) }
                 if (checking) Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(16.dp), color = jc.accent, strokeWidth = 2.dp)
-                    Text("  Checking the server…", style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.backups_checking_server), style = JType.small, color = jc.muted)
                 }
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Nextcloud's address looks like cloud.example.com/remote.php/dav/files/you/Margin. Use an app password if the server offers them.")
-                OutlinedTextField(url, { url = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Folder address") }, shape = JShape.sm,
+                Text(stringResource(R.string.backups_nextclouds_address_looks_like_cloud))
+                OutlinedTextField(url, { url = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.backups_folder_address)) }, shape = JShape.sm,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false))
-                OutlinedTextField(user, { user = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Username") }, shape = JShape.sm,
+                OutlinedTextField(user, { user = it; error = null }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.backups_username)) }, shape = JShape.sm,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false))
-                PasswordField(password, { password = it; error = null }, "Password")
+                PasswordField(password, { password = it; error = null }, stringResource(R.string.backups_password))
             }
         },
         confirmButton = {
@@ -367,9 +369,9 @@ private fun WebDavDialog(vm: BackupsViewModel, onDismiss: () -> Unit, onAdded: (
                     vm.addWebDav(url, user, password, onError = { checking = false; error = it }) { checking = false; onAdded(it) }
                 },
                 enabled = !checking && url.isNotBlank() && user.isNotBlank() && password.isNotEmpty(),
-            ) { Text("Add", fontWeight = FontWeight.SemiBold) }
+            ) { Text(stringResource(R.string.common_add), fontWeight = FontWeight.SemiBold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -384,27 +386,26 @@ private fun BackupPasswordDialog(changing: Boolean, onDismiss: () -> Unit, onSet
         onDismissRequest = onDismiss,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(if (changing) "Change Backup Password" else "Protect Backups")
+                Text(if (changing) stringResource(R.string.backups_change_backup_password) else stringResource(R.string.backups_protect_backups))
                 when {
-                    tooShort -> Text("Use at least 8 characters.", color = jc.danger, style = JType.small)
-                    mismatch -> Text("The two passwords don't match.", color = jc.danger, style = JType.small)
+                    tooShort -> Text(stringResource(R.string.backups_use_at_least_8_characters), color = jc.danger, style = JType.small)
+                    mismatch -> Text(stringResource(R.string.backups_the_two_passwords_dont_match), color = jc.danger, style = JType.small)
                 }
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Backups will be sealed with this password. Write it down: if it's lost, Margin can't open them for you." +
-                        if (changing) " Backups already made keep the password they were made with." else "",
+                    stringResource(if (changing) R.string.backups_sealed_intro_changing else R.string.backups_sealed_intro),
                 )
-                PasswordField(pw, { pw = it }, "Password")
-                PasswordField(again, { again = it }, "Again")
+                PasswordField(pw, { pw = it }, stringResource(R.string.backups_password))
+                PasswordField(again, { again = it }, stringResource(R.string.backups_again))
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSet(pw) }, enabled = pw.length >= 8 && again == pw) { Text(if (changing) "Change" else "Turn On", fontWeight = FontWeight.SemiBold) }
+            TextButton(onClick = { onSet(pw) }, enabled = pw.length >= 8 && again == pw) { Text(if (changing) stringResource(R.string.common_change) else stringResource(R.string.backups_turn_on), fontWeight = FontWeight.SemiBold) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -416,18 +417,18 @@ private fun RestorePasswordDialog(wrong: Boolean, onDismiss: () -> Unit, onResto
         onDismissRequest = onDismiss,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Backup Password")
-                if (wrong) Text("That password doesn't open this backup.", color = jc.danger, style = JType.small)
+                Text(stringResource(R.string.backups_backup_password_2))
+                if (wrong) Text(stringResource(R.string.backups_that_password_doesnt_open_this), color = jc.danger, style = JType.small)
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("This backup is protected. Enter the backup password it was made with.")
-                PasswordField(pw, { pw = it }, "Password")
+                Text(stringResource(R.string.backups_this_backup_is_protected_enter))
+                PasswordField(pw, { pw = it }, stringResource(R.string.backups_password))
             }
         },
-        confirmButton = { TextButton(onClick = { onRestore(pw) }, enabled = pw.isNotEmpty()) { Text("Restore", fontWeight = FontWeight.SemiBold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { onRestore(pw) }, enabled = pw.isNotEmpty()) { Text(stringResource(R.string.common_restore), fontWeight = FontWeight.SemiBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 

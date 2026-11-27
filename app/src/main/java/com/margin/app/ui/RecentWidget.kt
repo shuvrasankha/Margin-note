@@ -44,6 +44,8 @@ class RecentWidget : AppWidgetProvider() {
         /** App shortcuts: a new note that opens the document scanner or starts recording. */
         const val ACTION_SCAN = "com.margin.app.SCAN"
         const val ACTION_VOICE = "com.margin.app.VOICE_NOTE"
+        /** The app shortcut that opens Passwords. */
+        const val ACTION_PASSWORDS = "com.margin.app.PASSWORDS"
         const val EXTRA_NOTE = "note"
         const val EXTRA_FOLDER = "folder"
         private val ROWS = listOf(
@@ -57,7 +59,7 @@ class RecentWidget : AppWidgetProvider() {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, RecentWidget::class.java))
             if (ids.isEmpty()) return
-            val latest = notes.sortedByDescending { it.lastEdited }.take(ROWS.size)
+            val latest = notes.filter { !it.archived }.sortedByDescending { it.lastEdited }.take(ROWS.size)
             val v = RemoteViews(context.packageName, R.layout.widget_recent)
             // + writes a note in a popup over the home screen; the app stays closed.
             v.setOnClickPendingIntent(R.id.new_note, PendingIntent.getActivity(
@@ -65,6 +67,7 @@ class RecentWidget : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ))
             v.setViewVisibility(R.id.empty, if (latest.isEmpty()) View.VISIBLE else View.GONE)
+            val hideText = com.margin.app.data.appLockOn(context) // App Lock: titles only on the home screen
             ROWS.forEachIndexed { i, (row, title, body) ->
                 val n = latest.getOrNull(i)
                 // Empty rows stay (invisible) so the shown ones keep their height.
@@ -72,7 +75,7 @@ class RecentWidget : AppWidgetProvider() {
                 if (n == null) return@forEachIndexed
                 v.setTextViewText(title, n.displayTitle)
                 // The same second line as the note list.
-                v.setTextViewText(body, if (n.isLocked) "Locked" else n.searchText.lineSequence().firstOrNull { it.isNotBlank() } ?: "No additional text")
+                v.setTextViewText(body, if (n.isLocked) context.getString(R.string.widget_recent_locked) else if (hideText) context.getString(R.string.widget_open_margin_to_see) else n.searchText.lineSequence().firstOrNull { it.isNotBlank() } ?: context.getString(R.string.notes_snippet_no_text))
                 v.setOnClickPendingIntent(row, open(context, i + 1, Intent(ACTION_OPEN).putExtra(EXTRA_NOTE, n.id).putExtra(EXTRA_FOLDER, n.folderId)))
             }
             manager.updateAppWidget(ids, v)

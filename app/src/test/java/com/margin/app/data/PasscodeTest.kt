@@ -27,4 +27,29 @@ class PasscodeTest {
         session.lock()
         assertFalse(session.legacy.value)
     }
+
+    @Test fun passphrasesAreLongAndNeverNaggedBackToDigits() {
+        assertFalse(isPassphrase("hunter22".toCharArray()))
+        assertTrue(isPassphrase("correct horse".toCharArray()))
+        val session = LockSession()
+        session.startWith("correct horse battery".toCharArray())
+        assertTrue(session.passphrase.value)
+        assertFalse(session.legacy.value) // a chosen passphrase isn't an old password
+        session.startWith("123456".toCharArray())
+        assertFalse(session.passphrase.value) // a passcode alone can't save to Passwords (VaultStore.save)
+        session.lock()
+        assertFalse(session.passphrase.value)
+    }
+
+    @Test fun newSealsUseTheStrongerIterationCount() {
+        assertTrue(NoteCrypto.ITERATIONS >= 600_000)
+    }
+
+    @Test fun savedPasswordsAreOnlyBackedUpWithABackupPassword() {
+        val note = NoteEntity("n1", "f", emptyList(), "", "", createdAt = 0, updatedAt = 0)
+        val login = note.copy(id = LOGIN_PREFIX + "1", cipher = "j1.x")
+        assertFalse(needsBackupPassword(listOf(note), hasBackupPassword = false))
+        assertTrue(needsBackupPassword(listOf(note, login), hasBackupPassword = false))
+        assertFalse(needsBackupPassword(listOf(note, login), hasBackupPassword = true))
+    }
 }

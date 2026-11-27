@@ -6,9 +6,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.margin.app.R
 
 /** App-wide preferences (device-local, not synced). */
 @Singleton
+/** Whether App Lock is on, for code without the injected [AppPrefs] (widgets). */
+fun appLockOn(context: Context) = context.getSharedPreferences("jotter_app", Context.MODE_PRIVATE).getString(AppPrefs.K_APP_LOCK, null) != null
+
 class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     // Stored under the app's old name (Jotter); renaming it would lose what is saved.
     private val prefs = context.getSharedPreferences("jotter_app", Context.MODE_PRIVATE)
@@ -123,7 +127,7 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     private inline fun <reified T : Enum<T>> enumOr(name: String?, fallback: T): T =
         runCatching { enumValueOf<T>(name!!) }.getOrDefault(fallback)
 
-    private companion object {
+    internal companion object {
         const val K_THEME = "theme"
         const val K_TEXT_SIZE = "textSize"
         const val K_PREVIEW_LINES = "previewLines"
@@ -162,8 +166,8 @@ operator fun Map<Toggle, Boolean>.invoke(t: Toggle) = this[t] ?: t.default
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** Text size multiplies the system font scale. */
-enum class TextSize(val scale: Float, val label: String) {
-    SMALL(0.9f, "Small"), DEFAULT(1f, "Default"), LARGE(1.12f, "Large"), LARGER(1.24f, "Larger"), LARGEST(1.3f, "Largest"),
+enum class TextSize(val scale: Float, val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    SMALL(0.9f, "Small", R.string.text_size_small), DEFAULT(1f, "Default", R.string.text_size_default), LARGE(1.12f, "Large", R.string.text_size_large), LARGER(1.24f, "Larger", R.string.text_size_larger), LARGEST(1.3f, "Largest", R.string.text_size_largest),
 }
 
 data class Appearance(

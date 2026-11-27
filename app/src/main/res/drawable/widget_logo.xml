@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Margin's mark for the widgets, without the icon's tile: the amber margin rule and three lines of text. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="660" android:viewportHeight="660">
+    <group android:translateX="-182" android:translateY="-182">
+        <path android:strokeColor="@color/widget_accent" android:strokeWidth="64" android:strokeLineCap="round" android:pathData="M302,232V792" />
+        <path android:strokeColor="@color/widget_ink" android:strokeWidth="56" android:strokeLineCap="round" android:pathData="M402,360H722M402,512H662M402,664H562" />
+    </group>
+</vector>

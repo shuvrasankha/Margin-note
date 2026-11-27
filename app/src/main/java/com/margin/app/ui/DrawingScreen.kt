@@ -122,6 +122,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.gestures.drag
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * How a stored ink colour shows on the page. Drawings sit on the note's own background, so on a dark page the
@@ -141,10 +143,10 @@ fun rememberInk(): (Long) -> Color {
 
 // Seven inks and three stroke widths.
 private val INKS = listOf(
-    0xFF111111 to "Black", 0xFFB25E00 to "Amber", 0xFFD12F25 to "Red", 0xFF0A66D9 to "Blue", 0xFF1F7A4D to "Green",
-    0xFF7440C9 to "Purple", 0xFF8E8E93 to "Grey",
+    0xFF111111 to R.string.drawing_ink_black, 0xFFB25E00 to R.string.drawing_ink_amber, 0xFFD12F25 to R.string.drawing_ink_red, 0xFF0A66D9 to R.string.drawing_ink_blue, 0xFF1F7A4D to R.string.drawing_ink_green,
+    0xFF7440C9 to R.string.drawing_ink_purple, 0xFF8E8E93 to R.string.drawing_ink_grey,
 )
-private val WIDTHS = listOf(Triple("Fine", 2f, 4.dp), Triple("Medium", 4f, 8.dp), Triple("Bold", 7f, 14.dp))
+private val WIDTHS = listOf(Triple(R.string.drawing_width_fine, 2f, 4.dp), Triple(R.string.drawing_width_medium, 4f, 8.dp), Triple(R.string.drawing_width_bold, 7f, 14.dp))
 
 /** One stroke in drawing units: pen solid, marker wide and see-through, pencil light with a grainy second pass. */
 private fun DrawScope.drawStroke(st: PenStroke, ink: (Long) -> Color) {
@@ -492,8 +494,8 @@ fun PaperSwatch(paper: Paper, size: androidx.compose.ui.unit.Dp = 28.dp) {
 fun PaperDialog(current: Paper, onPick: (Paper) -> Unit, onDismiss: () -> Unit) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(Modifier.clip(JShape.lg).background(jc.bg).padding(vertical = 16.dp)) {
-            Text("Paper", Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
-            Text("Shown behind this note's text.", Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
+            Text(stringResource(R.string.drawing_paper), Modifier.padding(horizontal = 20.dp, vertical = 4.dp), style = JType.rowTitle, color = jc.ink)
+            Text(stringResource(R.string.drawing_shown_behind_this_notes_text), Modifier.padding(horizontal = 20.dp), style = JType.small, color = jc.muted)
             Spacer(Modifier.height(8.dp))
             Paper.entries.forEach { p ->
                 val on = p == current
@@ -503,7 +505,7 @@ fun PaperDialog(current: Paper, onPick: (Paper) -> Unit, onDismiss: () -> Unit) 
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     PaperSwatch(p)
-                    Text(p.label, Modifier.weight(1f), style = JType.item, color = if (on) jc.accent else jc.ink)
+                    Text(stringResource(p.labelRes), Modifier.weight(1f), style = JType.item, color = if (on) jc.accent else jc.ink)
                     if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f)
                 }
             }
@@ -516,13 +518,13 @@ fun PaperDialog(current: Paper, onPick: (Paper) -> Unit, onDismiss: () -> Unit) 
 private fun PaperMenu(current: Paper, onPick: (Paper) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction(Ico.GRID, "Paper, ${current.label}", { open = true }, color = if (current != Paper.PLAIN) jc.accent else jc.muted)
-        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = jc.bg) {
-            Text("Paper", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = JType.section, color = jc.muted)
+        IconAction(Ico.GRID, stringResource(R.string.drawing_paper_desc, stringResource(current.labelRes)), { open = true }, color = if (current != Paper.PLAIN) jc.accent else jc.muted)
+        JMenu(expanded = open, onDismissRequest = { open = false }, width = 220.dp) {
+            Text(stringResource(R.string.drawing_paper), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = JType.section, color = jc.muted)
             Paper.entries.forEach { p ->
                 val on = p == current
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(p.label, style = JType.row, color = if (on) jc.accent else jc.ink) },
+                    text = { Text(stringResource(p.labelRes), style = JType.row, color = if (on) jc.accent else jc.ink) },
                     leadingIcon = { PaperSwatch(p) },
                     trailingIcon = { if (on) JIcon(Ico.CHECK, jc.accent, size = 18.dp, stroke = 2.6f) },
                     onClick = { onPick(p); open = false },
@@ -542,9 +544,9 @@ private class Tool(
 )
 
 /** What a drag on the canvas does. [factor] scales the chosen width. */
-private enum class Mode(val label: String, val tool: PenTool, val factor: Float) {
-    PEN("Pen", PenTool.PEN, 1f), PENCIL("Pencil", PenTool.PENCIL, 0.8f), MARKER("Marker", PenTool.MARKER, 3f),
-    ERASER("Eraser", PenTool.PEN, 6f), LASSO("Lasso", PenTool.PEN, 1f),
+private enum class Mode(val label: String, @androidx.annotation.StringRes val labelRes: Int, val tool: PenTool, val factor: Float) {
+    PEN("Pen", R.string.drawing_mode_pen, PenTool.PEN, 1f), PENCIL("Pencil", R.string.drawing_mode_pencil, PenTool.PENCIL, 0.8f), MARKER("Marker", R.string.drawing_mode_marker, PenTool.MARKER, 3f),
+    ERASER("Eraser", R.string.drawing_mode_eraser, PenTool.PEN, 6f), LASSO("Lasso", R.string.drawing_mode_lasso, PenTool.PEN, 1f),
 }
 
 private val TOOLS = listOf(
@@ -557,6 +559,7 @@ private val TOOLS = listOf(
 
 @Composable
 private fun ToolPen(tool: Tool, ink: Color, picked: Boolean, onPick: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val paths = remember(tool) {
         listOf(tool.body, tool.cone, tool.tip, tool.band, tool.loop).map { d -> if (d.isEmpty()) null else PathParser().parsePathString(d).toPath() }
     }
@@ -568,7 +571,7 @@ private fun ToolPen(tool: Tool, ink: Color, picked: Boolean, onPick: () -> Unit)
     val erase = tool.mode == Mode.ERASER
     Canvas(
         Modifier.size(44.dp, 84.dp).offset(y = lift).clickable(role = Role.RadioButton, onClick = onPick)
-            .semantics { contentDescription = tool.mode.label; selected = picked },
+            .semantics { contentDescription = context.getString(tool.mode.labelRes); selected = picked },
     ) {
         val k = size.height / 84f
         translate((size.width - 30f * k) / 2, 0f) {
@@ -599,7 +602,7 @@ fun DrawingScreen(
     onText: ((remaining: Drawing?, text: String) -> Unit)? = null,
     /** A picture to draw on (a PDF page), filling [initial]'s page; the page then keeps its size. */
     background: ImageBitmap? = null,
-    title: String = "Sketch",
+    title: String = stringResource(R.string.drawing_sketch),
 ) {
     val density = LocalDensity.current
     var canvas by remember { mutableStateOf(initial) }
@@ -682,17 +685,17 @@ fun DrawingScreen(
     Dialog(onDismissRequest = finish, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(jc.bg).systemBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Cancel", { onDone(null) })
+                TextAction(stringResource(R.string.common_cancel), { onDone(null) })
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(title, style = JType.rowTitle, color = jc.ink)
                     if (noteTitle.isNotBlank()) {
-                        Text("In \u201C$noteTitle\u201D", style = JType.caption, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(R.string.drawing_in, noteTitle), style = JType.caption, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (onText != null) IconAction(Ico.HANDWRITING, "Convert handwriting to text", {
+                if (onText != null) IconAction(Ico.HANDWRITING, stringResource(R.string.drawing_convert_handwriting_to_text), {
                     reading = strokes.indices.toSet()
                 }, enabled = hasInk)
-                TextAction("Done", finish, bold = true)
+                TextAction(stringResource(R.string.common_done), finish, bold = true)
             }
             Box(
                 Modifier.weight(1f).fillMaxWidth().background(paper).clipToBounds()
@@ -857,7 +860,7 @@ fun DrawingScreen(
                             if (toNavigate) navigate()?.let { pen -> penSeen = true; draw(pen, pen = true) }
                         }
                     }
-                    .semantics { contentDescription = "Drawing canvas" },
+                    .semantics { contentDescription = context.getString(R.string.drawing_drawing_canvas) },
             ) {
                 Canvas(Modifier.fillMaxSize()) {
                     val v = view ?: return@Canvas
@@ -895,7 +898,7 @@ fun DrawingScreen(
                     Text(
                         "${(v.scale / fit.scale * 100).roundToInt()}%",
                         Modifier.align(Alignment.BottomStart).padding(12.dp).clip(CircleShape).background(jc.surface)
-                            .clickable(role = Role.Button) { view = fit }.semantics { contentDescription = "Zoom ${(v.scale / fit.scale * 100).roundToInt()} percent. Tap to fit the page." }
+                            .clickable(role = Role.Button) { view = fit }.semantics { contentDescription = context.getString(R.string.drawing_zoom_percent_tap_to_fit, (v.scale / fit.scale * 100).roundToInt()) }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         style = JType.small, color = jc.ink,
                     )
@@ -924,10 +927,10 @@ fun DrawingScreen(
                 verticalAlignment = Alignment.Bottom,
             ) {
                 Column(Modifier.align(Alignment.CenterVertically)) {
-                    IconAction(Ico.UNDO, "Undo", {
+                    IconAction(Ico.UNDO, stringResource(R.string.common_undo), {
                         future.add(strokes); strokes = past.removeAt(past.lastIndex); selection = emptySet(); changed = true
                     }, color = jc.ink, enabled = past.isNotEmpty())
-                    IconAction(Ico.REDO, "Redo", {
+                    IconAction(Ico.REDO, stringResource(R.string.drawing_redo), {
                         past.add(strokes); strokes = future.removeAt(future.lastIndex); selection = emptySet(); changed = true
                     }, color = jc.ink, enabled = future.isNotEmpty())
                 }
@@ -937,7 +940,7 @@ fun DrawingScreen(
                 }
                 Spacer(Modifier.weight(1f))
                 Column(Modifier.align(Alignment.CenterVertically)) {
-                    IconAction(Ico.RULER, if (ruler) "Ruler, on" else "Ruler, off", { ruler = !ruler }, color = if (ruler) jc.accent else jc.muted)
+                    IconAction(Ico.RULER, if (ruler) stringResource(R.string.drawing_ruler_on) else stringResource(R.string.drawing_ruler_off), { ruler = !ruler }, color = if (ruler) jc.accent else jc.muted)
                     PaperMenu(canvas?.paperStyle ?: Paper.PLAIN) { p -> canvas = canvas?.withPaper(p); changed = true }
                 }
             }
@@ -949,10 +952,10 @@ fun DrawingScreen(
                 WIDTHS.forEach { (name, w, dot) ->
                     val on = width == w
                     Box(
-                        Modifier.size(32.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent)
-                            .clickable(role = Role.RadioButton) { width = w }.semantics { contentDescription = "$name stroke"; selected = on },
+                        Modifier.size(48.dp).clip(CircleShape) // 48 dp touch area, 32 dp highlight
+                            .clickable(role = Role.RadioButton) { width = w }.semantics { contentDescription = context.getString(R.string.drawing_stroke_desc, context.getString(name)); selected = on },
                         contentAlignment = Alignment.Center,
-                    ) { Box(Modifier.size(dot).clip(CircleShape).background(if (mode == Mode.ERASER || mode == Mode.LASSO) jc.ink else inkOf(ink))) }
+                    ) { Box(Modifier.size(32.dp).clip(CircleShape).background(if (on) jc.surface else Color.Transparent), contentAlignment = Alignment.Center) { Box(Modifier.size(dot).clip(CircleShape).background(if (mode == Mode.ERASER || mode == Mode.LASSO) jc.ink else inkOf(ink))) } }
                 }
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.size(1.dp, 28.dp).background(jc.line))
@@ -961,8 +964,8 @@ fun DrawingScreen(
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                     // With the eraser, the inks give way to what it erases: the ink under it, or whole strokes.
                     if (mode == Mode.ERASER) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Pill("Area", !eraseStrokes, { eraseStrokes = false })
-                        Pill("Whole strokes", eraseStrokes, { eraseStrokes = true })
+                        Pill(stringResource(R.string.drawing_area), !eraseStrokes, { eraseStrokes = false })
+                        Pill(stringResource(R.string.drawing_whole_strokes), eraseStrokes, { eraseStrokes = true })
                     }
                     else {
                         val scroll = rememberScrollState()
@@ -972,16 +975,16 @@ fun DrawingScreen(
                             if (ink in custom) scroll.animateScrollTo(scroll.maxValue) else if (INKS.indexOfFirst { it.first == ink } < 3) scroll.animateScrollTo(0)
                         }
                         Row(Modifier.horizontalScroll(scroll), verticalAlignment = Alignment.CenterVertically) {
-                            (INKS + custom.reversed().map { it to "Custom colour ${hexOf(it)}" }).forEach { (value, name) ->
-                                InkSwatch(inkOf(value), ink == value, if (selection.isNotEmpty()) "Colour selection $name" else name) { useInk(value) }
+                            (INKS.map { (v, r) -> v to stringResource(r) } + custom.reversed().map { it to stringResource(R.string.drawing_custom_colour, hexOf(it)) }).forEach { (value, name) ->
+                                InkSwatch(inkOf(value), ink == value, if (selection.isNotEmpty()) stringResource(R.string.drawing_colour_selection, name) else name) { useInk(value) }
                             }
                         }
                     }
                 }
                 // Always in view, whatever the inks scroll to.
                 if (mode != Mode.ERASER) Box(
-                    Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.Button) { picking = true }
-                        .semantics { contentDescription = if (selection.isNotEmpty()) "Colour selection, more colours" else "More colours" },
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { picking = true } // 48 dp touch area; the ring stays 24
+                        .semantics { contentDescription = if (selection.isNotEmpty()) context.getString(R.string.drawing_colour_selection_more_colours) else context.getString(R.string.drawing_more_colours) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(Modifier.size(24.dp).border(3.dp, Brush.sweepGradient(RAINBOW), CircleShape))
@@ -998,7 +1001,7 @@ private val RAINBOW = listOf(Color.Red, Color.Yellow, Color.Green, Color.Cyan, C
 @Composable
 private fun InkSwatch(color: Color, on: Boolean, name: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(32.dp).clip(CircleShape).clickable(role = Role.RadioButton, onClick = onClick)
+        Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.RadioButton, onClick = onClick) // 48 dp touch area
             .semantics { contentDescription = name; selected = on },
         contentAlignment = Alignment.Center,
     ) {
@@ -1014,6 +1017,7 @@ private fun InkSwatch(color: Color, on: Boolean, name: String, onClick: () -> Un
  */
 @Composable
 private fun InkPicker(start: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val first = remember { argbToHsv(start) }
     var h by remember { mutableStateOf(first[0]) }
     var sat by remember { mutableStateOf(first[1]) }
@@ -1023,9 +1027,9 @@ private fun InkPicker(start: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit
     fun moved() { hex = hexOf(hsvToArgb(h, sat, v)) }
     MarginDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { androidx.compose.material3.TextButton(onClick = { onPick(color) }) { Text("Use Colour", fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) } },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
-        title = { Text("Ink colour") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { onPick(color) }) { Text(stringResource(R.string.drawing_use_colour), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+        title = { Text(stringResource(R.string.drawing_ink_colour)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 // Saturation left to right, brightness top to bottom.
@@ -1033,7 +1037,7 @@ private fun InkPicker(start: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit
                     Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(14.dp))
                         .background(Brush.horizontalGradient(listOf(Color.White, Color.hsv(h, 1f, 1f))))
                         .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
-                        .semantics { contentDescription = "Strength and brightness" }
+                        .semantics { contentDescription = context.getString(R.string.drawing_strength_and_brightness) }
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 fun at(p: Offset) {
@@ -1052,7 +1056,7 @@ private fun InkPicker(start: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit
                 )
                 Box(
                     Modifier.fillMaxWidth().height(28.dp).clip(CircleShape).background(Brush.horizontalGradient(RAINBOW))
-                        .semantics { contentDescription = "Hue" }
+                        .semantics { contentDescription = context.getString(R.string.drawing_hue) }
                         .pointerInput(Unit) {
                             awaitEachGesture {
                                 fun at(p: Offset) { h = (p.x / size.width).coerceIn(0f, 1f) * 359.9f; moved() }
@@ -1075,7 +1079,7 @@ private fun InkPicker(start: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit
                             hex = t.take(7)
                             parseHexColor(hex)?.let { c -> val (nh, ns, nv) = argbToHsv(c); h = nh; sat = ns; v = nv }
                         },
-                        Modifier.weight(1f), singleLine = true, shape = JShape.sm, label = { Text("Hex") },
+                        Modifier.weight(1f), singleLine = true, shape = JShape.sm, label = { Text(stringResource(R.string.drawing_hex)) },
                         isError = parseHexColor(hex) == null,
                     )
                 }
@@ -1088,9 +1092,9 @@ private fun InkPicker(start: Long, onDismiss: () -> Unit, onPick: (Long) -> Unit
 @Composable
 private fun SelectionActions(modifier: Modifier, onText: (() -> Unit)?, onDuplicate: () -> Unit, onDelete: () -> Unit) {
     Row(modifier.padding(8.dp).clip(CircleShape).background(jc.ink.copy(alpha = 0.85f)).padding(horizontal = 4.dp)) {
-        onText?.let { IconAction(Ico.HANDWRITING, "Convert selected handwriting to text", it, color = jc.bg) }
-        IconAction(Ico.COPY, "Duplicate selected strokes", onDuplicate, color = jc.bg)
-        IconAction(Ico.TRASH, "Delete selected strokes", onDelete, color = jc.bg)
+        onText?.let { IconAction(Ico.HANDWRITING, stringResource(R.string.drawing_convert_selected_handwriting_to_text), it, color = jc.bg) }
+        IconAction(Ico.COPY, stringResource(R.string.drawing_duplicate_selected_strokes), onDuplicate, color = jc.bg)
+        IconAction(Ico.TRASH, stringResource(R.string.drawing_delete_selected_strokes), onDelete, color = jc.bg)
     }
 }
 

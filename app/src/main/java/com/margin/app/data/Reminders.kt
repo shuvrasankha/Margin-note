@@ -18,10 +18,11 @@ import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.margin.app.R
 
 /** How often a reminder comes back after it rings. */
-enum class Repeat(val label: String) {
-    NEVER("Never"), DAILY("Daily"), WEEKLY("Weekly"), MONTHLY("Monthly"), YEARLY("Yearly");
+enum class Repeat(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    NEVER("Never", R.string.repeat_never), DAILY("Daily", R.string.repeat_daily), WEEKLY("Weekly", R.string.repeat_weekly), MONTHLY("Monthly", R.string.repeat_monthly), YEARLY("Yearly", R.string.repeat_yearly);
 
     /** The next time after [time] (epoch millis) in this phone's time zone, or null for [NEVER]. */
     fun after(time: Long): Long? {

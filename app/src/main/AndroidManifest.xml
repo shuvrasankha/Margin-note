@@ -16,10 +16,29 @@
     <!-- Note reminders: ring on the minute ("Alarms & reminders"), and come back after a restart. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Place reminders: where you are when picking "here", and arriving at or leaving the place while Margin is closed. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <!-- A ringing reminder fills the screen when the phone is locked or asleep. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
-    <!-- Backup is handled by Margin's own Google Drive sync, not Android Auto Backup. -->
+    <!-- Autofill: which app is a browser (only a browser's web address is trusted), and the names and icons of
+         apps a password is saved from. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <!-- Backup is handled by Margin's own Google Drive sync, not Android Auto Backup. Phone-to-phone transfer
+         (Android 12+) still copies Margin's data, on purpose; locked notes stay sealed, and Keystore keys don't move. -->
     <application
         android:name=".MarginApp"
         android:allowBackup="false"
@@ -29,7 +48,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Margin">
         <!-- Google Play services downloads the text recognition model when the app is installed. -->
-        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr" />
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="ocr,barcode_ui" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -74,6 +93,18 @@
             </intent-filter>
             <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
         </service>
+        <!-- Quick Settings: a voice command tile. -->
+        <service
+            android:name=".ui.VoiceCommandTile"
+            android:exported="true"
+            android:icon="@drawable/tile_voice_command"
+            android:label="@string/tile_voice_command"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="false" />
+        </service>
         <receiver
             android:name=".ui.RecentWidget"
             android:exported="false">
@@ -84,6 +115,54 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_recent_info" />
         </receiver>
+        <!-- Home-screen list widget: one shopping or to-do list to tick off, with voice and typed add. -->
+        <receiver
+            android:name=".ui.ListWidget"
+            android:exported="false"
+            android:label="@string/list_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_list_info" />
+        </receiver>
+        <!-- One note on the home screen, picked with ListWidgetConfigActivity. -->
+        <receiver
+            android:name=".ui.NoteWidget"
+            android:exported="false"
+            android:label="@string/note_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_note_info" />
+        </receiver>
+        <!-- Today: to-dos, habits and journal at a glance. -->
+        <receiver
+            android:name=".ui.TodayWidget"
+            android:exported="false"
+            android:label="@string/today_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
+        <activity
+            android:name=".ui.ListWidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <!-- Its own task, so saving returns to the home screen instead of showing the app. -->
         <activity
             android:name=".ui.QuickNoteActivity"
@@ -93,6 +172,27 @@
             android:taskAffinity=""
             android:theme="@style/Theme.Margin.Popup"
             android:windowSoftInputMode="adjustResize|stateVisible" />
+        <!-- Voice commands ("remind me…", "add … to my shopping list") over the home screen, in its own task.
+             Also takes the Assistant's "create a note" text; nothing is saved until Save is tapped. -->
+        <activity
+            android:name=".ui.VoiceCommandActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/shortcut_voice_command"
+            android:noHistory="false"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Margin.Popup"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="com.margin.app.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.actions.CREATE_NOTE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".ui.ReminderAlarmActivity"
             android:exported="false"
@@ -110,6 +210,37 @@
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+        <!-- Place reminders: Play services sends crossed geofences here; also when location comes back on. -->
+        <receiver
+            android:name=".ui.PlaceReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.location.PROVIDERS_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <!-- Notes pinned to the notification shade: tick the next task, or unpin. -->
+        <receiver
+            android:name=".ui.PinReceiver"
+            android:exported="false" />
+        <!-- Autofill: fills and saves passwords in other apps and browsers, once the vault is unlocked. -->
+        <service
+            android:name=".autofill.MarginAutofillService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_AUTOFILL_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.autofill.AutofillService" />
+            </intent-filter>
+            <meta-data android:name="android.autofill" android:resource="@xml/autofill_service" />
+        </service>
+        <!-- Autofill's unlock, pick and save screen, over the app being signed in to. -->
+        <activity
+            android:name=".autofill.AutofillActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Margin.Popup"
+            android:windowSoftInputMode="adjustResize" />
         <!-- Lets other apps open an attachment when the user taps it (read-only, per tap). -->
         <provider
             android:name="androidx.core.content.FileProvider"

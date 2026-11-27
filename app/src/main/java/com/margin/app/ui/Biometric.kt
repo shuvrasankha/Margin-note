@@ -16,6 +16,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlin.coroutines.resume
+import com.margin.app.R
 
 /**
  * Fingerprint unlock for locked notes. The notes password is encrypted with an Android Keystore key that
@@ -43,9 +44,9 @@ object Biometric {
         val cipher = try {
             Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, newKey()) }
         } catch (e: Exception) {
-            return Result.Failed(e.message ?: "Couldn't set up fingerprint unlock")
+            return Result.Failed(e.message ?: activity.getString(R.string.biometric_setup_failed))
         }
-        return prompt(activity, cipher, "Turn on fingerprint unlock") { it.doFinal(secret) to it.iv }
+        return prompt(activity, cipher, activity.getString(R.string.biometric_turn_on)) { it.doFinal(secret) to it.iv }
     }
 
     suspend fun decrypt(activity: FragmentActivity, data: ByteArray, iv: ByteArray): Result {
@@ -56,9 +57,9 @@ object Biometric {
             forget()
             return Result.Invalidated
         } catch (e: Exception) {
-            return Result.Failed(e.message ?: "Fingerprint unlock failed")
+            return Result.Failed(e.message ?: activity.getString(R.string.biometric_failed))
         }
-        return prompt(activity, cipher, "Unlock notes") { it.doFinal(data) to iv }
+        return prompt(activity, cipher, activity.getString(R.string.biometric_unlock_notes)) { it.doFinal(data) to iv }
     }
 
     fun forget() {
@@ -95,7 +96,7 @@ object Biometric {
                 val c = result.cryptoObject?.cipher
                 val out = runCatching { finish(c!!) }
                 if (cont.isActive) {
-                    cont.resume(out.fold({ (bytes, iv) -> Result.Ok(bytes, iv) }, { Result.Failed(it.message ?: "Fingerprint unlock failed") }))
+                    cont.resume(out.fold({ (bytes, iv) -> Result.Ok(bytes, iv) }, { Result.Failed(it.message ?: activity.getString(R.string.biometric_failed)) }))
                 }
             }
 
@@ -110,7 +111,7 @@ object Biometric {
         val prompt = BiometricPrompt(activity, ContextCompat.getMainExecutor(activity), callback)
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
-            .setNegativeButtonText("Use password")
+            .setNegativeButtonText(activity.getString(R.string.biometric_use_password))
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
             .build()
         prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))

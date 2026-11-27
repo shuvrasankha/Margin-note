@@ -67,6 +67,7 @@ data class ImportedNote(
     val createdAt: Long? = null,
     val editedAt: Long? = null,
     val pinned: Boolean = false,
+    val archived: Boolean = false,
 )
 
 class ImportResult(
@@ -250,8 +251,8 @@ fun keepNote(name: String, json: String, names: List<String>): ImportedNote? {
     }
     return ImportedNote(
         finished(title, body),
-        if (o.bool("isArchived")) listOf(KEEP_FOLDER, "Archive") else listOf(KEEP_FOLDER),
-        created, edited, pinned = o.bool("isPinned"),
+        listOf(KEEP_FOLDER),
+        created, edited, pinned = o.bool("isPinned"), archived = o.bool("isArchived"),
     )
 }
 

@@ -1,5 +1,6 @@
 package com.margin.app.ui
 
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +61,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.margin.app.data.SmartFilter
 import com.margin.app.data.TagCount
@@ -71,6 +75,9 @@ import com.margin.app.data.reorderGroup
 import com.margin.app.data.subtreeIds
 import com.margin.app.data.todoReport
 import com.margin.app.data.isTracker
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 // ---------- Folders ----------
 
@@ -80,9 +87,11 @@ fun FoldersScreen(
     vm: FoldersViewModel, onOpen: (String) -> Unit, onSearch: () -> Unit, onNew: () -> Unit, onEdit: () -> Unit, onSettings: () -> Unit,
     onTodos: () -> Unit, onReminders: () -> Unit, onJournal: () -> Unit, onHabits: () -> Unit, onTrackers: () -> Unit, onPasswords: () -> Unit, onBack: () -> Unit,
 ) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val syncBanner by vm.syncBanner.collectAsState()
     val rows by vm.rows.collectAsState()
     val trashCount by vm.trashCount.collectAsState()
+    val archiveCount by vm.archiveCount.collectAsState()
     val tags by vm.tags.collectAsState()
     val (allCount, pinnedCount) = vm.libraryCounts.collectAsState().value
     /** New Folder: open with this parent preselected ("" = top level); null = closed. */
@@ -98,33 +107,67 @@ fun FoldersScreen(
     val regular = rows.filter { !it.folder.isSmart }
     val smart = rows.filter { it.folder.isSmart }
 
+    val pageList = rememberLazyListState()
     Scaffold(
         containerColor = jc.page,
-        topBar = { NavBar("All Notes", onBack, color = jc.page) { TextAction("Edit", onEdit); IconAction(Ico.GEAR, "Settings", onSettings) } },
+        topBar = {
+            val tabRoot = LocalTabRoot.current
+            if (tabRoot) TabTop()
+            else NavBar(stringResource(R.string.folders_all_notes), onBack, color = jc.page) {
+                if (tabRoot) IconAction(Ico.NEW_FOLDER, stringResource(R.string.folders_new_folder), { creatingIn = "" })
+                TextAction(stringResource(R.string.common_edit), onEdit)
+                if (!tabRoot) IconAction(Ico.GEAR, stringResource(R.string.common_settings), onSettings)
+            }
+        },
         bottomBar = {
-            BottomBar {
-                IconAction(Ico.NEW_FOLDER, "New folder", { creatingIn = "" }, size = 24.dp)
-                IconAction(Ico.COMPOSE, "New note", onNew, size = 24.dp)
+            if (!LocalTabRoot.current) BottomBar() {
+                IconAction(Ico.NEW_FOLDER, stringResource(R.string.folders_new_folder), { creatingIn = "" }, size = 24.dp)
+                IconAction(Ico.COMPOSE, stringResource(R.string.folders_new_note), onNew, size = 24.dp)
             }
         },
     ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            item { PageTitle("Folders") }
+        // Each time the screen opens, its parts rise in one after another; the tiles come row by row.
+        val enter = remember { androidx.compose.animation.core.Animatable(0f) }
+        LaunchedEffect(Unit) { enter.animateTo(1f, androidx.compose.animation.core.tween(650, easing = androidx.compose.animation.core.LinearEasing)) }
+        val rise: (Int) -> Modifier = { Modifier.stagger({ enter.value }, it) }
+        LazyColumn(state = pageList, modifier = Modifier.padding(padding).fillMaxSize()) {
+            item { Box(rise(0)) {
+                if (LocalTabRoot.current) TitleWithActions({
+                    Column {
+                        Text(
+                            stringResource(R.string.folders_notes_and_folders, pluralStringResource(R.plurals.folders_notes_count, allCount, allCount), pluralStringResource(R.plurals.folders_count, regular.size, regular.size)), Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
+                            style = JType.small, color = jc.muted, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                        )
+                        PageTitle(stringResource(R.string.folders_library))
+                    }
+                }) {
+                    IconAction(Ico.NEW_FOLDER, stringResource(R.string.folders_new_folder), { creatingIn = "" }, soft = true)
+                    TextAction(stringResource(R.string.common_edit), onEdit)
+                } else PageTitle(stringResource(R.string.folders_folders))
+            } }
             item {
                 // Opens All Notes with its search field focused.
                 Row(
-                    Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp).fillMaxWidth().height(44.dp).clip(JShape.sm)
-                        .background(jc.card).clickable(role = Role.Button, onClick = onSearch).semantics { contentDescription = "Search" }
+                    rise(1).padding(horizontal = 16.dp).padding(bottom = 8.dp).fillMaxWidth().height(44.dp).clip(JShape.sm)
+                        .background(jc.card).clickable(role = Role.Button, onClick = onSearch).semantics { contentDescription = ctx.getString(R.string.common_search) }
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     JIcon(Ico.SEARCH, jc.muted, size = 17.dp, stroke = 2f)
-                    Text("Search", style = JType.row, color = jc.muted)
+                    Text(stringResource(R.string.common_search), style = JType.row, color = jc.muted, modifier = Modifier.weight(1f))
+                    // Voice commands: "Remind me…", "Add … to my shopping list".
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    Box(
+                        Modifier.fillMaxHeight().width(48.dp).clip(JShape.xs).clickable(role = Role.Button, onClickLabel = stringResource(R.string.folders_voice_command)) {
+                            context.startActivity(android.content.Intent(context, VoiceCommandActivity::class.java).setAction(VoiceCommandActivity.ACTION))
+                        }.semantics { contentDescription = context.getString(R.string.folders_voice_command) },
+                        contentAlignment = Alignment.Center,
+                    ) { JIcon(Ico.MIC, jc.accent, size = 20.dp, stroke = 2f) }
                 }
             }
             syncBanner?.let { banner -> item { SyncBannerRow(banner, vm::retrySync) } }
-            item { SectionLabel("Library") }
+            item { SectionLabel(stringResource(R.string.folders_collections), rise(2)) }
             item {
                 val notes by vm.liveNotes.collectAsState()
                 val reminders by vm.reminders.collectAsState()
@@ -132,30 +175,31 @@ fun FoldersScreen(
                 val openTodos = remember(notes) {
                     todoReport(notes, todayEpochDay(), java.time.ZoneId.systemDefault()).lists.count { it.status != TodoStatus.DONE }
                 }
-                val reminderCount = remember(notes, reminders) { notes.count { it.id in reminders } }
+                val places by vm.places.collectAsState()
+                val reminderCount = remember(notes, reminders, places) { notes.count { it.id in reminders || it.id in places } }
                 val tiles = listOf(
-                    LibraryItem(Ico.FILE, "All Notes", allCount) { onOpen(ALL_ID) },
-                    LibraryItem(Ico.PIN, "Pinned", pinnedCount) { onOpen(PINNED_ID) },
-                    LibraryItem(Ico.CHECKLIST, "To-dos", openTodos, onTodos),
-                    LibraryItem(Ico.ALARM, "Reminders", reminderCount, onReminders),
-                    LibraryItem(ICON_JOURNAL, "Journal", remember(notes) { notes.count { journalDay(it) != null } }, onJournal),
-                    LibraryItem(ICON_HABITS, "Habits", remember(notes) { notes.count(::isHabit) }, onHabits),
-                    LibraryItem(ICON_TRACKERS, "Trackers", remember(notes) { notes.count { isTracker(it) } }, onTrackers),
-                    LibraryItem(ICON_PASSWORDS, "Passwords", remember(notes) { notes.count { com.margin.app.data.isLogin(it) } }, onPasswords),
+                    LibraryItem(Ico.FILE, stringResource(R.string.folders_all_notes), allCount) { onOpen(ALL_ID) },
+                    LibraryItem(Ico.PIN, stringResource(R.string.folders_pinned), pinnedCount) { onOpen(PINNED_ID) },
+                    LibraryItem(Ico.CHECKLIST, stringResource(R.string.folders_to_dos), openTodos, onTodos),
+                    LibraryItem(Ico.ALARM, stringResource(R.string.folders_reminders), reminderCount, onReminders),
+                    LibraryItem(ICON_JOURNAL, stringResource(R.string.folders_journal), remember(notes) { notes.count { journalDay(it) != null } }, onJournal),
+                    LibraryItem(ICON_HABITS, stringResource(R.string.folders_habits), remember(notes) { notes.count(::isHabit) }, onHabits),
+                    LibraryItem(ICON_TRACKERS, stringResource(R.string.folders_trackers), remember(notes) { notes.count { isTracker(it) } }, onTrackers),
+                    LibraryItem(ICON_PASSWORDS, stringResource(R.string.folders_passwords), remember(notes) { notes.count { com.margin.app.data.isLogin(it) } }, onPasswords),
                 )
                 // Two to a row. Plain rows, not a lazy grid: this sits inside the list.
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    tiles.chunked(2).forEach { pair ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tiles.chunked(2).forEachIndexed { r, pair ->
+                        Row(rise(3 + r), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             pair.forEach { LibraryTile(it, Modifier.weight(1f)) }
                             if (pair.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
                 }
             }
-            item { SectionLabel("Folders") }
+            item { SectionLabel(stringResource(R.string.folders_folders), rise(7)) }
             itemsIndexed(regular, key = { _, it -> it.folder.id }) { i, row ->
-                Column(Modifier.animateItem()) {
+                Column(Modifier.animateItem().then(rise(8))) {
                     FolderListRow(
                         Ico.FOLDER, row.folder.name, row.count, row.depth, onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row },
                         first = i == 0, last = i == regular.lastIndex,
@@ -163,20 +207,20 @@ fun FoldersScreen(
                 }
             }
             if (smart.isNotEmpty()) {
-                item { SectionLabel("Smart folders") }
+                item { SectionLabel(stringResource(R.string.folders_smart_folders), rise(9)) }
                 itemsIndexed(smart, key = { _, it -> it.folder.id }) { i, row ->
-                    FolderListRow(
+                    Box(rise(9)) { FolderListRow(
                         Ico.SMART_FOLDER, row.folder.name, row.count, sub = describe(row.folder.smartFilter!!, tags),
                         onClick = { onOpen(row.folder.id) }, onLongClick = { editing = row },
                         first = i == 0, last = i == smart.lastIndex,
-                    )
+                    ) }
                 }
             }
             if (tags.isNotEmpty()) {
-                item { SectionLabel("Tags") }
+                item { SectionLabel(stringResource(R.string.folders_tags), rise(9)) }
                 item {
                     FlowRow(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        rise(9).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -186,12 +230,13 @@ fun FoldersScreen(
                     }
                 }
             }
-            item { SectionLabel("More") }
-            item { FolderListRow(Ico.TRASH, "Recently Deleted", trashCount, onClick = { onOpen(TRASH_ID) }) }
+            item { SectionLabel(stringResource(R.string.common_more), rise(9)) }
+            item { Box(rise(9)) { FolderListRow(Ico.ARCHIVE, stringResource(R.string.common_archive), archiveCount, onClick = { onOpen(ARCHIVE_ID) }, last = false) } }
+            item { Box(rise(9)) { FolderListRow(Ico.TRASH, stringResource(R.string.folders_recently_deleted), trashCount, onClick = { onOpen(TRASH_ID) }, first = false) } }
             item {
                 Text(
-                    "Press and hold a folder or tag for more options.",
-                    Modifier.padding(horizontal = 20.dp, vertical = 16.dp), style = JType.small, color = jc.muted,
+                    stringResource(R.string.folders_press_and_hold_a_folder),
+                    rise(9).padding(horizontal = 20.dp, vertical = 16.dp), style = JType.small, color = jc.muted,
                 )
             }
         }
@@ -204,12 +249,12 @@ fun FoldersScreen(
         }
     }
     creatingSmart?.let { initialName ->
-        SmartFolderDialog("New smart folder", initialName, SmartFilter(), tags, onDismiss = { creatingSmart = null }) { name, filter ->
+        SmartFolderDialog(stringResource(R.string.folders_new_smart_folder), initialName, SmartFilter(), tags, onDismiss = { creatingSmart = null }) { name, filter ->
             vm.create(name, smartFilter = filter); creatingSmart = null
         }
     }
     smartEditing?.let { row ->
-        SmartFolderDialog("Edit smart folder", row.folder.name, row.folder.smartFilter!!, tags, onDismiss = { smartEditing = null }) { name, filter ->
+        SmartFolderDialog(stringResource(R.string.folders_edit_smart_folder), row.folder.name, row.folder.smartFilter!!, tags, onDismiss = { smartEditing = null }) { name, filter ->
             vm.rename(row.folder.id, name); vm.setSmartFilter(row.folder.id, filter); smartEditing = null
         }
     }
@@ -227,33 +272,33 @@ fun FoldersScreen(
                     )
                     when {
                         folder.isSmart -> {
-                            option("Edit") { smartEditing = row }
-                            option("Delete", danger = true) { deleting = row }
+                            option(stringResource(R.string.common_edit)) { smartEditing = row }
+                            option(stringResource(R.string.common_delete), danger = true) { deleting = row }
                         }
-                        folder.isDefault -> option("New folder inside") { creatingIn = folder.id }
+                        folder.isDefault -> option(stringResource(R.string.folders_new_folder_inside)) { creatingIn = folder.id }
                         else -> {
-                            option("Rename") { renaming = row }
-                            option("New folder inside") { creatingIn = folder.id }
-                            option("Move") { moving = row }
-                            option("Delete", danger = true) { deleting = row }
+                            option(stringResource(R.string.common_rename)) { renaming = row }
+                            option(stringResource(R.string.folders_new_folder_inside)) { creatingIn = folder.id }
+                            option(stringResource(R.string.common_move)) { moving = row }
+                            option(stringResource(R.string.common_delete), danger = true) { deleting = row }
                         }
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
     renaming?.let { row ->
-        NameDialog("Rename folder", row.folder.name, onDismiss = { renaming = null }) { vm.rename(row.folder.id, it); renaming = null }
+        NameDialog(stringResource(R.string.folders_rename_folder), row.folder.name, onDismiss = { renaming = null }, taken = { n -> nameTaken(rows, row.folder.parentId, n, except = row.folder.id) }) { vm.rename(row.folder.id, it); renaming = null }
     }
     moving?.let { row ->
         // Not into itself or anything inside it; smart folders hold no folders.
         val inside = subtreeIds(rows.map { it.folder }, row.folder.id)
         val parentName = rows.firstOrNull { it.folder.id == row.folder.parentId }?.folder?.name
         FolderSheet(
-            title = "Move folder", subject = row.folder.name,
-            subjectNote = if (parentName != null) "Currently in $parentName" else "Currently at the top level",
+            title = stringResource(R.string.folders_move_folder), subject = row.folder.name,
+            subjectNote = if (parentName != null) stringResource(R.string.folders_currently_in, parentName) else stringResource(R.string.folders_currently_at_the_top_level),
             rows = regular.filter { it.folder.id !in inside }, currentId = row.folder.parentId,
             topLevel = row.folder.parentId != null,
             onDismiss = { moving = null },
@@ -262,10 +307,10 @@ fun FoldersScreen(
     deleting?.let { row -> DeleteFolderDialog(row, rows, onDismiss = { deleting = null }) { vm.delete(row.folder.id); deleting = null } }
     renamingTag?.let { tag ->
         NameDialog(
-            "Rename #${tag.name} in ${plural(tag.count, "note")}", tag.name,
+            pluralStringResource(R.plurals.folders_rename_tag_in_notes, tag.count, tag.count, tag.name), tag.name,
             onDismiss = { renamingTag = null },
             isValid = { isValidTagName(it.trim().removePrefix("#")) },
-            label = "Tag",
+            label = stringResource(R.string.folders_tag),
         ) { vm.renameTag(tag.key, it); renamingTag = null }
     }
 }
@@ -275,18 +320,18 @@ internal fun DeleteFolderDialog(row: FolderRow, rows: List<FolderRow>, onDismiss
     val hasSubfolders = rows.any { it.folder.parentId == row.folder.id }
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Delete \"${row.folder.name}\"?") },
+        title = { Text(stringResource(R.string.folders_delete, row.folder.name)) },
         text = {
             Text(
                 when {
-                    row.folder.isSmart -> "The notes it shows aren't affected."
-                    hasSubfolders -> "Its subfolders are deleted too. Their notes and its notes move to Recently Deleted."
-                    else -> "Its notes will move to Recently Deleted."
+                    row.folder.isSmart -> stringResource(R.string.folders_the_notes_it_shows_arent)
+                    hasSubfolders -> stringResource(R.string.folders_its_subfolders_are_deleted_too)
+                    else -> stringResource(R.string.folders_its_notes_will_move_to)
                 },
             )
         },
-        confirmButton = { TextButton(onClick = onDelete) { Text("Delete", color = jc.danger) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDelete) { Text(stringResource(R.string.common_delete), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -305,24 +350,27 @@ internal fun NewFolderDialog(
     var picking by remember { mutableStateOf(false) }
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Folder") },
+        title = { Text(stringResource(R.string.folders_new_folder_2)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Folder name") }, shape = JShape.sm)
+                OutlinedTextField(
+                    name, { name = it }, singleLine = true, label = { Text(stringResource(R.string.folders_folder_name)) }, shape = JShape.sm,
+                    supportingText = if (nameTaken(regular, if (smart) null else parent, name)) { { Text(stringResource(R.string.folders_name_taken)) } } else null,
+                )
                 if (allowSmart) Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Smart folder", style = JType.row, color = jc.ink)
-                        Text("Fill it automatically by tag, date or type", style = JType.small, color = jc.muted)
+                        Text(stringResource(R.string.folders_smart_folder), style = JType.row, color = jc.ink)
+                        Text(stringResource(R.string.folders_fill_it_automatically_by_tag), style = JType.small, color = jc.muted)
                     }
-                    JSwitch(smart, { smart = it })
+                    JSwitch(smart, { smart = it }, label = stringResource(R.string.folders_smart_folder))
                 }
                 // Smart folders are always top level.
                 if (!smart) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Inside", Modifier.weight(1f), style = JType.row, color = jc.ink)
+                    Text(stringResource(R.string.folders_inside), Modifier.weight(1f), style = JType.row, color = jc.ink)
                     Box {
-                        TextAction(regular.firstOrNull { it.folder.id == parent }?.folder?.name ?: "Top level", { picking = true })
-                        DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
-                            DropdownMenuItem(text = { Text("Top level") }, onClick = { parent = null; picking = false })
+                        TextAction(regular.firstOrNull { it.folder.id == parent }?.folder?.name ?: stringResource(R.string.folders_top_level), { picking = true })
+                        JMenu(expanded = picking, onDismissRequest = { picking = false }, width = 240.dp) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.folders_top_level)) }, onClick = { parent = null; picking = false })
                             regular.forEach { r ->
                                 DropdownMenuItem(
                                     text = { Text(r.folder.name, Modifier.padding(start = 16.dp * r.depth)) },
@@ -336,10 +384,10 @@ internal fun NewFolderDialog(
         },
         confirmButton = {
             TextButton(onClick = { onCreate(name.trim(), parent.takeIf { !smart }, smart) }, enabled = name.isNotBlank()) {
-                Text(if (smart) "Next" else "Create", fontWeight = FontWeight.SemiBold)
+                Text(if (smart) stringResource(R.string.common_next) else stringResource(R.string.common_create), fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -349,6 +397,7 @@ internal fun NewFolderDialog(
  */
 @Composable
 fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val rows by vm.rows.collectAsState()
     var renaming by remember { mutableStateOf<FolderRow?>(null) }
     var deleting by remember { mutableStateOf<FolderRow?>(null) }
@@ -372,19 +421,20 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
     }
     fun commit(order: List<Int>) = vm.reorder(order.map { rows[it].folder.id })
 
+    val pageScroll = rememberScrollState()
     Scaffold(
-        topBar = { NavBar("Folders", onBack) { TextAction("Done", onBack, bold = true) } },
+        topBar = { NavBar(stringResource(R.string.folders_folders), onBack) { TextAction(stringResource(R.string.common_done), onBack, bold = true) } },
         bottomBar = {
-            BottomBar {
-                TextAction("New Folder", { creating = true })
-                CountText(rows.count { !it.folder.isSmart }, JType.small, jc.muted) { plural(it, "folder") }
+            BottomBar() {
+                TextAction(stringResource(R.string.folders_new_folder_2), { creating = true })
+                CountText(rows.count { !it.folder.isSmart }, JType.small, jc.muted) { pluralStringResource(R.plurals.folders_count, it, it) }
                 Spacer(Modifier.width(44.dp))
             }
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState(), enabled = dragged == null)) {
-            PageTitle("Folders")
-            Text("Drag to reorder. Tap a name to rename.", Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), style = JType.secondary, color = jc.muted)
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(pageScroll, enabled = dragged == null)) {
+            PageTitle(stringResource(R.string.folders_folders))
+            Text(stringResource(R.string.folders_drag_to_reorder_tap_a), Modifier.padding(horizontal = 20.dp).padding(bottom = 12.dp), style = JType.secondary, color = jc.muted)
             Column {
                 rows.forEachIndexed { i, row ->
                     val f = row.folder
@@ -399,20 +449,21 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
                             .semantics {
                                 // Reordering without dragging, for screen readers.
                                 customActions = listOfNotNull(
-                                    CustomAccessibilityAction("Move up") { commit(sibs.toMutableList().apply { add(pos - 1, removeAt(pos)) }); true }.takeIf { pos > 0 },
-                                    CustomAccessibilityAction("Move down") { commit(sibs.toMutableList().apply { add(pos + 1, removeAt(pos)) }); true }.takeIf { pos in 0 until sibs.lastIndex },
+                                    CustomAccessibilityAction(context.getString(R.string.folders_move_up)) { commit(sibs.toMutableList().apply { add(pos - 1, removeAt(pos)) }); true }.takeIf { pos > 0 },
+                                    CustomAccessibilityAction(context.getString(R.string.folders_move_down)) { commit(sibs.toMutableList().apply { add(pos + 1, removeAt(pos)) }); true }.takeIf { pos in 0 until sibs.lastIndex },
                                 )
                             }
-                            .padding(start = 16.dp + 24.dp * row.depth, end = 8.dp),
+                            .padding(start = 6.dp + 24.dp * row.depth, end = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        if (f.isDefault) Spacer(Modifier.size(24.dp))
+                        // A 44dp slot takes the tap; the red dot stays 24dp and where it was (the row's start inset shrank by 10dp).
+                        if (f.isDefault) Spacer(Modifier.width(44.dp))
                         else Box(
-                            Modifier.size(24.dp).clip(CircleShape).background(jc.danger).clickable(role = Role.Button) { deleting = row }
-                                .semantics { contentDescription = "Delete ${f.name}" },
+                            Modifier.fillMaxHeight().width(44.dp).clickable(role = Role.Button) { deleting = row }
+                                .semantics { contentDescription = context.getString(R.string.folders_delete_2, f.name) },
                             contentAlignment = Alignment.Center,
-                        ) { Box(Modifier.size(10.dp, 2.dp).background(Color.White)) }
+                        ) { Box(Modifier.size(24.dp).clip(CircleShape).background(jc.danger), contentAlignment = Alignment.Center) { Box(Modifier.size(10.dp, 2.dp).background(Color.White)) } }
                         JIcon(if (f.isSmart) Ico.SMART_FOLDER else Ico.FOLDER, jc.accent, size = 20.dp)
                         Text(
                             f.name,
@@ -430,7 +481,7 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
                                     onDragEnd = { commit(dropOrder(siblings(i), i, i * rowPx + rowPx / 2 + dragY, rowPx).first); dragged = null; dragY = 0f },
                                     onDragCancel = { dragged = null; dragY = 0f },
                                 )
-                            }.semantics { contentDescription = "Reorder ${f.name}" },
+                            }.semantics { contentDescription = context.getString(R.string.folders_reorder, f.name) },
                             contentAlignment = Alignment.Center,
                         ) { JIcon("M5 9h14M5 15h14", jc.muted, size = 22.dp) }
                     }
@@ -441,7 +492,7 @@ fun EditFoldersScreen(vm: FoldersViewModel, onBack: () -> Unit) {
         }
     }
     renaming?.let { row ->
-        NameDialog("Rename folder", row.folder.name, onDismiss = { renaming = null }) { vm.rename(row.folder.id, it); renaming = null }
+        NameDialog(stringResource(R.string.folders_rename_folder), row.folder.name, onDismiss = { renaming = null }, taken = { n -> nameTaken(rows, row.folder.parentId, n, except = row.folder.id) }) { vm.rename(row.folder.id, it); renaming = null }
     }
     deleting?.let { row -> DeleteFolderDialog(row, rows, onDismiss = { deleting = null }) { vm.delete(row.folder.id); deleting = null } }
     if (creating) {
@@ -465,38 +516,36 @@ fun dropOrder(siblings: List<Int>, dragged: Int, centerY: Float, rowPx: Float): 
 }
 
 /** One line describing what a smart folder shows, e.g. "#trips or #work · Has a checklist". */
+@Composable
 internal fun describe(filter: SmartFilter, tags: List<TagCount>): String {
     val names = filter.tags.map { key -> "#" + (tags.firstOrNull { it.key == key }?.name ?: key) }
     val parts = listOfNotNull(
-        names.takeIf { it.isNotEmpty() }?.joinToString(if (filter.allTags) " and " else " or "),
-        "Has a checklist".takeIf { filter.hasChecklist },
-        "Pinned".takeIf { filter.pinnedOnly },
-        "Has attachments".takeIf { filter.hasAttachments },
-        filter.editedWithinDays?.let { "Edited in the last $it days" },
+        names.takeIf { it.isNotEmpty() }?.joinToString(stringResource(if (filter.allTags) R.string.folders_tags_join_and else R.string.folders_tags_join_or)),
+        stringResource(R.string.folders_filter_has_checklist).takeIf { filter.hasChecklist },
+        stringResource(R.string.folders_filter_pinned).takeIf { filter.pinnedOnly },
+        stringResource(R.string.folders_filter_has_attachments).takeIf { filter.hasAttachments },
+        filter.editedWithinDays?.let { pluralStringResource(R.plurals.folders_filter_edited_within, it, it) },
     )
-    return if (parts.isEmpty()) "Every note" else parts.joinToString(" · ")
+    return if (parts.isEmpty()) stringResource(R.string.folders_filter_every_note) else parts.joinToString(" · ")
 }
 
 /** A Library place: its icon, name, count and where a tap goes. */
 internal data class LibraryItem(val icon: String, val name: String, val count: Int, val onClick: () -> Unit)
 
-/** A Library place as a card: icon tile and count on top, the name under them. */
+/** A Library place as a compact card: a quiet icon, the name and its count on one line. */
 @Composable
 internal fun LibraryTile(item: LibraryItem, modifier: Modifier = Modifier) {
     val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    Column(
-        modifier.pressScale(press).clip(JShape.lg).background(jc.card)
+    Row(
+        modifier.height(60.dp).pressScale(press).clip(JShape.md).background(jc.card)
             .clickable(interactionSource = press, indication = androidx.compose.material3.ripple(), role = Role.Button, onClick = item.onClick)
-            .padding(14.dp)
+            .padding(horizontal = 14.dp)
             .semantics(mergeDescendants = true) {},
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconTile(item.icon, size = 38.dp)
-            Spacer(Modifier.weight(1f))
-            CountText(item.count, JType.heading, jc.ink)
-        }
-        Text(item.name, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        IconTile(item.icon, jc.accent)
+        Text(item.name, Modifier.weight(1f), style = JType.item.copy(fontSize = 15.sp), color = jc.ink, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        CountText(item.count, JType.small.copy(fontSize = 14.sp), jc.muted)
     }
 }
 
@@ -554,11 +603,11 @@ internal fun SmartFolderDialog(
         text = {
             // No scroll of its own: the dialog scrolls its text (two nested scrolls crash).
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }, shape = JShape.sm)
-                Text("Shows notes that match all of these.", style = JType.small, color = jc.muted)
-                Text("Tags", Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
+                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(stringResource(R.string.folders_name)) }, shape = JShape.sm)
+                Text(stringResource(R.string.folders_shows_notes_that_match_all), style = JType.small, color = jc.muted)
+                Text(stringResource(R.string.folders_tags), Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
                 if (tags.isEmpty()) {
-                    Text("No tags yet. Type #word in a note to add one.", style = JType.small, color = jc.muted)
+                    Text(stringResource(R.string.folders_no_tags_yet_type_word), style = JType.small, color = jc.muted)
                 } else {
                     tags.forEach { tag ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -571,35 +620,39 @@ internal fun SmartFolderDialog(
                     }
                     if (filter.tags.size > 1) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            choice("Any of these", !filter.allTags) { filter = filter.copy(allTags = false) }
-                            choice("All of these", filter.allTags) { filter = filter.copy(allTags = true) }
+                            choice(stringResource(R.string.folders_any_of_these), !filter.allTags) { filter = filter.copy(allTags = false) }
+                            choice(stringResource(R.string.folders_all_of_these), filter.allTags) { filter = filter.copy(allTags = true) }
                         }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Has a checklist", Modifier.weight(1f), style = JType.row)
-                    JSwitch(filter.hasChecklist, { filter = filter.copy(hasChecklist = it) })
+                    Text(stringResource(R.string.folders_has_a_checklist), Modifier.weight(1f), style = JType.row)
+                    JSwitch(filter.hasChecklist, { filter = filter.copy(hasChecklist = it) }, label = stringResource(R.string.folders_has_a_checklist))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Pinned", Modifier.weight(1f), style = JType.row)
-                    JSwitch(filter.pinnedOnly, { filter = filter.copy(pinnedOnly = it) })
+                    Text(stringResource(R.string.folders_pinned), Modifier.weight(1f), style = JType.row)
+                    JSwitch(filter.pinnedOnly, { filter = filter.copy(pinnedOnly = it) }, label = stringResource(R.string.folders_pinned))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Has attachments", Modifier.weight(1f), style = JType.row)
-                    JSwitch(filter.hasAttachments, { filter = filter.copy(hasAttachments = it) })
+                    Text(stringResource(R.string.folders_has_attachments), Modifier.weight(1f), style = JType.row)
+                    JSwitch(filter.hasAttachments, { filter = filter.copy(hasAttachments = it) }, label = stringResource(R.string.folders_has_attachments))
                 }
-                Text("Edited", Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
+                Text(stringResource(R.string.folders_edited), Modifier.padding(top = 8.dp), style = JType.section, color = jc.muted)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(null to "Any time", 7 to "Last 7 days", 30 to "Last 30 days").forEach { (days, label) ->
+                    listOf(null to stringResource(R.string.folders_any_time), 7 to stringResource(R.string.folders_last_7_days), 30 to stringResource(R.string.folders_last_30_days)).forEach { (days, label) ->
                         choice(label, filter.editedWithinDays == days) { filter = filter.copy(editedWithinDays = days) }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name.trim(), filter) }, enabled = name.isNotBlank()) { Text("Save", fontWeight = FontWeight.SemiBold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { onSave(name.trim(), filter) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.common_save), fontWeight = FontWeight.SemiBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
+
+/** Whether another folder next to this one already has [name] (allowed, but easy to mix up). */
+private fun nameTaken(rows: List<FolderRow>, parentId: String?, name: String, except: String? = null) =
+    name.isNotBlank() && rows.any { it.folder.id != except && it.folder.parentId == parentId && it.folder.name.trim().equals(name.trim(), ignoreCase = true) }
 
 @Composable
 internal fun NameDialog(
@@ -607,15 +660,17 @@ internal fun NameDialog(
     initial: String,
     onDismiss: () -> Unit,
     isValid: (String) -> Boolean = { it.isNotBlank() },
-    label: String = "Name",
+    label: String = stringResource(R.string.folders_name),
+    /** Whether another folder beside this one already has the name: allowed, but shown as a warning. */
+    taken: (String) -> Boolean = { false },
     onSave: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial) }
     MarginDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(label) }, shape = JShape.sm) },
-        confirmButton = { TextButton(onClick = { onSave(name) }, enabled = isValid(name)) { Text("Save", fontWeight = FontWeight.SemiBold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text(label) }, shape = JShape.sm, supportingText = if (taken(name)) { { Text(stringResource(R.string.folders_name_taken)) } } else null) },
+        confirmButton = { TextButton(onClick = { onSave(name) }, enabled = isValid(name)) { Text(stringResource(R.string.common_save), fontWeight = FontWeight.SemiBold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }

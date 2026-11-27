@@ -60,6 +60,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import java.io.File
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 private const val BARS = 40
 
@@ -86,7 +88,7 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
     DisposableEffect(Unit) {
         if (Recorder.start(context, File(context.cacheDir, "rec-${newId()}.m4a"))) started = true
         else {
-            Toast.makeText(context, "Couldn't start recording.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.voice_couldnt_start_recording), Toast.LENGTH_SHORT).show()
             onDismiss()
         }
         // Leaving without Stop or Discard (the note closed under it): discard.
@@ -96,7 +98,10 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && Recorder.state.value.active) Recorder.stop()
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && Recorder.state.value.active) {
+                Recorder.stop()
+                if (Recorder.state.value.doneMs != null) Toast.makeText(context, context.getString(R.string.voice_saved_on_leave), Toast.LENGTH_SHORT).show()
+            }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -125,11 +130,11 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(80.dp)) { TextAction("Cancel", { finish(save = false) }) }
+                Box(Modifier.width(80.dp)) { TextAction(stringResource(R.string.common_cancel), { finish(save = false) }) }
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(if (paused) jc.muted else jc.danger))
                     Spacer(Modifier.width(6.dp))
-                    Text(if (paused) "Paused" else "Recording", style = JType.secondary.copy(fontWeight = FontWeight.SemiBold), color = jc.ink)
+                    Text(if (paused) stringResource(R.string.voice_paused) else stringResource(R.string.voice_recording), style = JType.secondary.copy(fontWeight = FontWeight.SemiBold), color = jc.ink)
                 }
                 Spacer(Modifier.width(80.dp))
             }
@@ -139,11 +144,11 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
                 color = jc.ink,
             )
             if (noteTitle.isNotBlank()) {
-                Text("Into \u201C$noteTitle\u201D", Modifier.padding(top = 4.dp), style = JType.secondary, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.voice_into_note, noteTitle), Modifier.padding(top = 4.dp), style = JType.secondary, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             val muted = jc.switchOff
             val ink = jc.ink
-            Canvas(Modifier.padding(vertical = 40.dp).fillMaxWidth().height(80.dp).semantics { contentDescription = "Sound level" }) {
+            Canvas(Modifier.padding(vertical = 40.dp).fillMaxWidth().height(80.dp).semantics { contentDescription = context.getString(R.string.voice_sound_level) }) {
                 val bar = 4.dp.toPx()
                 val gap = 3.dp.toPx()
                 val total = BARS * bar + (BARS - 1) * gap
@@ -162,18 +167,18 @@ fun RecordingDialog(noteTitle: String, onSave: (File, Long) -> Unit, onDismiss: 
             }
             Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(40.dp), verticalAlignment = Alignment.CenterVertically) {
-                RoundButton(if (paused) "Resume" else "Pause", { Recorder.togglePause() }) {
+                RoundButton(if (paused) stringResource(R.string.voice_resume) else stringResource(R.string.voice_pause), { Recorder.togglePause() }) {
                     if (paused) Box(Modifier.size(14.dp).clip(CircleShape).background(jc.danger))
                     else JIcon(Ico.PAUSE, jc.ink, size = 18.dp, fill = true)
                 }
                 Box(
                     Modifier.size(76.dp).clip(CircleShape).background(jc.ink).clickable(role = Role.Button) { finish(save = true) }
-                        .semantics { contentDescription = "Stop and add to note" },
+                        .semantics { contentDescription = context.getString(R.string.voice_stop_and_add_to_note) },
                     contentAlignment = Alignment.Center,
                 ) { Box(Modifier.size(24.dp).clip(RoundedCornerShape(5.dp)).background(jc.bg)) }
-                RoundButton("Discard", { finish(save = false) }) { JIcon(Ico.TRASH, jc.ink, size = 20.dp) }
+                RoundButton(stringResource(R.string.common_discard), { finish(save = false) }) { JIcon(Ico.TRASH, jc.ink, size = 20.dp) }
             }
-            Text("Audio is added to the note", Modifier.padding(top = 16.dp), style = JType.small, color = jc.muted)
+            Text(stringResource(R.string.voice_audio_is_added_to_the), Modifier.padding(top = 16.dp), style = JType.small, color = jc.muted)
         }
     }
 }
@@ -213,7 +218,7 @@ fun AudioCard(a: Attachment, file: File, modifier: Modifier) {
                 }
                 playing = true
             } catch (e: Exception) {
-                Toast.makeText(context, "Couldn't play this recording.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.voice_couldnt_play_this_recording), Toast.LENGTH_SHORT).show()
             }
             playing -> { p.pause(); playing = false }
             else -> { p.start(); playing = true }
@@ -226,7 +231,7 @@ fun AudioCard(a: Attachment, file: File, modifier: Modifier) {
     val duration = wave?.durationMs ?: player?.duration?.toLong()?.takeIf { it > 0 }
     Row(
         modifier.clickable(enabled = ready, role = Role.Button, onClick = toggle)
-            .semantics { contentDescription = (if (playing) "Pause " else "Play ") + a.name }
+            .semantics { contentDescription = context.getString(if (playing) R.string.voice_pause_name else R.string.voice_play_name, a.name) }
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -247,7 +252,7 @@ fun AudioCard(a: Attachment, file: File, modifier: Modifier) {
                 )
             }
             if (!ready) {
-                Text("Not downloaded yet. It arrives with the next sync.", style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.voice_not_downloaded_yet_it_arrives), style = JType.small, color = jc.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else {
                 // Played part in the accent colour, the rest grey; flat bars until the recording has been read.
                 val played = jc.accent

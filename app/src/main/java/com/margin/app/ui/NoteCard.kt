@@ -48,18 +48,20 @@ import androidx.core.content.res.ResourcesCompat
 import com.margin.app.R
 import com.margin.app.data.Block
 import com.margin.app.data.shareLines
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 private const val CARD_W = 1080
 
 /** The card's shape. Portrait 4:5 is what most feeds show uncropped; Story fills a phone screen. */
-enum class CardSize(val label: String, val h: Int) {
-    PORTRAIT("Portrait", 1350), SQUARE("Square", 1080), STORY("Story", 1920);
+enum class CardSize(val label: String, @androidx.annotation.StringRes val labelRes: Int, val h: Int) {
+    PORTRAIT("Portrait", R.string.card_size_portrait, 1350), SQUARE("Square", R.string.card_size_square, 1080), STORY("Story", R.string.card_size_story, 1920);
     val ratio get() = CARD_W / h.toFloat()
 }
 
 /** The card's lettering: Inter (the app's), or one of the phone's own serif, mono or casual faces. */
-enum class CardFont(val label: String) {
-    SANS("Sans"), SERIF("Serif"), MONO("Mono"), HAND("Casual");
+enum class CardFont(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    SANS("Sans", R.string.card_font_sans), SERIF("Serif", R.string.card_font_serif), MONO("Mono", R.string.card_font_mono), HAND("Casual", R.string.card_font_hand);
     fun typeface(context: Context, bold: Boolean): android.graphics.Typeface = when (this) {
         SANS -> ResourcesCompat.getFont(context, if (bold) R.font.inter_bold else R.font.inter_regular) ?: android.graphics.Typeface.DEFAULT
         SERIF -> android.graphics.Typeface.create(android.graphics.Typeface.SERIF, if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
@@ -87,34 +89,34 @@ private fun CardOptions.textBottom() = size.h - if (foot) 130f else 120f
  * text sits on.
  */
 enum class CardStyle(
-    val label: String, val bg: Long, val bg2: Long? = null, val ink: Long, val body: Long, val muted: Long, val rule: Long,
+    val label: String, @androidx.annotation.StringRes val labelRes: Int, val bg: Long, val bg2: Long? = null, val ink: Long, val body: Long, val muted: Long, val rule: Long,
     val hair: Long, val dots: Long? = null, val grid: Long? = null, val lines: Long? = null,
 ) {
-    PAPER("Paper", 0xFFFAF7F0, ink = 0xFF16161A, body = 0xFF3A3934, muted = 0xFF8A877F, rule = 0xFFFFB340, hair = 0x1F000000),
-    RULED("Ruled", 0xFFFFFFFF, ink = 0xFF16161A, body = 0xFF2C2C30, muted = 0xFF8E8E93, rule = 0xFFE5484D, hair = 0x1F000000, lines = 0xFFBFD4EC),
-    LEGAL("Legal pad", 0xFFFFF3A6, ink = 0xFF1E1A05, body = 0xFF332D0E, muted = 0xFF7A6F3A, rule = 0xFFE5484D, hair = 0x26000000, lines = 0xFF9FC1E4),
-    GRID("Grid", 0xFFFFFFFF, ink = 0xFF16161A, body = 0xFF2C2C30, muted = 0xFF8E8E93, rule = 0xFFFFB340, hair = 0x1F000000, grid = 0xFFE3E7ED),
-    NIGHT("Night", 0xFF111113, ink = 0xFFF5F5F7, body = 0xFFC9C9CF, muted = 0xFF8E8E93, rule = 0xFFFFB340, hair = 0x26FFFFFF),
-    DOTS("Dots", 0xFFFFFFFF, ink = 0xFF16161A, body = 0xFF3A3A3C, muted = 0xFF8E8E93, rule = 0xFF16161A, hair = 0x1F000000, dots = 0xFFD8D8DD),
-    AMBER("Amber", 0xFFFFCC66, 0xFFFF9500, ink = 0xFF1A1205, body = 0xFF3B2A0A, muted = 0xFF6B4A12, rule = 0xFF1A1205, hair = 0x33000000),
-    OCEAN("Ocean", 0xFF0A4FB5, 0xFF36B5E8, ink = 0xFFFFFFFF, body = 0xFFE6F2FF, muted = 0xFFBFDDF7, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
-    ROSE("Rose", 0xFFFFD1DC, 0xFFB794F6, ink = 0xFF2A1033, body = 0xFF47284F, muted = 0xFF7A5A82, rule = 0xFF2A1033, hair = 0x33000000),
-    KRAFT("Kraft", 0xFFD9B98C, ink = 0xFF2B1D0E, body = 0xFF3D2A15, muted = 0xFF6E5233, rule = 0xFF8A3B12, hair = 0x33000000, dots = 0x1A2B1D0E),
-    BLUEPRINT("Blueprint", 0xFF1D4E89, ink = 0xFFFFFFFF, body = 0xFFDCE9F7, muted = 0xFF9DBBDD, rule = 0xFFFFFFFF, hair = 0x40FFFFFF, grid = 0x26FFFFFF),
-    CHALK("Chalkboard", 0xFF23332B, ink = 0xFFF4F1E8, body = 0xFFD9D5C9, muted = 0xFF9BA399, rule = 0xFFF2C14E, hair = 0x33FFFFFF),
-    SAGE("Sage", 0xFFE4EBDD, ink = 0xFF1C2A1C, body = 0xFF34442F, muted = 0xFF6B7A63, rule = 0xFF5B7F4E, hair = 0x1F000000, lines = 0xFFC3D2B8),
-    MINT("Mint", 0xFFB8F2D9, 0xFF5AC8C8, ink = 0xFF0B2A26, body = 0xFF173F39, muted = 0xFF3F6B64, rule = 0xFF0B2A26, hair = 0x33000000),
-    SUNSET("Sunset", 0xFFFF7E5F, 0xFFC9406A, ink = 0xFFFFFFFF, body = 0xFFFFEDE6, muted = 0xFFFFD0C2, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
-    MIDNIGHT("Midnight", 0xFF141E30, 0xFF35577D, ink = 0xFFF5F7FA, body = 0xFFD3DCE8, muted = 0xFF93A4BA, rule = 0xFFFFB340, hair = 0x33FFFFFF, dots = 0x1FFFFFFF),
-    MONO("Mono", 0xFF000000, ink = 0xFFFFFFFF, body = 0xFFE5E5E5, muted = 0xFF8E8E93, rule = 0xFFFFFFFF, hair = 0x33FFFFFF),
+    PAPER("Paper", R.string.card_style_paper, 0xFFFAF7F0, ink = 0xFF16161A, body = 0xFF3A3934, muted = 0xFF8A877F, rule = 0xFFFFB340, hair = 0x1F000000),
+    RULED("Ruled", R.string.card_style_ruled, 0xFFFFFFFF, ink = 0xFF16161A, body = 0xFF2C2C30, muted = 0xFF8E8E93, rule = 0xFFE5484D, hair = 0x1F000000, lines = 0xFFBFD4EC),
+    LEGAL("Legal pad", R.string.card_style_legal, 0xFFFFF3A6, ink = 0xFF1E1A05, body = 0xFF332D0E, muted = 0xFF7A6F3A, rule = 0xFFE5484D, hair = 0x26000000, lines = 0xFF9FC1E4),
+    GRID("Grid", R.string.card_style_grid, 0xFFFFFFFF, ink = 0xFF16161A, body = 0xFF2C2C30, muted = 0xFF8E8E93, rule = 0xFFFFB340, hair = 0x1F000000, grid = 0xFFE3E7ED),
+    NIGHT("Night", R.string.card_style_night, 0xFF111113, ink = 0xFFF5F5F7, body = 0xFFC9C9CF, muted = 0xFF8E8E93, rule = 0xFFFFB340, hair = 0x26FFFFFF),
+    DOTS("Dots", R.string.card_style_dots, 0xFFFFFFFF, ink = 0xFF16161A, body = 0xFF3A3A3C, muted = 0xFF8E8E93, rule = 0xFF16161A, hair = 0x1F000000, dots = 0xFFD8D8DD),
+    AMBER("Amber", R.string.card_style_amber, 0xFFFFCC66, 0xFFFF9500, ink = 0xFF1A1205, body = 0xFF3B2A0A, muted = 0xFF6B4A12, rule = 0xFF1A1205, hair = 0x33000000),
+    OCEAN("Ocean", R.string.card_style_ocean, 0xFF0A4FB5, 0xFF36B5E8, ink = 0xFFFFFFFF, body = 0xFFE6F2FF, muted = 0xFFBFDDF7, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
+    ROSE("Rose", R.string.card_style_rose, 0xFFFFD1DC, 0xFFB794F6, ink = 0xFF2A1033, body = 0xFF47284F, muted = 0xFF7A5A82, rule = 0xFF2A1033, hair = 0x33000000),
+    KRAFT("Kraft", R.string.card_style_kraft, 0xFFD9B98C, ink = 0xFF2B1D0E, body = 0xFF3D2A15, muted = 0xFF6E5233, rule = 0xFF8A3B12, hair = 0x33000000, dots = 0x1A2B1D0E),
+    BLUEPRINT("Blueprint", R.string.card_style_blueprint, 0xFF1D4E89, ink = 0xFFFFFFFF, body = 0xFFDCE9F7, muted = 0xFF9DBBDD, rule = 0xFFFFFFFF, hair = 0x40FFFFFF, grid = 0x26FFFFFF),
+    CHALK("Chalkboard", R.string.card_style_chalk, 0xFF23332B, ink = 0xFFF4F1E8, body = 0xFFD9D5C9, muted = 0xFF9BA399, rule = 0xFFF2C14E, hair = 0x33FFFFFF),
+    SAGE("Sage", R.string.card_style_sage, 0xFFE4EBDD, ink = 0xFF1C2A1C, body = 0xFF34442F, muted = 0xFF6B7A63, rule = 0xFF5B7F4E, hair = 0x1F000000, lines = 0xFFC3D2B8),
+    MINT("Mint", R.string.card_style_mint, 0xFFB8F2D9, 0xFF5AC8C8, ink = 0xFF0B2A26, body = 0xFF173F39, muted = 0xFF3F6B64, rule = 0xFF0B2A26, hair = 0x33000000),
+    SUNSET("Sunset", R.string.card_style_sunset, 0xFFFF7E5F, 0xFFC9406A, ink = 0xFFFFFFFF, body = 0xFFFFEDE6, muted = 0xFFFFD0C2, rule = 0xCCFFFFFF, hair = 0x40FFFFFF),
+    MIDNIGHT("Midnight", R.string.card_style_midnight, 0xFF141E30, 0xFF35577D, ink = 0xFFF5F7FA, body = 0xFFD3DCE8, muted = 0xFF93A4BA, rule = 0xFFFFB340, hair = 0x33FFFFFF, dots = 0x1FFFFFFF),
+    MONO("Mono", R.string.card_style_mono, 0xFF000000, ink = 0xFFFFFFFF, body = 0xFFE5E5E5, muted = 0xFF8E8E93, rule = 0xFFFFFFFF, hair = 0x33FFFFFF),
 }
 
 /** The style row's sections, in order. */
 private val CARD_GROUPS = listOf(
-    "Paper" to listOf(CardStyle.PAPER, CardStyle.RULED, CardStyle.LEGAL, CardStyle.GRID, CardStyle.DOTS, CardStyle.KRAFT, CardStyle.SAGE),
-    "Colour" to listOf(CardStyle.AMBER, CardStyle.OCEAN, CardStyle.ROSE, CardStyle.MINT, CardStyle.SUNSET),
-    "Dark" to listOf(CardStyle.NIGHT, CardStyle.BLUEPRINT, CardStyle.CHALK, CardStyle.MIDNIGHT, CardStyle.MONO),
-).let { g -> g + listOfNotNull(("More" to CardStyle.entries.filter { s -> g.none { s in it.second } }).takeIf { it.second.isNotEmpty() }) }
+    R.string.card_group_paper to listOf(CardStyle.PAPER, CardStyle.RULED, CardStyle.LEGAL, CardStyle.GRID, CardStyle.DOTS, CardStyle.KRAFT, CardStyle.SAGE),
+    R.string.card_group_colour to listOf(CardStyle.AMBER, CardStyle.OCEAN, CardStyle.ROSE, CardStyle.MINT, CardStyle.SUNSET),
+    R.string.card_group_dark to listOf(CardStyle.NIGHT, CardStyle.BLUEPRINT, CardStyle.CHALK, CardStyle.MIDNIGHT, CardStyle.MONO),
+).let { g -> g + listOfNotNull((R.string.card_group_more to CardStyle.entries.filter { s -> g.none { s in it.second } }).takeIf { it.second.isNotEmpty() }) }
 
 private const val CARD_PREFS = "share_card"
 private const val LAST_STYLE = "style"
@@ -166,7 +168,7 @@ fun noteCards(context: Context, blocks: List<Block>, date: String, options: Card
     }
     val picH = pic?.let { it.height + PHOTO_GAP } ?: 0
 
-    val title = blocks.firstOrNull()?.text?.trim().orEmpty().ifEmpty { "Untitled" }
+    val title = blocks.firstOrNull()?.text?.trim().orEmpty().ifEmpty { context.getString(R.string.common_untitled) }
     val (body, ai) = cardBody(blocks.drop(1).filter { it.attachment == null }, style.rule.toInt())
     // A short note is set large and centred, like a quote; a long one steps down in size until it fits.
     for (size in listOf(64f, 56f, 50f, 44f, 40f)) {
@@ -395,8 +397,8 @@ fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, o
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
-                Box(Modifier.align(Alignment.CenterStart)) { TextAction("Cancel", onDismiss) }
-                Text("Share as image", style = JType.rowTitle, color = jc.ink)
+                Box(Modifier.align(Alignment.CenterStart)) { TextAction(stringResource(R.string.common_cancel), onDismiss) }
+                Text(stringResource(R.string.note_card_share_as_image), style = JType.rowTitle, color = jc.ink)
             }
             androidx.compose.foundation.pager.HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), pageSpacing = 16.dp) { i ->
                 val image by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, pages, i) {
@@ -408,13 +410,13 @@ fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, o
                     val fitsWidth = maxWidth / maxHeight < r
                     image?.let {
                         androidx.compose.foundation.Image(
-                            it, "Preview of the ${style.label} card, ${i + 1} of ${pages.size}",
+                            it, stringResource(R.string.card_preview_desc, stringResource(style.labelRes), (i + 1).toString(), pages.size.toString()),
                             Modifier.aspectRatio(r, matchHeightConstraintsFirst = !fitsWidth).shadow(JElevation.sheet, JShape.md).clip(JShape.md),
                         )
                     }
                 }
             }
-            if (pages.size > 1) Text("${pager.currentPage + 1} of ${pages.size} · swipe to see them all", style = JType.small, color = jc.muted)
+            if (pages.size > 1) Text(stringResource(R.string.card_page_of_swipe, (pager.currentPage + 1).toString(), pages.size.toString()), style = JType.small, color = jc.muted)
             // Swatches in sections (Paper, Colour, Dark), scrolled so the chosen one shows on opening.
             val scroll = rememberScrollState()
             val density = androidx.compose.ui.platform.LocalDensity.current
@@ -429,7 +431,7 @@ fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, o
                 CARD_GROUPS.forEachIndexed { gi, (group, styles) ->
                 if (gi > 0) Box(Modifier.padding(top = 22.dp).size(1.dp, 40.dp).background(jc.line))
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(group.uppercase(), style = JType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = jc.muted, maxLines = 1)
+                Text(stringResource(group).uppercase(), style = JType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = jc.muted, maxLines = 1)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 styles.forEach { s ->
                     val on = s == style
@@ -439,10 +441,10 @@ fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, o
                                 .background(Brush.linearGradient(listOf(Color(s.bg), Color(s.bg2 ?: s.bg))))
                                 .border(1.dp, jc.line, CircleShape)
                                 .clickable(role = Role.RadioButton) { style = s }
-                                .semantics { contentDescription = s.label; selected = on },
+                                .semantics { contentDescription = context.getString(s.labelRes); selected = on },
                             contentAlignment = Alignment.Center,
                         ) { Text("Aa", style = JType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), color = Color(s.ink)) }
-                        Text(s.label, style = JType.small, maxLines = 1, color = if (on) jc.ink else jc.muted)
+                        Text(stringResource(s.labelRes), style = JType.small, maxLines = 1, color = if (on) jc.ink else jc.muted)
                     }
                 }
                 }
@@ -454,16 +456,16 @@ fun CardDialog(blocks: List<Block>, date: String, photo: java.io.File? = null, o
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                CardSize.entries.forEach { z -> Pill(z.label, z == size, { size = z }) }
+                CardSize.entries.forEach { z -> Pill(stringResource(z.labelRes), z == size, { size = z }) }
                 Box(Modifier.size(1.dp, 24.dp).background(jc.line))
-                CardFont.entries.forEach { f -> Pill(f.label, f == font, { font = f }) }
+                CardFont.entries.forEach { f -> Pill(stringResource(f.labelRes), f == font, { font = f }) }
                 Box(Modifier.size(1.dp, 24.dp).background(jc.line))
-                Pill("Date & Margin", foot, { foot = !foot })
-                if (photo != null) Pill("Photo", withPhoto, { withPhoto = !withPhoto })
+                Pill(stringResource(R.string.note_card_date_margin), foot, { foot = !foot })
+                if (photo != null) Pill(stringResource(R.string.note_card_photo), withPhoto, { withPhoto = !withPhoto })
             }
             Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SecondaryButton(if (pages.size > 1) "Save ${pages.size}" else "Save", { onSave(remembered(options)) }, Modifier.weight(1f))
-                PrimaryButton(if (pages.size > 1) "Share ${pages.size} images" else "Share", { onShare(remembered(options)) }, Modifier.weight(2f))
+                SecondaryButton(if (pages.size > 1) stringResource(R.string.note_card_save, pages.size) else stringResource(R.string.common_save), { onSave(remembered(options)) }, Modifier.weight(1f))
+                PrimaryButton(if (pages.size > 1) pluralStringResource(R.plurals.card_share_images, pages.size, pages.size) else stringResource(R.string.common_share), { onShare(remembered(options)) }, Modifier.weight(2f))
             }
         }
     }

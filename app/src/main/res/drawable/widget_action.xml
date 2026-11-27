@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A widget's main action (new note, add item): a 36dp amber circle inside its 48dp touch target, like the app's New button. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="6dp">
+    <shape android:shape="oval">
+        <solid android:color="@color/widget_accent" />
+    </shape>
+</inset>

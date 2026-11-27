@@ -67,7 +67,8 @@ android {
     }
 
     androidResources {
-        // The app is in English; libraries' translations of their own strings aren't needed.
+        // English only: Margin isn't translated yet, so libraries' translations would mix languages on screen.
+        // Add a language here together with its values-xx/strings.xml.
         localeFilters += listOf("en")
         // PdfBox's CJK character maps (~3 MB): only for Chinese, Japanese and Korean PDFs without their own
         // text mapping. Identity-H/V (used by almost every PDF with embedded fonts) and H/V are kept.
@@ -99,6 +100,7 @@ room {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.remoteviews) // the list widget's scrolling list, back to Android 8
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -129,6 +131,8 @@ dependencies {
     implementation(libs.mlkit.text.recognition)
     implementation(libs.mlkit.digital.ink)
     implementation(libs.mlkit.document.scanner)
+    implementation(libs.play.services.location) // place reminders: geofences, and "here" for picking a place
+    implementation(libs.code.scanner) // 2FA setup QR codes, scanned by Play services: no camera permission
     implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)

@@ -1,6 +1,8 @@
 package com.margin.app
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.LaunchedEffect
@@ -41,7 +43,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /** How long the logo shows on a cold start. */
-private const val LAUNCH_MS = 550L
+private const val LAUNCH_MS = 750L
 
 @AndroidEntryPoint
 // FragmentActivity: the fingerprint prompt needs one.
@@ -49,6 +51,8 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var lockSession: LockSession
     @Inject lateinit var appPrefs: AppPrefs
     @Inject lateinit var appLock: com.margin.app.data.AppLock
+    @Inject lateinit var repository: com.margin.app.data.NoteRepository
+    @Inject lateinit var attachmentFiles: com.margin.app.data.AttachmentFiles
 
     /** Margin opened another app for a result (camera, file picker, scanner): coming back doesn't lock it. */
     private var awaitingResult = false
@@ -82,10 +86,15 @@ class MainActivity : FragmentActivity() {
                 // The time counts from when the logo is on screen: the first frame of a cold start can itself be slow.
                 LaunchedEffect(Unit) {
                     if (!launching) return@LaunchedEffect
+                    com.margin.app.ui.homeIntro.floatValue = 0f // home waits, hidden, under the logo
                     withFrameNanos { }
                     withFrameNanos { }
                     delay(LAUNCH_MS)
                     launching = false
+                    // As the logo fades, home's parts rise in one after another.
+                    androidx.compose.animation.core.animate(0f, 1f, animationSpec = tween(900, easing = androidx.compose.animation.core.LinearEasing)) { v, _ ->
+                        com.margin.app.ui.homeIntro.floatValue = v
+                    }
                 }
                 Box(Modifier.fillMaxSize()) {
                     MarginRoot(nav, folders, notes, editor, settings, vault, backups)
@@ -95,10 +104,24 @@ class MainActivity : FragmentActivity() {
                 val open by appLock.open.collectAsState()
                 val fingerprint by appPrefs.fingerprint.collectAsState()
                 if (!open) com.margin.app.ui.AppLockScreen(appLock, fingerprint, onLeave = { moveTaskToBack(true) })
+                // No app-switcher snapshot while App Lock is on or locked notes are open (a locked note, the journal,
+                // Passwords). Keyed on the screen too: leaving Passwords clears its own FLAG_SECURE on older Android.
+                val appLockOn = appLock.state.collectAsState().value != null
+                val notesOpen by lockSession.unlocked.collectAsState()
+                LaunchedEffect(appLockOn || notesOpen, nav.current) { hideFromRecents(appLockOn || notesOpen) }
                 // Something shared or opened while locked waits for the unlock.
-                LaunchedEffect(open) { if (open) nav.held?.let { nav.held = null; nav.incoming = it } }
+                LaunchedEffect(open) {
+                    if (open) nav.held?.let { nav.held = null; nav.incoming = it }
+                    if (open) heldStart?.let { heldStart = null; editor.startAction = it }
+                }
             }
         }
+    }
+
+    private fun hideFromRecents(hide: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!hide)
+        else if (hide) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        else if (nav.current != Screen.Passwords) window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     /** A share or "Open with Margin": handled now, or once the app lock is open. */
@@ -119,9 +142,17 @@ class MainActivity : FragmentActivity() {
         super.startIntentSenderForResult(intent, requestCode, fillInIntent, flagsMask, flagsValues, extraFlags, options)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Back from a share or print: it's done, so the exported copy (maybe of a locked note) goes.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { attachmentFiles.clearExports() }
+    }
+
     override fun onResume() {
         super.onResume()
         awaitingResult = false
+        // Back the next morning with Margin still open: today's round of a repeating list starts unticked.
+        lifecycleScope.launch { repository.resetRepeatingLists() }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
@@ -131,25 +162,37 @@ class MainActivity : FragmentActivity() {
     }
 
     /** A tap on the home-screen widget, the Quick Settings tile or an app shortcut: open that note, or a new one. */
+    private var heldStart: String? = null
+
     private fun fromWidget(intent: android.content.Intent?) {
         val screen = when (intent?.action) {
             RecentWidget.ACTION_OPEN -> intent.getStringExtra(RecentWidget.EXTRA_NOTE)?.let {
                 if (it.startsWith("habit-")) Screen.Habits else if (it == com.margin.app.ui.JOURNAL_REMINDER) Screen.Journal else Screen.Editor(it, intent.getStringExtra(RecentWidget.EXTRA_FOLDER) ?: DEFAULT_FOLDER_ID)
             }
             RecentWidget.ACTION_NEW, RecentWidget.ACTION_SCAN, RecentWidget.ACTION_VOICE -> Screen.Editor(newId(), DEFAULT_FOLDER_ID)
+            RecentWidget.ACTION_PASSWORDS -> Screen.Passwords
+            com.margin.app.ui.TodayWidget.ACTION_TODAY -> Screen.Todos
             else -> null
         } ?: return
         // The new note starts the scanner or the recorder once it's open.
         editor.openTodayJournal = screen == Screen.Journal
-        editor.startAction = when (intent?.action) {
+        // Any app can send these, so the recorder or scanner never starts behind the lock screen: it waits for the unlock.
+        val start = when (intent?.action) {
             RecentWidget.ACTION_SCAN -> EditorViewModel.START_SCAN
             RecentWidget.ACTION_VOICE -> EditorViewModel.START_VOICE
             else -> null
         }
+        if (appLock.open.value) { editor.startAction = start; heldStart = null } else { editor.startAction = null; heldStart = start }
         if (nav.current == screen) return
         editor.close()
         if (nav.current is Screen.Editor) nav.pop()
         nav.push(screen)
+    }
+
+    // Save early: swiping Margin away from Recents can kill it before onStop's save reaches the database.
+    override fun onPause() {
+        super.onPause()
+        editor.flush()
     }
 
     override fun onStop() {

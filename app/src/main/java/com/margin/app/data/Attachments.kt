@@ -1,5 +1,7 @@
 package com.margin.app.data
 
+import com.margin.app.R
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -25,17 +27,23 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
 
     init { File(context.cacheDir, "unsealed").deleteRecursively() }
 
+    /**
+     * [name] when it's a plain attachment name. A name from synced or restored JSON could be "../databases/…", so
+     * anything else becomes one no file has (the leading dot never passes the check), and nothing outside the folder is reached.
+     */
+    private fun safe(name: String) = name.takeIf(::isSafeAttachmentName) ?: ".invalid"
+
     /** Where to read [a]: its stored file, or for an encrypted one the decrypted copy [reveal] made. */
-    fun file(a: Attachment) = if (a.isSealed) File(plainDir, a.file) else File(dir, a.file)
+    fun file(a: Attachment) = if (a.isSealed) File(plainDir, safe(a.file)) else File(dir, safe(a.file))
 
     /** Decrypts the encrypted files of an opened locked note's [blocks], so they can be shown. */
     suspend fun reveal(blocks: List<Block>) = withContext(Dispatchers.IO) {
         blocks.mapNotNull { it.attachment }.filter { it.isSealed }.forEach { a ->
-            val target = File(plainDir, a.file)
+            val target = File(plainDir, safe(a.file))
             if (target.exists()) return@forEach
-            val stored = File(dir, a.file).takeIf { it.exists() } ?: return@forEach
+            val stored = File(dir, safe(a.file)).takeIf { it.exists() } ?: return@forEach
             val plain = NoteCrypto.openBytes(stored.readBytes(), a.key!!) ?: return@forEach
-            File(plainDir, "${a.file}.part").apply { writeBytes(plain) }.renameTo(target)
+            File(plainDir, "${safe(a.file)}.part").apply { writeBytes(plain) }.renameTo(target)
         }
     }
 
@@ -51,10 +59,12 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         val out = blocks.map { b ->
             val a = b.attachment?.takeIf { !it.isSealed && it.mime != SEALED_MIME } ?: return@map b
             val new = swapped[a.file] ?: run {
-                val src = File(dir, a.file).takeIf { it.exists() } ?: return@map b
+                val src = File(dir, safe(a.file)).takeIf { it.exists() } ?: return@map b
                 val key = NoteCrypto.newFileKey()
                 val name = "${newId()}.mlk"
                 val plain = src.readBytes()
+                // A link now in a locked note: its preview mustn't stay readable in the cache.
+                if (a.isLink) LinkPreviews(context.cacheDir).forget(String(plain).trim())
                 File(dir, "$name.part").apply { writeBytes(NoteCrypto.sealBytes(plain, key)) }.renameTo(File(dir, name))
                 // The note stays open: it keeps showing the file from the decrypted copy.
                 File(plainDir, "$name.part").apply { writeBytes(plain) }.renameTo(File(plainDir, name))
@@ -71,8 +81,8 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         val out = blocks.map { b ->
             val a = b.attachment?.takeIf { it.isSealed } ?: return@map b
             val new = swapped[a.file] ?: run {
-                val plain = File(plainDir, a.file).takeIf { it.exists() }?.readBytes()
-                    ?: File(dir, a.file).takeIf { it.exists() }?.readBytes()?.let { NoteCrypto.openBytes(it, a.key!!) }
+                val plain = File(plainDir, safe(a.file)).takeIf { it.exists() }?.readBytes()
+                    ?: File(dir, safe(a.file)).takeIf { it.exists() }?.readBytes()?.let { NoteCrypto.openBytes(it, a.key!!) }
                     ?: return@map b
                 val ext = a.name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) } ?: extensionFor(a.mime)
                 val name = "${newId()}.$ext"
@@ -107,7 +117,7 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         val ext = name.substringAfterLast('.', "").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,8}")) }
         val stored = newId() + (ext?.let { ".$it" } ?: "")
         val target = File(dir, stored)
-        val input = resolver.openInputStream(uri) ?: throw IOException("Couldn't open the file")
+        val input = resolver.openInputStream(uri) ?: throw IOException(context.getString(R.string.attachments_cant_open_file))
         input.use { inp ->
             target.outputStream().use { out ->
                 // Size from the picker can be missing or wrong; stop copying once over the limit.
@@ -134,6 +144,48 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
         Attachment(stored, name, mime)
     }
 
+    /**
+     * The photo at [uri] made small, as a new JPEG: at most [maxSide] px on its long side, quality [quality], upright,
+     * with any transparency on white. A phone photo of several MB comes out around 100 to 250 KB.
+     */
+    suspend fun compressedPhoto(uri: Uri, name: String, maxSide: Int = 1080, quality: Int = 80): Attachment = withContext(Dispatchers.IO) {
+        val src = try { decodeUri(uri, maxSide) } catch (_: OutOfMemoryError) { null } ?: throw IOException(context.getString(R.string.attachments_cant_read_photo))
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(src.width, src.height))
+        val w = (src.width * scale).toInt().coerceAtLeast(1)
+        val h = (src.height * scale).toInt().coerceAtLeast(1)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(out).apply {
+            drawColor(android.graphics.Color.WHITE)
+            drawBitmap(src, null, android.graphics.Rect(0, 0, w, h), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        }
+        src.recycle()
+        val bytes = java.io.ByteArrayOutputStream().also { out.compress(Bitmap.CompressFormat.JPEG, quality, it) }.toByteArray()
+        out.recycle()
+        write(bytes, "jpg", name, "image/jpeg")
+    }
+
+    /** Decodes [uri] at about [maxSide] px on its long side (never much bigger), upright on Android 9+. */
+    private fun decodeUri(uri: Uri, maxSide: Int): Bitmap? {
+        val resolver = context.contentResolver
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            return android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(resolver, uri)) { decoder, info, _ ->
+                val side = maxOf(info.size.width, info.size.height)
+                if (side > maxSide) decoder.setTargetSize(
+                    (info.size.width.toLong() * maxSide / side).toInt().coerceAtLeast(1),
+                    (info.size.height.toLong() * maxSide / side).toInt().coerceAtLeast(1),
+                )
+                decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+            }
+        }
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        return resolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        }
+    }
+
     /** A new empty file in the attachments folder and its content URI, for the camera app to write a photo into. */
     fun newPhotoTarget(): Pair<File, Uri> {
         val f = File(dir, newId() + ".jpg")
@@ -146,7 +198,7 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
      */
     suspend fun rotated(a: Attachment): Attachment = withContext(Dispatchers.IO) {
         // shortcut: capped at 4096 px on the long side to stay inside memory, so a bigger photo loses some detail when rotated.
-        val bitmap = decodeImage(file(a), 4096) ?: throw IOException("Couldn't read the photo")
+        val bitmap = decodeImage(file(a), 4096) ?: throw IOException(context.getString(R.string.attachments_cant_read_photo))
         val turned = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(90f) }, true)
         val png = a.mime == "image/png"
         val bytes = java.io.ByteArrayOutputStream().also { turned.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 92, it) }.toByteArray()
@@ -159,13 +211,19 @@ class AttachmentFiles @Inject constructor(@ApplicationContext private val contex
     suspend fun edited(a: Attachment, edit: PhotoEdit): Attachment = withContext(Dispatchers.Default) {
         // shortcut: read at up to 4096 px (2560 if memory runs short), like rotated().
         val bitmap = try { decodeImage(file(a), 4096) } catch (_: OutOfMemoryError) { decodeImage(file(a), 2560) }
-            ?: throw IOException("Couldn't read the photo")
-        val out = try { renderPhotoEdit(bitmap, edit) } catch (_: OutOfMemoryError) { throw IOException("The photo is too big to edit") } finally { bitmap.recycle() }
+            ?: throw IOException(context.getString(R.string.attachments_cant_read_photo))
+        val out = try { renderPhotoEdit(bitmap, edit) } catch (_: OutOfMemoryError) { throw IOException(context.getString(R.string.attachments_photo_too_big)) } finally { bitmap.recycle() }
         val png = a.mime == "image/png"
         val bytes = java.io.ByteArrayOutputStream().also { out.compress(if (png) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 92, it) }.toByteArray()
         out.recycle()
         write(bytes, if (png) "png" else "jpg", a.name, if (png) "image/png" else "image/jpeg")
     }
+
+    /**
+     * Deletes every exported file (shares, prints, note cards). They can hold an open locked note's text, so they
+     * don't outlive the share: cleared when Margin comes back to the front and when it starts.
+     */
+    fun clearExports() { File(context.cacheDir, "exports").listFiles()?.forEach { it.delete() } }
 
     /** A file in the exports cache folder, replacing any older one of that name. */
     fun exportFile(name: String): File = File(File(context.cacheDir, "exports").apply { mkdirs() }, name)

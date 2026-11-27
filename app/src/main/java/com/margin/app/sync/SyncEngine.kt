@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import com.margin.app.data.FolderEntity
 import com.margin.app.data.MarginJson
 import com.margin.app.data.NoteEntity
+import com.margin.app.data.heldBack
 import com.margin.app.data.newId
 import kotlinx.serialization.Serializable
 
@@ -16,6 +17,10 @@ interface DriveStore {
     suspend fun download(fileId: String): String
     /** Creates the file when [fileId] is null, else replaces it. Returns the file ID. */
     suspend fun upload(name: String, fileId: String?, content: String, updatedAt: Long): String
+    /** Deletes the file for good (not to Drive's trash). A file that's already gone counts as deleted. */
+    suspend fun delete(fileId: String)
+    /** Deletes every revision of the file but the newest, so Drive's history keeps no earlier copy. */
+    suspend fun dropOldRevisions(fileId: String)
 }
 
 interface SyncLocalStore {
@@ -108,7 +113,7 @@ class SyncEngine(
 
     private suspend fun syncNotes(remoteFiles: List<RemoteFile>) {
         val remoteById = remoteFiles.associateBy { noteIdFromName(it.name) }
-        val localById = local.allNotes().associateBy { it.id }
+        val localById = local.allNotes().filter { !it.heldBack }.associateBy { it.id }
 
         for (id in localById.keys + remoteById.keys) {
             val l = localById[id]
@@ -124,7 +129,7 @@ class SyncEngine(
                     if (result.localWins) uploadNote(l, rf.fileId) else takeRemoteNote(r, l.updatedAt)
                     result.conflictCopy?.let { copy ->
                         local.saveNote(copy, expectedUpdatedAt = null)
-                        uploadNote(copy, null)
+                        if (!copy.heldBack) uploadNote(copy, null)
                     }
                 }
             }
@@ -138,6 +143,9 @@ class SyncEngine(
             drive.upload(noteFileName(note.id), fileId, MarginJson.encodeToString(note), note.updatedAt)
             local.markNoteSynced(note.id, note.updatedAt)
         }
+        // A locked or deleted note's earlier revisions may hold its readable body.
+        // shortcut: if this fails after the upload, those revisions stay until the note's next upload.
+        if (fileId != null && (note.cipher != null || note.deleted)) drive.dropOldRevisions(fileId)
         uploaded++
     }
 

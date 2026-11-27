@@ -65,8 +65,39 @@ class DriveRestStore(private val accessToken: String) : DriveStore {
             MarginJson.decodeFromString<FileId>(response).id
         }
 
+    override suspend fun delete(fileId: String): Unit = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "$API/files/${enc(fileId)}")
+        } catch (e: DriveHttpException) {
+            if (e.code != 404) throw e // another device deleted it first
+        }
+    }
+
     @Serializable
     private data class FileId(val id: String)
+
+    @Serializable
+    private data class RevisionList(val nextPageToken: String? = null, val revisions: List<FileId> = emptyList())
+
+    override suspend fun dropOldRevisions(fileId: String): Unit = withContext(Dispatchers.IO) {
+        val ids = mutableListOf<String>()
+        var pageToken: String? = null
+        do {
+            val url = "$API/files/${enc(fileId)}/revisions?pageSize=1000&fields=${enc("nextPageToken,revisions(id)")}" +
+                (pageToken?.let { "&pageToken=${enc(it)}" } ?: "")
+            val page = MarginJson.decodeFromString<RevisionList>(request("GET", url))
+            page.revisions.mapTo(ids) { it.id }
+            pageToken = page.nextPageToken
+        } while (pageToken != null)
+        // Listed oldest first; Drive refuses to delete the last one.
+        for (id in ids.dropLast(1)) {
+            try {
+                request("DELETE", "$API/files/${enc(fileId)}/revisions/${enc(id)}")
+            } catch (e: DriveHttpException) {
+                if (e.code != 404) throw e
+            }
+        }
+    }
 
     private fun request(method: String, url: String, body: ByteArray? = null, contentType: String? = null): String {
         val conn = URL(url).openConnection() as HttpURLConnection

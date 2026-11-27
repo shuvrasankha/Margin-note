@@ -93,6 +93,59 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `plain edits made offline never undo a lock made elsewhere`() = runBlocking {
+        phone.write("n1", "Diary", "old text")
+        phone.engine.sync(); tablet.engine.sync()
+
+        tablet.write("n1", "Diary", "secret written offline")
+        phone.lock("n1")
+        phone.engine.sync()
+        tablet.engine.sync()
+        tablet.engine.sync() // a later sync still keeps the copy on the tablet
+
+        assertEquals("j1.sealed", tablet.note("n1").cipher)
+        val copy = tablet.store.notes.values.single { it.id != "n1" }
+        assertTrue(copy.localOnly)
+        assertTrue(copy.searchText.contains("secret written offline"))
+        assertTrue(drive.files.values.none { it.content.contains("secret written offline") })
+        assertTrue(tablet.store.queue().isEmpty()) // nothing shows as waiting to sync
+    }
+
+    @Test
+    fun `a lock wins over a newer plain edit already in Drive`() = runBlocking {
+        phone.write("n1", "Diary", "old text")
+        phone.engine.sync(); tablet.engine.sync()
+
+        phone.lock("n1")
+        tablet.write("n1", "Diary", "newer plain edit")
+        tablet.engine.sync()
+        phone.engine.sync()
+
+        assertEquals("j1.sealed", phone.note("n1").cipher)
+        assertEquals(setOf("n1"), phone.store.notes.keys) // no readable copy beside the locked note
+        assertEquals("j1.sealed", drive.note("n1")!!.cipher)
+        assertTrue(drive.noteRevisions("n1").none { it.contains("newer plain edit") })
+        tablet.engine.sync()
+        assertEquals("j1.sealed", tablet.note("n1").cipher)
+    }
+
+    @Test
+    fun `deleting a note leaves no earlier revision of it in Drive`() = runBlocking {
+        phone.write("n1", "Secret plan")
+        phone.engine.sync()
+        phone.write("n1", "Secret plan v2")
+        phone.engine.sync()
+        assertEquals(2, drive.noteRevisions("n1").size) // ordinary edits keep Drive's history
+
+        phone.deleteForever("n1")
+        phone.engine.sync()
+
+        val left = drive.noteRevisions("n1")
+        assertEquals(1, left.size)
+        assertFalse(left.single().contains("Secret plan"))
+    }
+
+    @Test
     fun `edit that loses to a tombstone survives as a conflict copy`() = runBlocking {
         phone.write("n1", "Ideas")
         phone.engine.sync(); tablet.engine.sync()

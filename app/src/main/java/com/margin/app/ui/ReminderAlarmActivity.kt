@@ -38,6 +38,8 @@ import com.margin.app.data.AppPrefs
 import com.margin.app.data.Repeat
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * The full-screen alert for a reminder, shown over the lock screen when the phone is locked or asleep:
@@ -66,7 +68,8 @@ class ReminderAlarmActivity : ComponentActivity() {
         val noteId = intent.getStringExtra(ReminderReceiver.EXTRA_NOTE) ?: return finish()
         val folderId = intent.getStringExtra(EXTRA_FOLDER).orEmpty()
         val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-        val body = intent.getStringExtra(EXTRA_BODY)
+        // Over the lock screen anyone can read it, so only the title shows there; the note's first line waits for the unlock.
+        val body = intent.getStringExtra(EXTRA_BODY).takeIf { !getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked }
         val repeat = intent.getStringExtra(EXTRA_REPEAT)?.let { runCatching { Repeat.valueOf(it) }.getOrNull() } ?: Repeat.NEVER
         setContent {
             val appearance by appPrefs.appearance.collectAsState()
@@ -115,7 +118,7 @@ private fun AlarmScreen(title: String, body: String?, repeat: Repeat, onSnooze: 
             Modifier.padding(top = 20.dp), style = JType.small.copy(fontSize = 44.sp), color = jc.ink,
         )
         Text(
-            if (repeat == Repeat.NEVER) "Reminder" else "Reminder · ${repeat.label}",
+            if (repeat == Repeat.NEVER) stringResource(R.string.reminder_alarm_reminder) else stringResource(R.string.alarm_reminder_repeat, stringResource(repeat.labelRes)),
             Modifier.padding(top = 4.dp), style = JType.secondary, color = jc.muted,
         )
         Text(
@@ -127,10 +130,10 @@ private fun AlarmScreen(title: String, body: String?, repeat: Repeat, onSnooze: 
         }
         Spacer(Modifier.weight(1f))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            AlarmButton("Snooze 10 min", jc.surface, jc.ink, Modifier.weight(1f), onSnooze)
-            AlarmButton("Done", jc.accent, jc.bg, Modifier.weight(1f), onDone)
+            AlarmButton(stringResource(R.string.reminder_alarm_snooze_10_min), jc.surface, jc.ink, Modifier.weight(1f), onSnooze)
+            AlarmButton(stringResource(R.string.common_done), jc.accent, jc.bg, Modifier.weight(1f), onDone)
         }
-        Box(Modifier.padding(top = 12.dp)) { TextAction("Open note", onOpen) }
+        Box(Modifier.padding(top = 12.dp)) { TextAction(stringResource(R.string.reminder_alarm_open_note), onOpen) }
     }
 }
 

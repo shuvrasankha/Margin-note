@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App shortcut: voice command (a microphone with sound waves). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="#E9F0FF" android:pathData="M24,24m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" />
+    <group android:translateX="12" android:translateY="12">
+        <path android:strokeColor="#2F5FD0" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M10,5a2,2 0,0 1,4 0v5a2,2 0,0 1,-4 0zM7,10a5,5 0,0 0,10 0M12,15v4M19.5,7a6,6 0,0 1,0 7M4.5,7a6,6 0,0 0,0 7" />
+    </group>
+</vector>

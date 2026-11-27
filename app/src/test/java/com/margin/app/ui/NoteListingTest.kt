@@ -135,4 +135,33 @@ class NoteListingTest {
         assertEquals(listOf("[Today]", "p", "[Previous 30 Days]", "q"),
             buildListing(notes, NoteSort.EDITED, false, isTrash = false, now = now, zone = zone, locale = Locale.US, pinnedSection = false).labels())
     }
+
+    @Test
+    fun `your own order keeps pinned first, unplaced notes on top, and drops date headers`() {
+        val list = listOf(
+            note("b").copy(sortOrder = 2), note("a").copy(sortOrder = 1), note("new", edited = now - 5).copy(sortOrder = 0),
+            note("p", pinned = true).copy(sortOrder = 9),
+        )
+        val out = buildListing(list, NoteSort.EDITED, false, false, now, zone, Locale.US, manual = true).labels()
+        assertEquals(listOf("[Pinned]", "p", "[Notes]", "new", "a", "b"), out)
+    }
+
+    @Test
+    fun `archived notes leave All Notes`() {
+        assertEquals(false, inAllNotes(note("x").copy(archived = true)))
+        assertEquals(true, inAllNotes(note("x")))
+    }
+
+    @Test
+    fun `filters find photos, voice, reminders and locks`() {
+        fun with(mime: String) = note("n").copy(blocks = listOf(Block(type = BlockType.TITLE, text = "n"), Block(attachment = Attachment("f", "f", mime))))
+        assertEquals(true, ListFilter.PHOTOS.matches(with("image/jpeg")))
+        assertEquals(false, ListFilter.PHOTOS.matches(with("audio/mp4")))
+        assertEquals(true, ListFilter.VOICE.matches(with("audio/mp4")))
+        assertEquals(true, ListFilter.REMINDERS.matches(note("r"), setOf("r")))
+        assertEquals(false, ListFilter.REMINDERS.matches(note("x"), setOf("r")))
+        assertEquals(true, ListFilter.LOCKED.matches(note("l").copy(cipher = "c")))
+        assertEquals(true, ListFilter.CONFLICTS.matches(note("c").copy(title = "Plan (conflict)")))
+        assertEquals(false, ListFilter.CONFLICTS.matches(note("p").copy(title = "Plan")))
+    }
 }

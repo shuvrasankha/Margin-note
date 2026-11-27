@@ -15,6 +15,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.margin.app.data.AppPrefs
 import com.margin.app.data.paperStyle
+import com.margin.app.data.colorMark
 import com.margin.app.data.fontStyle
 import com.margin.app.data.ATTACHMENT_CHAR
 import com.margin.app.data.NoteTable
@@ -29,6 +30,7 @@ import com.margin.app.data.isDrawing
 import com.margin.app.data.clock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
+import com.margin.app.data.displayTitle
 import kotlinx.coroutines.Dispatchers
 import com.margin.app.data.Appearance
 import com.margin.app.data.Toggle
@@ -96,12 +98,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.ZoneId
 import java.util.Locale
 import javax.inject.Inject
+import com.margin.app.R
 
 // ---------- Navigation ----------
 
@@ -111,12 +115,14 @@ const val TAG_PREFIX = "tag:"
 /** Library lists: every note outside Recently Deleted, and the pinned ones. */
 const val ALL_ID = "all"
 const val PINNED_ID = "pinned"
+/** Archived notes: out of every other list, still found by search. */
+const val ARCHIVE_ID = "archive"
 
 /** A list that isn't a stored folder. */
 /** Journal entries and habits have their own screens, so All Notes leaves them out (search still finds them). */
-fun inAllNotes(note: NoteEntity) = !isHabit(note) && !isTracker(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
+fun inAllNotes(note: NoteEntity) = !note.archived && !isHabit(note) && !isTracker(note) && !isTemplate(note) && journalDay(note) == null && !isLogin(note)
 
-fun isVirtualList(id: String) = id == TRASH_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
+fun isVirtualList(id: String) = id == TRASH_ID || id == ARCHIVE_ID || id == ALL_ID || id == PINNED_ID || id.startsWith(TAG_PREFIX)
 
 sealed interface Screen {
     data object Folders : Screen
@@ -142,7 +148,14 @@ sealed interface Screen {
 }
 
 /** Something another app shared to Margin: text (with an optional subject) and/or a photo. */
-data class SharedIn(val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false, val open: Boolean = false)
+data class SharedIn(
+    val subject: String?, val text: String?, val image: android.net.Uri?, val pdf: Boolean = false, val open: Boolean = false,
+    /** Saved as a note of its own even if it's a copy of a list Margin already has. */
+    val asNote: Boolean = false,
+)
+
+/** A shared checklist that matches a list here: [merge] shows what updating it would change. */
+data class ListMatch(val note: NoteEntity, val list: com.margin.app.data.SharedList, val merge: com.margin.app.data.ListMerge)
 
 /**
  * Reads a share intent; null for anything else (or a share with nothing usable in it). [typeOf] finds a URI's
@@ -151,17 +164,24 @@ data class SharedIn(val subject: String?, val text: String?, val image: android.
 fun sharedIn(intent: android.content.Intent?, typeOf: (android.net.Uri) -> String? = { null }): SharedIn? {
     // "Open with Margin" on a PDF: opened to read at once (see OpenedPdfs), not filed like a share.
     if (intent?.action == android.content.Intent.ACTION_VIEW) {
-        val uri = intent.data ?: return null
+        val uri = intent.data?.takeIf(::fromOtherApp) ?: return null
         return if ((intent.type ?: typeOf(uri)) == "application/pdf") SharedIn(null, null, uri, pdf = true, open = true) else null
     }
     if (intent?.action != android.content.Intent.ACTION_SEND) return null
     // A shared photo or PDF is copied into the note.
     val image = if (intent.type?.startsWith("image/") == true || intent.type == "application/pdf")
-        androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java) else null
+        androidx.core.content.IntentCompat.getParcelableExtra(intent, android.content.Intent.EXTRA_STREAM, android.net.Uri::class.java)?.takeIf(::fromOtherApp) else null
     val text = intent.getStringExtra(android.content.Intent.EXTRA_TEXT)
     if (image == null && text.isNullOrBlank()) return null
     return SharedIn(intent.getStringExtra(android.content.Intent.EXTRA_SUBJECT), text, image, pdf = image != null && intent.type == "application/pdf")
 }
+
+/**
+ * Only another app's content:// file. Margin reads a shared URI with its own rights, so a file:// path or a URI
+ * on Margin's own provider could make it copy one of its private files into a note.
+ */
+private fun fromOtherApp(uri: android.net.Uri) =
+    uri.scheme == android.content.ContentResolver.SCHEME_CONTENT && uri.authority?.startsWith(com.margin.app.BuildConfig.APPLICATION_ID) != true
 
 class NavViewModel : ViewModel() {
     // All Notes is the home screen: Back there leaves the app; its Folders button opens the folders.
@@ -173,6 +193,8 @@ class NavViewModel : ViewModel() {
     val current get() = stack.last()
     fun push(screen: Screen) { stack.add(screen) }
     fun pop() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
+    /** Shows [screen] as the only screen: a tab's root. */
+    fun switchTo(screen: Screen) { if (stack.size == 1 && current == screen) return; stack.clear(); stack.add(screen) }
 }
 
 // ---------- Folders ----------
@@ -182,6 +204,7 @@ data class FolderRow(val folder: FolderEntity, val count: Int, val depth: Int = 
 
 @HiltViewModel
 class FoldersViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val repo: NoteRepository,
     private val appPrefs: AppPrefs,
     private val files: AttachmentFiles,
@@ -190,7 +213,11 @@ class FoldersViewModel @Inject constructor(
     private val scheduler: SyncScheduler,
     private val alarms: com.margin.app.data.Reminders,
     private val openedPdfs: com.margin.app.data.OpenedPdfs,
+    private val placeReminders: com.margin.app.data.PlaceReminders,
 ) : ViewModel() {
+    /** Note id → the place its reminder rings at. */
+    val places: StateFlow<Map<String, com.margin.app.data.Place>> = placeReminders.all
+    fun clearPlace(noteId: String) = placeReminders.clear(noteId)
     /** Note id → when its reminder rings, for the Reminders list. */
     val reminders: StateFlow<Map<String, Long>> = alarms.all
     val reminderRepeats: StateFlow<Map<String, com.margin.app.data.Repeat>> = alarms.repeats
@@ -237,19 +264,39 @@ class FoldersViewModel @Inject constructor(
     fun saveShared(subject: String?, text: String?, image: android.net.Uri?, folderId: String, onError: (String) -> Unit, onSaved: (String) -> Unit) {
         viewModelScope.launch {
             val attachment = image?.let {
-                try { files.import(it) } catch (e: Exception) { onError(e.message ?: "Couldn't copy the file"); null }
+                try { files.import(it) } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_copy_the_file)); null }
             }
             if (attachment == null && text.isNullOrBlank() && subject.isNullOrBlank()) return@launch
             val id = newId()
-            repo.saveNote(id, folderId, sharedNoteBlocks(subject, text, attachment))
+            // A checklist shared as text comes in as a checklist, not as "[ ] Milk" lines.
+            val list = if (attachment == null) com.margin.app.data.parseSharedList(subject, text) else null
+            repo.saveNote(id, folderId, list?.let { com.margin.app.data.sharedListBlocks(it) } ?: sharedNoteBlocks(subject, text, attachment))
             onSaved(id)
+        }
+    }
+
+    /** A shared checklist whose list is already here (same name), with what updating it would add and tick off; else null. */
+    fun listMatch(share: SharedIn, notes: List<NoteEntity>): ListMatch? {
+        if (share.asNote || share.image != null) return null
+        val list = com.margin.app.data.parseSharedList(share.subject, share.text)?.takeIf { it.title.isNotBlank() } ?: return null
+        val note = com.margin.app.data.VoiceActions.findList(notes, list.title) ?: return null
+        return ListMatch(note, list, com.margin.app.data.mergeSharedList(note.blocks, list))
+    }
+
+    /** Updates the matched list with the shared copy, read fresh so nothing typed meanwhile is lost; [onSaved] opens it. */
+    fun mergeShared(match: ListMatch, onSaved: (id: String, folderId: String) -> Unit) {
+        viewModelScope.launch {
+            val note = repo.getNote(match.note.id) ?: return@launch
+            val merged = com.margin.app.data.mergeSharedList(note.blocks, match.list)
+            if (merged.changed) repo.saveNote(note.id, note.folderId, merged.blocks)
+            onSaved(note.id, note.folderId)
         }
     }
 
     /** "Open with Margin" on a PDF: [onReady] gets the note holding it (made in Notes the first time). */
     fun openPdf(uri: android.net.Uri, onError: (String) -> Unit, onReady: (com.margin.app.data.PdfPlace) -> Unit) {
         viewModelScope.launch {
-            val place = try { openedPdfs.open(uri) } catch (e: Exception) { onError(e.message ?: "Couldn't open the PDF"); return@launch }
+            val place = try { openedPdfs.open(uri) } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_open_the_pdf)); return@launch }
             onReady(place)
         }
     }
@@ -266,7 +313,9 @@ class FoldersViewModel @Inject constructor(
         }
     }
 
-    fun addHabit(name: String) = addTitled("habit-", name)
+    fun addHabit(name: String, icon: String? = null) = viewModelScope.launch {
+        if (name.isNotBlank()) repo.saveNote("habit-" + newId(), DEFAULT_FOLDER_ID, listOfNotNull(Block(type = BlockType.TITLE, text = name.trim()), icon?.let { Block(text = ICON_LINE + it) }))
+    }
     /** A new note in the default folder holding only the title [name], its id starting with [prefix]. */
     private fun addTitled(prefix: String, name: String) = viewModelScope.launch {
         if (name.isNotBlank()) repo.saveNote(prefix + newId(), DEFAULT_FOLDER_ID, listOf(Block(type = BlockType.TITLE, text = name.trim())))
@@ -294,7 +343,13 @@ class FoldersViewModel @Inject constructor(
 
     fun toggleHabit(note: NoteEntity, day: java.time.LocalDate) = viewModelScope.launch {
         val days = habitDays(note).let { if (day in it) it - day else it + day }.sortedDescending()
-        repo.saveNote(note.id, note.folderId, listOf(note.blocks.first()) + days.map { Block(text = it.toString()) })
+        repo.saveNote(note.id, note.folderId, habitBlocks(note, days))
+    }
+    fun setHabitSchedule(note: NoteEntity, on: Set<java.time.DayOfWeek>) = viewModelScope.launch {
+        if (on.isNotEmpty()) repo.saveNote(note.id, note.folderId, habitBlocks(note, habitDays(note), on = on))
+    }
+    fun setHabitIcon(note: NoteEntity, icon: String?) = viewModelScope.launch {
+        repo.saveNote(note.id, note.folderId, habitBlocks(note, habitDays(note), icon))
     }
     fun renameHabit(note: NoteEntity, name: String) = viewModelScope.launch {
         if (name.isNotBlank()) repo.saveNote(note.id, note.folderId, listOf(note.blocks.first().copy(text = name.trim())) + note.blocks.drop(1))
@@ -303,6 +358,12 @@ class FoldersViewModel @Inject constructor(
     fun addTracker(name: String) = addTitled(com.margin.app.data.TRACKER_PREFIX, name)
     fun renameTracker(note: NoteEntity, name: String) = renameHabit(note, name)
     fun deleteTracker(note: NoteEntity) = viewModelScope.launch { repo.moveToTrash(note.id) }
+    /** Tracker photos: compressed as they're added, read from app storage. */
+    val trackerPhotos = TrackerPhotos(
+        compress = { uri, name -> files.compressedPhoto(uri, name) },
+        file = { files.file(it) },
+        cameraTarget = { files.newPhotoTarget() },
+    )
     /** Rewrites the tracker [note] as [entries], one line each, newest first. */
     fun saveTracker(note: NoteEntity, entries: List<com.margin.app.data.TrackerEntry>) = viewModelScope.launch {
         repo.saveNote(note.id, note.folderId, com.margin.app.data.trackerBlocks(note, entries))
@@ -333,6 +394,8 @@ class FoldersViewModel @Inject constructor(
 
     val libraryCounts: StateFlow<Pair<Int, Int>> = repo.liveNotes().map { all -> all.count(::inAllNotes) to all.count { it.isPinned } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0 to 0)
+    val archiveCount: StateFlow<Int> = repo.liveNotes().map { all -> all.count { it.archived && !isLogin(it) } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
 
     /** Tags used in notes outside Recently Deleted, with note counts. */
     val tags: StateFlow<List<TagCount>> = repo.liveNotes().map(::tagCounts)
@@ -355,13 +418,18 @@ class FoldersViewModel @Inject constructor(
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class NotesViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val repo: NoteRepository,
     private val appPrefs: AppPrefs,
     syncPrefs: SyncPrefs,
     private val session: LockSession,
     private val files: AttachmentFiles,
     private val appLock: com.margin.app.data.AppLock,
+    alarms: com.margin.app.data.Reminders,
+    placeReminders: com.margin.app.data.PlaceReminders,
 ) : ViewModel() {
+    /** Notes with a time or place reminder, for the Reminders pill. */
+    private val reminded = combine(alarms.all, placeReminders.all) { a, p -> a.keys + p.keys }
     /** What locking the selected notes must ask first: nothing (notes are unlocked), the passcode, or a new one. */
     suspend fun passcodeNeeded(): PasswordMode? = when {
         session.unlocked.value -> null
@@ -393,8 +461,9 @@ class NotesViewModel @Inject constructor(
                 val (blocks, swapped) = files.sealAll(note.blocks)
                 val cipher = withContext(Dispatchers.Default) { NoteCrypto.seal(blocks.drop(1), key, params) }
                 repo.saveNote(note.id, note.folderId, blocks, cipher)
-                // The readable copies of files that are now encrypted go at once, unless another note still uses them.
-                if (swapped.isNotEmpty()) files.dropUnused(swapped.keys, repo.attachmentsInUse())
+                // The readable copies of files that are now encrypted go at once, unless another note still uses them,
+                // and so does the text read from them for search.
+                if (swapped.isNotEmpty()) repo.attachmentsInUse().let { inUse -> files.dropUnused(swapped.keys, inUse); repo.forgetAttachmentText(swapped.keys - inUse) }
                 n++
             }
             onDone(n)
@@ -416,19 +485,20 @@ class NotesViewModel @Inject constructor(
             when {
                 f == null -> flowOf(emptyList())
                 f == TRASH_ID -> repo.trash()
+                f == ARCHIVE_ID -> repo.liveNotes().map { all -> all.filter { it.archived && !isLogin(it) && (q.isEmpty() || it.title.contains(q, true) || it.searchText.contains(q, true)) } }
                 q.isNotEmpty() -> combine(repo.search(q), appPrefs.toggles) { found, t -> // all folders, excludes Recently Deleted
                     (if (t(Toggle.HIDE_LOCKED_IN_SEARCH)) found.filterNot { it.isLocked } else found).filterNot { isTemplate(it) || isLogin(it) }
                 }
                 f == ALL_ID -> repo.liveNotes().map { all -> all.filter(::inAllNotes) }
-                f == PINNED_ID -> repo.liveNotes().map { all -> all.filter { it.isPinned && !isLogin(it) } }
+                f == PINNED_ID -> repo.liveNotes().map { all -> all.filter { it.isPinned && !it.archived && !isLogin(it) } }
                 f.startsWith(TAG_PREFIX) -> repo.liveNotes().map { all ->
                     val key = f.removePrefix(TAG_PREFIX)
-                    all.filter { key in it.tagKeys && !isTemplate(it) }
+                    all.filter { key in it.tagKeys && !it.archived && !isTemplate(it) }
                 }
                 else -> repo.folder(f).flatMapLatest { folder ->
                     val filter = folder?.smartFilter
                     if (filter == null) repo.notesIn(f)
-                    else repo.liveNotes().map { all -> all.filter { filter.matches(it, System.currentTimeMillis()) } }
+                    else repo.liveNotes().map { all -> all.filter { !it.archived && filter.matches(it, System.currentTimeMillis()) } }
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -440,9 +510,14 @@ class NotesViewModel @Inject constructor(
     val hasNotes: StateFlow<Boolean> = listed.map { it.isNotEmpty() }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** The filter pills are hidden while searching, so they don't narrow the results. */
-    val notes: StateFlow<List<NoteEntity>> = combine(listed, filter, folderId, query) { list, filter, f, q ->
-        if (f == TRASH_ID || q.isNotBlank()) list else list.filter(filter::matches)
+    val notes: StateFlow<List<NoteEntity>> = combine(listed, filter, folderId, query, reminded) { list, filter, f, q, r ->
+        if (f == TRASH_ID || q.isNotBlank()) list else list.filter { filter.matches(it, r) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The pills to show: the basic ones, any that match a note here, and the one picked. */
+    val filters: StateFlow<List<ListFilter>> = combine(listed, filter, reminded) { list, picked, r ->
+        ListFilter.entries.filter { f -> f.always || f == picked || list.any { f.matches(it, r) } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ListFilter.entries.filter { it.always })
 
     /** Search: the scope pill, and the results split into notes and attachments. */
     val searchScope = MutableStateFlow(SearchScope.TOP)
@@ -458,12 +533,16 @@ class NotesViewModel @Inject constructor(
         .flatMapLatest { f -> if (f == null || isVirtualList(f)) flowOf(null) else repo.folder(f) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    /** Today's date, checked each minute, so "Today" and "Yesterday" move on while the list stays open past midnight. */
+    private val today = kotlinx.coroutines.flow.flow { while (true) { emit(java.time.LocalDate.now()); delay(60_000) } }.distinctUntilChanged()
+
     val entries: StateFlow<List<ListEntry>> = combine(
-        notes, folder, folderId, combine(query, searchResults, searchScope, ::Triple), combine(appPrefs.collapsedPinned, appPrefs.toggles, ::Pair),
+        notes, folder, folderId, combine(query, searchResults, searchScope, ::Triple), combine(appPrefs.collapsedPinned, appPrefs.toggles, today) { c, t, _ -> c to t },
     ) { list, folder, f, (q, results, scope), (collapsed, toggles) ->
         if (q.isNotBlank() && f != TRASH_ID) results.entries(scope) else buildListing(
             list,
             sortBy = folder?.sortBy ?: NoteSort.EDITED,
+            manual = folder?.manualOrder == true,
             ascending = folder?.sortAscending ?: false,
             isTrash = f == TRASH_ID,
             now = System.currentTimeMillis(),
@@ -502,9 +581,18 @@ class NotesViewModel @Inject constructor(
         clearSelection()
     }
 
+    /** Archives the selection, or brings it back when the open list is Archive. */
+    fun archiveSelected() {
+        val ids = selected
+        val back = folderId.value == ARCHIVE_ID
+        offerUndo(ids, appContext.resources.getQuantityString(if (back) R.plurals.view_models_notes_unarchived else R.plurals.view_models_notes_archived, ids.size, ids.size))
+        viewModelScope.launch { repo.setArchived(ids, !back) }
+        clearSelection()
+    }
+
     fun trashSelected() {
         val ids = selected
-        offerUndo(ids, if (ids.size == 1) "Note deleted" else "${ids.size} notes deleted")
+        offerUndo(ids, appContext.resources.getQuantityString(R.plurals.view_models_notes_deleted, ids.size, ids.size))
         viewModelScope.launch { repo.moveToTrash(ids) }
         clearSelection()
     }
@@ -528,7 +616,7 @@ class NotesViewModel @Inject constructor(
 
     /** Moves [ids] (the selection, a swiped note or notes picked for an empty folder) with an undo offer. */
     fun moveNotes(ids: Set<String>, folderId: String, folderName: String, pool: List<NoteEntity> = notes.value) {
-        offerUndo(ids, (if (ids.size == 1) "Moved to " else "${ids.size} notes moved to ") + folderName, pool)
+        offerUndo(ids, appContext.resources.getQuantityString(R.plurals.view_models_notes_moved_to, ids.size, ids.size, folderName), pool)
         viewModelScope.launch { repo.moveNotes(ids, folderId) }
         clearSelection()
     }
@@ -557,6 +645,15 @@ class NotesViewModel @Inject constructor(
         if (!isVirtualList(f)) viewModelScope.launch { repo.setFolderTemplate(f, key) }
     }
 
+    /** In your own order (Arrange notes sets it), or back to [setSort]'s. */
+    fun setManual(on: Boolean) {
+        val f = folderId.value ?: return
+        if (!isVirtualList(f)) viewModelScope.launch { repo.setFolderManual(f, on) }
+    }
+
+    /** Arrange notes: the open folder's notes in [ids] order. */
+    fun arrange(ids: List<String>) = viewModelScope.launch { repo.arrangeNotes(ids) }
+
     fun setSort(sortBy: NoteSort, ascending: Boolean) {
         val f = folderId.value ?: return
         if (!isVirtualList(f)) viewModelScope.launch { repo.setFolderSort(f, sortBy, ascending) }
@@ -564,21 +661,35 @@ class NotesViewModel @Inject constructor(
 
     fun togglePin(id: String) = viewModelScope.launch { repo.togglePin(id) }
     fun trash(id: String) {
-        offerUndo(listOf(id), "Note deleted")
+        offerUndo(listOf(id), appContext.getString(R.string.view_models_note_deleted))
         viewModelScope.launch { repo.moveToTrash(id) }
     }
     fun emptyTrash() = viewModelScope.launch { repo.emptyTrash() }
 }
 
 /** Filter pills above a note list. Locked notes never count as checklists: their body can't be read. */
-enum class ListFilter(val label: String) {
-    ALL("All"), PINNED("Pinned"), CHECKLISTS("Checklists");
+enum class ListFilter(val label: String, @androidx.annotation.StringRes val labelRes: Int) {
+    ALL("All", com.margin.app.R.string.notes_filter_all), PINNED("Pinned", com.margin.app.R.string.notes_filter_pinned),
+    CHECKLISTS("Lists", com.margin.app.R.string.notes_filter_lists),
+    // First of the optional pills: a sync conflict copy needs a look, and its note shows the compare-and-pick card.
+    CONFLICTS("Two versions", com.margin.app.R.string.notes_filter_conflicts), PHOTOS("Photos", com.margin.app.R.string.notes_filter_photos),
+    VOICE("Voice", com.margin.app.R.string.notes_filter_voice), REMINDERS("Reminders", com.margin.app.R.string.notes_filter_reminders),
+    LOCKED("Locked", com.margin.app.R.string.notes_filter_locked);
 
-    fun matches(note: NoteEntity) = when (this) {
+    /** [reminded]: ids of notes with a time or place reminder. */
+    fun matches(note: NoteEntity, reminded: Set<String> = emptySet()) = when (this) {
         ALL -> true
         PINNED -> note.isPinned
         CHECKLISTS -> note.blocks.any { it.type == BlockType.CHECK }
+        CONFLICTS -> note.title.endsWith(CONFLICT_SUFFIX)
+        PHOTOS -> note.blocks.any { it.attachment?.isImage == true }
+        VOICE -> note.blocks.any { it.attachment?.mime?.startsWith("audio/") == true }
+        REMINDERS -> note.id in reminded
+        LOCKED -> note.isLocked
     }
+
+    /** The first three always show; the rest only when a note in the list matches, so the row stays short. */
+    val always get() = ordinal <= CHECKLISTS.ordinal
 }
 
 /** [before] is each note as it was, so undo can put it back. */
@@ -598,13 +709,18 @@ private const val CHECK_SORT_DELAY_MS = 550L
 
 @HiltViewModel
 class EditorViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val repo: NoteRepository,
     private val appPrefs: AppPrefs,
     private val session: LockSession,
     val files: AttachmentFiles,
     private val reminders: com.margin.app.data.Reminders,
+    private val places: com.margin.app.data.PlaceReminders,
+    private val shade: com.margin.app.data.PinnedNotes,
+    private val aisles: com.margin.app.data.AisleChoices,
     val ai: com.margin.app.data.AiKeys,
     private val appLock: com.margin.app.data.AppLock,
+    val writing: com.margin.app.data.WritingLog,
 ) : ViewModel() {
     companion object {
         const val START_SCAN = "scan"
@@ -623,6 +739,143 @@ class EditorViewModel @Inject constructor(
     /** How this note's reminder repeats. */
     val reminderRepeat: StateFlow<com.margin.app.data.Repeat> = combine(reminders.repeats, openId) { all, id -> all[id] ?: com.margin.app.data.Repeat.NEVER }
         .stateIn(viewModelScope, SharingStarted.Eagerly, com.margin.app.data.Repeat.NEVER)
+
+    /** Where this note's place reminder rings, or null. */
+    val placeReminder: StateFlow<com.margin.app.data.Place?> = combine(places.all, openId) { all, id -> all[id] }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** Sets the place reminder (a new note is saved first). */
+    fun setPlace(place: com.margin.app.data.Place) { if (noteId.isNotEmpty() && !trashed) afterSave { places.set(it, place) } }
+    fun clearPlace() { if (noteId.isNotEmpty()) places.clear(noteId) }
+    fun recentPlaces() = places.recent()
+    /** Once location access is given: watch the places set before it. */
+    fun watchPlaces() = places.registerAll()
+
+    /** Copying a list's tasks elsewhere: not from a locked note, which is never shown outside it. */
+    val canCopyTasks get() = !needsUnlock && !locked && !trashed
+    /** Moving takes them out of this note, so it has to be editable too. */
+    val canMoveTasks get() = canCopyTasks && !readOnly && !viewOnly
+
+    /**
+     * Moves (or with [copy], copies) the tasks on [lines] of this note into the list [to], or a new list called
+     * [newTitle] in this note's folder. Moving takes them out here as one edit, so Undo brings them back.
+     * [onDone] gets the list's name and how many tasks it gained.
+     */
+    fun moveTasks(lines: Set<Int>, to: NoteEntity?, newTitle: String, copy: Boolean, onDone: (String, Int) -> Unit) {
+        if (!canCopyTasks || (!copy && !canMoveTasks)) return
+        val blocks = doc.toBlocks()
+        val tasks = lines.sorted().mapNotNull { blocks.getOrNull(it) }.filter { it.type == com.margin.app.data.BlockType.CHECK }
+        if (tasks.isEmpty()) return
+        viewModelScope.launch {
+            val result: Pair<String, Int> = if (to == null) {
+                val title = newTitle.trim().ifEmpty { "New list" }
+                repo.saveNote(com.margin.app.data.newId(), folderId.ifEmpty { com.margin.app.data.DEFAULT_FOLDER_ID }, com.margin.app.data.newListBlocks(title, tasks))
+                title to tasks.size
+            } else {
+                val fresh = repo.getNote(to.id)?.takeIf { it.cipher == null && it.trashedAt == null && !it.deleted } ?: return@launch
+                val r = com.margin.app.data.withTasksAdded(fresh.blocks, tasks)
+                if (r.added > 0) repo.saveNote(fresh.id, fresh.folderId, r.blocks)
+                fresh.displayTitle to r.added
+            }
+            val (name, gained) = result
+            if (!copy && doc.toBlocks() == blocks) replaceBlocks(com.margin.app.data.withoutLines(blocks, lines))
+            onDone(name, gained)
+        }
+    }
+
+    /** A list's tasks can be sorted into aisles: it's editable (not just tickable). */
+    val canSortAisles get() = !needsUnlock && !trashed && !readOnly && !viewOnly
+    fun aisleChoices() = aisles.all()
+    fun chooseAisle(text: String, aisle: com.margin.app.data.Aisle) = aisles.set(text, aisle)
+
+    /** Groups the list's tasks under aisle headings in shop order, as one edit that Undo takes back. */
+    fun sortByAisle() {
+        if (!canSortAisles) return
+        replaceBlocks(com.margin.app.data.byAisle(doc.toBlocks(), aisles.all()))
+    }
+
+    /** The whole note replaced by [blocks] (a sort, a clear-out) as its own undo step; nothing if it's the same. */
+    private fun replaceBlocks(blocks: List<Block>) {
+        if (blocks == doc.toBlocks()) return
+        dropPendingSort() // its line numbers are about the old order
+        lastChangeAt = 0
+        doc = EditorDoc.fromBlocks(blocks)
+        value = TextFieldValue(doc.text, TextRange(0))
+        changed()
+    }
+
+    /** Ticked tasks in the list, which Clear ticked items would take out. */
+    val tickedTasks get() = com.margin.app.data.tickedCount(doc.toBlocks())
+
+    /** Takes out every ticked task (and aisle headings left empty), as one edit Undo brings back. */
+    fun clearTicked() { if (canSortAisles) replaceBlocks(com.margin.app.data.withoutTicked(doc.toBlocks())) }
+
+    /** Sorts the tasks within each run of them, as one edit. */
+    fun sortTasks(sort: com.margin.app.data.ListSort) { if (canSortAisles) replaceBlocks(com.margin.app.data.sortedTasks(doc.toBlocks(), sort)) }
+
+    /** Whether any task has a due date, so sorting by it means something. */
+    val anyDue get() = doc.lines.any { it.type == BlockType.CHECK && it.due != null }
+
+    /** The task the cursor is on while editing, or null: the bar for its due date, quantity and suggestions. */
+    val taskAtCursor: Int?
+        get() = cursorLine.takeIf { focused && canSortAisles && !locked && doc.lines.getOrNull(it)?.let { m -> m.type == BlockType.CHECK && !m.isObject } == true }
+
+    /** Items from your other lists, most used first; worked out when the notes change, not on every key. */
+    // Lazy: linkTargets is set up further down.
+    val pastItems: StateFlow<List<com.margin.app.data.PastItem>> by lazy {
+        combine(linkTargets, openId) { notes, id -> com.margin.app.data.pastItems(notes, id) }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+
+    /** Past items that finish the task being typed at the cursor; not ones already on this list. */
+    fun itemSuggestions(items: List<com.margin.app.data.PastItem>): List<com.margin.app.data.PastItem> {
+        val line = taskAtCursor ?: return emptyList()
+        if (!value.selection.collapsed) return emptyList()
+        val texts = doc.texts
+        val have = texts.filterIndexed { i, _ -> i != line && doc.lines[i].type == BlockType.CHECK }.map { com.margin.app.data.itemName(it) }.toSet()
+        return com.margin.app.data.suggestItems(items, com.margin.app.data.splitQty(texts[line]).first, have)
+    }
+
+    /** Puts [item] on the cursor's task in place of what was typed, keeping its quantity. */
+    fun completeItem(item: String) {
+        val line = taskAtCursor ?: return
+        val qty = com.margin.app.data.splitQty(doc.texts[line]).second
+        setLineText(line, com.margin.app.data.withQty(item, qty))
+    }
+
+    /** The cursor's task with [delta] more (or fewer) of it; one is shown as no quantity. */
+    fun stepQty(delta: Int) {
+        val line = taskAtCursor ?: return
+        val (name, n) = com.margin.app.data.splitQty(doc.texts[line])
+        if (name.isBlank()) return
+        setLineText(line, com.margin.app.data.withQty(name, (n + delta).coerceIn(1, 9999)))
+    }
+
+    /** Replaces line [line]'s text through the normal edit path (so styles and undo work), cursor at its end. */
+    private fun setLineText(line: Int, text: String) {
+        val starts = doc.texts.runningFold(0) { acc, t -> acc + t.length + 1 }
+        val start = starts[line]
+        val old = doc.texts[line]
+        if (old == text) return
+        lastChangeAt = 0
+        onValueChange(TextFieldValue(value.text.substring(0, start) + text + value.text.substring(start + old.length), TextRange(start + text.length)))
+    }
+
+    /** Sets (or with null, clears) the due date of the task on [line], as an epoch day. */
+    fun setDue(line: Int, day: Long?) {
+        val m = doc.lines.getOrNull(line)?.takeIf { it.type == BlockType.CHECK } ?: return
+        if (m.due == day || !canSortAisles) return
+        dropPendingSort()
+        lastChangeAt = 0
+        doc = doc.copy(lines = doc.lines.toMutableList().apply { this[line] = m.copy(due = day) })
+        changed()
+    }
+
+    /** Whether this note is kept in the notification shade. */
+    val inShade: StateFlow<Boolean> = combine(shade.ids, openId) { all, id -> id in all }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    /** Keeps the note in the notification shade (a new note is saved first). */
+    fun pinToShade() { if (!trashed) afterSave { id -> repo.getNote(id)?.let(shade::pin) } }
+    fun unpinFromShade() { if (noteId.isNotEmpty()) shade.unpin(noteId) }
 
     /** A reminder can be set: the note is stored, or has text that will be saved first. */
     val canRemind get() = !trashed && !needsUnlock && (exists || doc.text.isNotBlank())
@@ -705,13 +958,19 @@ class EditorViewModel @Inject constructor(
         changed()
     }
     var pinned by mutableStateOf(false); private set
+    var archived by mutableStateOf(false); private set
     /** When the note was created; null until a new note is first saved. */
     var createdAt by mutableStateOf<Long?>(null); private set
     /** The open note's to-do target end date (an epoch day), or null. */
     var targetDate by mutableStateOf<Long?>(null); private set
+    /** How often this checklist unticks itself, or null. */
+    var listRepeat by mutableStateOf<com.margin.app.data.ListRepeat?>(null); private set
+    /** Its rounds ticked off in full in a row, before this one. */
+    var listStreak by mutableStateOf(0); private set
     /** The paper behind the note's text. */
     var paper by mutableStateOf(com.margin.app.data.Paper.PLAIN); private set
     var font by mutableStateOf(com.margin.app.data.NoteFont.DEFAULT); private set
+    var color by mutableStateOf(com.margin.app.data.NoteColor.NONE); private set
     var value by mutableStateOf(TextFieldValue()); private set
     /** In Recently Deleted: nothing can change until it is recovered. */
     var trashed by mutableStateOf(false); private set
@@ -736,6 +995,16 @@ class EditorViewModel @Inject constructor(
     private var lockParams: NoteCrypto.KeyParams? = null
 
     init {
+        // Tasks ticked while open here, on the widget or a pinned notification, or unticked for a repeating
+        // list's new round: take those ticks into this copy, so its next save doesn't undo them.
+        viewModelScope.launch {
+            repo.ticksElsewhere.collect { id ->
+                if (id != noteId || needsUnlock) return@collect
+                val stored = repo.getNote(id) ?: return@collect
+                current = EditorDoc.fromBlocks(com.margin.app.data.withTicksFrom(current.toBlocks(), stored.blocks))
+                listStreak = stored.streak
+            }
+        }
         // When the app locks (it went to the background), hide an open locked note's body again.
         viewModelScope.launch {
             session.unlocked.collect { unlocked ->
@@ -770,10 +1039,14 @@ class EditorViewModel @Inject constructor(
             editedAt = note?.lastEdited
             exists = note != null
             pinned = note?.isPinned == true
+            archived = note?.archived == true
             createdAt = note?.createdAt
             targetDate = note?.targetDate
+            listRepeat = note?.let { com.margin.app.data.ListRepeat.parse(it.resetEvery) }
+            listStreak = note?.streak ?: 0
             paper = note?.paperStyle ?: com.margin.app.data.Paper.PLAIN
             font = note?.fontStyle ?: com.margin.app.data.NoteFont.DEFAULT
+            color = note?.colorMark ?: com.margin.app.data.NoteColor.NONE
             conflictWith = note?.takeIf { it.trashedAt == null && !it.isLocked }
                 ?.let { conflictOriginal(it, repo.liveNotes().first()) }?.takeIf { !it.isLocked }
             saved = true
@@ -829,7 +1102,7 @@ class EditorViewModel @Inject constructor(
             password.fill('\u0000')
             unlocking = false
             if (body == null) {
-                unlockError = if (wasPasscode) "Wrong passcode" else "Wrong password"
+                unlockError = com.margin.app.data.UnlockLimit.message(appContext, if (wasPasscode) appContext.getString(R.string.view_models_wrong_passcode) else appContext.getString(R.string.view_models_wrong_password))
             } else {
                 unlockError = null
                 files.reveal(body)
@@ -860,7 +1133,7 @@ class EditorViewModel @Inject constructor(
     fun attach(uri: android.net.Uri, onError: (String) -> Unit) {
         if (readOnly || needsUnlock) return
         viewModelScope.launch {
-            val a = try { files.import(uri) } catch (e: Exception) { onError(e.message ?: "Couldn't attach the file"); return@launch }
+            val a = try { files.import(uri) } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_attach_the_file)); return@launch }
             insertAttachment(a)
         }
     }
@@ -874,7 +1147,7 @@ class EditorViewModel @Inject constructor(
                 val stamp = java.text.SimpleDateFormat("d MMM yyyy, HH.mm", java.util.Locale.getDefault()).format(java.util.Date())
                 insertAttachment(files.write(bytes, "pdf", "Scan $stamp.pdf", com.margin.app.data.PDF_MIME))
             } catch (e: Exception) {
-                onError(e.message ?: "Couldn't add the scan")
+                onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_add_the_scan))
             }
         }
     }
@@ -907,7 +1180,7 @@ class EditorViewModel @Inject constructor(
         val blocks = doc.toBlocks()
         viewModelScope.launch {
             repo.saveTemplate(blocks)
-            onDone(blocks.first().text.ifBlank { "Untitled" })
+            onDone(blocks.first().text.ifBlank { appContext.getString(R.string.common_untitled) })
         }
     }
 
@@ -964,7 +1237,7 @@ class EditorViewModel @Inject constructor(
                 val bytes = withContext(Dispatchers.IO) { file.readBytes() }
                 insertAttachment(files.write(bytes, "m4a", "Voice note (${clock(ms)})", "audio/mp4"))
             } catch (e: Exception) {
-                onError(e.message ?: "Couldn't save the recording")
+                onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_save_the_recording))
             } finally {
                 withContext(Dispatchers.IO) { file.delete() }
             }
@@ -977,7 +1250,7 @@ class EditorViewModel @Inject constructor(
         viewModelScope.launch {
             val a = try {
                 files.write(MarginJson.encodeToString(drawing).toByteArray(), "json", "Drawing", DRAWING_MIME)
-            } catch (e: Exception) { onError(e.message ?: "Couldn't save the drawing"); return@launch }
+            } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_save_the_drawing)); return@launch }
             if (line == null || doc.lines.getOrNull(line)?.attachment?.isDrawing != true) { insertAttachment(a); return@launch }
             doc = EditorDoc.fromBlocks(doc.toBlocks().mapIndexed { i, b -> if (i == line) b.copy(attachment = a) else b })
             changed()
@@ -1008,7 +1281,7 @@ class EditorViewModel @Inject constructor(
     fun scanPhoto(line: Int, context: android.content.Context) {
         val a = doc.lines.getOrNull(line)?.attachment?.takeIf { it.isImage } ?: return
         val file = files.file(a)
-        if (!file.exists()) { scan = ScanState.Failed("This photo isn't downloaded yet. It arrives with the next sync."); return }
+        if (!file.exists()) { scan = ScanState.Failed(appContext.getString(R.string.view_models_this_photo_isnt_downloaded_yet)); return }
         read(context, android.net.Uri.fromFile(file), afterLine = line) {}
     }
 
@@ -1018,11 +1291,11 @@ class EditorViewModel @Inject constructor(
         scanJob = viewModelScope.launch {
             scan = try {
                 val text = recognizeText(context, uri)
-                if (text.isBlank()) ScanState.Failed("No text found. Try a sharper photo with the text filling more of it.")
+                if (text.isBlank()) ScanState.Failed(appContext.getString(R.string.view_models_no_text_found_try_a))
                 else ScanState.Found(text, afterLine)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                ScanState.Failed("Couldn't read the photo: " + (e.message ?: "unknown error"))
+                ScanState.Failed(appContext.getString(R.string.view_models_couldnt_read_photo, errorText(appContext, e) ?: appContext.getString(R.string.view_models_unknown_error)))
             } finally {
                 cleanUp()
             }
@@ -1058,7 +1331,7 @@ class EditorViewModel @Inject constructor(
         if (readOnly || pdfBusy != null) return
         val a = doc.lines.firstOrNull { it.id == lineId }?.attachment?.takeIf { it.isPdf } ?: return
         val file = files.file(a)
-        if (!file.exists()) { onError("This PDF isn't downloaded yet. It arrives with the next sync."); return }
+        if (!file.exists()) { onError(appContext.getString(R.string.view_models_this_pdf_isnt_downloaded_yet)); return }
         val app = context.applicationContext
         pdfBusy = label
         viewModelScope.launch {
@@ -1083,7 +1356,7 @@ class EditorViewModel @Inject constructor(
                 }
                 onDone()
             } catch (e: Exception) {
-                onError(e.message ?: "That didn't work on this PDF.")
+                onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_that_didnt_work_on_this))
             } finally {
                 pdfBusy = null
             }
@@ -1123,7 +1396,7 @@ class EditorViewModel @Inject constructor(
             val a = remaining?.let { d ->
                 try {
                     files.write(MarginJson.encodeToString(d).toByteArray(), "json", "Drawing", DRAWING_MIME)
-                } catch (e: Exception) { onError(e.message ?: "Couldn't save the drawing"); return@launch }
+                } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_save_the_drawing)); return@launch }
             }
             val blocks = doc.toBlocks().toMutableList()
             val old = line?.takeIf { blocks.getOrNull(it)?.attachment?.isDrawing == true }
@@ -1150,7 +1423,7 @@ class EditorViewModel @Inject constructor(
                 }
                 insertAttachment(files.write(png, "png", "Graph of $label", "image/png"))
             } catch (e: Exception) {
-                onError(e.message ?: "Couldn't save the graph")
+                onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_save_the_graph))
             }
         }
     }
@@ -1174,7 +1447,7 @@ class EditorViewModel @Inject constructor(
             val size = withContext(Dispatchers.IO) { if (file.exists()) file.length() else 0L }
             when {
                 !ok || size == 0L || readOnly || locked -> withContext(Dispatchers.IO) { file.delete() }
-                size > MAX_ATTACHMENT_BYTES -> { withContext(Dispatchers.IO) { file.delete() }; onError(AttachmentFiles.TooLarge().message!!) }
+                size > MAX_ATTACHMENT_BYTES -> { withContext(Dispatchers.IO) { file.delete() }; onError(errorText(appContext, AttachmentFiles.TooLarge())!!) }
                 else -> {
                     val name = "Photo " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date())
                     insertAttachment(Attachment(file.name, name, "image/jpeg"))
@@ -1188,7 +1461,7 @@ class EditorViewModel @Inject constructor(
      * site's name when that fails. [onDone] gets null on success or the reason it failed.
      */
     fun addLink(url: String, title: String, onDone: (String?) -> Unit) {
-        val clean = normalizeUrl(url) ?: return onDone("That doesn't look like a web address.")
+        val clean = normalizeUrl(url) ?: return onDone(appContext.getString(R.string.view_models_that_doesnt_look_like_a))
         if (readOnly || needsUnlock) return onDone(null)
         viewModelScope.launch {
             try {
@@ -1196,7 +1469,7 @@ class EditorViewModel @Inject constructor(
                 insertAttachment(files.write(clean.toByteArray(), "url", name, LINK_MIME))
                 onDone(null)
             } catch (e: Exception) {
-                onDone(e.message ?: "Couldn't add the link")
+                onDone(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_add_the_link))
             }
         }
     }
@@ -1223,7 +1496,7 @@ class EditorViewModel @Inject constructor(
         if (readOnly) return
         val id = doc.lines[line].id
         viewModelScope.launch {
-            val turned = try { files.rotated(a) } catch (e: Exception) { onError(e.message ?: "Couldn't rotate the photo"); return@launch }
+            val turned = try { files.rotated(a) } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_rotate_the_photo)); return@launch }
             // The line may have moved while rotating; find it again by id.
             val at = doc.lines.indexOfFirst { it.id == id && it.attachment == a }
             if (at < 0) return@launch
@@ -1239,7 +1512,7 @@ class EditorViewModel @Inject constructor(
         if (edit.isIdentity) { onDone(); return }
         val id = doc.lines[line].id
         viewModelScope.launch {
-            val done = try { files.edited(a, edit) } catch (e: Exception) { onError(e.message ?: "Couldn't save the photo"); return@launch }
+            val done = try { files.edited(a, edit) } catch (e: Exception) { onError(errorText(appContext, e) ?: appContext.getString(R.string.view_models_couldnt_save_the_photo)); return@launch }
             val at = doc.lines.indexOfFirst { it.id == id && it.attachment == a }
             if (at >= 0) {
                 doc = EditorDoc.fromBlocks(doc.toBlocks().mapIndexed { i, b -> if (i == at) b.copy(attachment = done) else b })
@@ -1524,6 +1797,8 @@ class EditorViewModel @Inject constructor(
 
     /** The id of the line ticked a moment ago, while its strike-through draws on; null once it has. */
     var justChecked by mutableStateOf<String?>(null)
+    /** True while a checklist folds away its ticked tasks; for this visit only. */
+    var hideTicked by mutableStateOf(false)
 
     private val sortLines = mutableSetOf<Int>()
     private var sortJob: kotlinx.coroutines.Job? = null
@@ -1620,11 +1895,26 @@ class EditorViewModel @Inject constructor(
         afterSave { repo.setTargetDate(it, day) }
     }
 
+    /** Makes the checklist untick itself each round of [repeat] (null: never); a new note is saved first. */
+    fun changeListRepeat(repeat: com.margin.app.data.ListRepeat?) {
+        if (readOnly || repeat == listRepeat) return // the same again keeps its streak
+        listRepeat = repeat
+        listStreak = 0
+        afterSave { repo.setListRepeat(it, repeat) }
+    }
+
     /** Sets the paper behind the note's text; a new note is saved first. */
     fun changePaper(p: com.margin.app.data.Paper) {
         if (readOnly) return
         paper = p
         afterSave { repo.setPaper(it, p) }
+    }
+
+    /** Marks the note with a colour; a new note is saved first. Works in read mode too, like pinning. */
+    fun changeColor(c: com.margin.app.data.NoteColor) {
+        if (trashed) return
+        color = c
+        afterSave { repo.setColor(it, c) }
     }
 
     /** Sets the typeface of the note's text; a new note is saved first. */
@@ -1642,6 +1932,9 @@ class EditorViewModel @Inject constructor(
         viewOnly = on
         afterSave { repo.setViewOnly(it, on) }
     }
+
+    /** Archives the note (it leaves every list but Archive) or brings it back. */
+    fun toggleArchive() { if (!trashed) { archived = !archived; pinned = pinned && !archived; val on = archived; afterSave { repo.setArchived(listOf(it), on) } } }
 
     fun togglePin() { if (!trashed) afterSave { repo.togglePin(it); pinned = repo.getNote(it)?.isPinned == true } }
 
@@ -1687,6 +1980,8 @@ class EditorViewModel @Inject constructor(
             val params = lockParams ?: return null
             (session.cachedKey(params) ?: return null) to params
         } else null
+        // Words written today, for the daily goal: the change since the last save, net.
+        writing.record(com.margin.app.data.noteWords(current) - com.margin.app.data.noteWords(lastSaved))
         lastSaved = current
         isNew = false
         val id = noteId
@@ -1702,8 +1997,9 @@ class EditorViewModel @Inject constructor(
             if (swapped.isNotEmpty() && id == noteId) swapAttachments(swapped, current, blocks)
             val cipher = sealWith?.let { (key, params) -> NoteCrypto.seal(blocks.drop(1), key, params).also { if (id == noteId) sealed = it } }
             repo.saveNote(id, folder, blocks, cipher)
-            // The readable copies of files that are now encrypted go at once, unless another note still uses them.
-            if (swapped.isNotEmpty() && sealWith != null) files.dropUnused(swapped.keys, repo.attachmentsInUse())
+            // The readable copies of files that are now encrypted go at once, unless another note still uses them,
+            // and so does the text read from them for search.
+            if (swapped.isNotEmpty() && sealWith != null) repo.attachmentsInUse().let { inUse -> files.dropUnused(swapped.keys, inUse); repo.forgetAttachmentText(swapped.keys - inUse) }
             saved = true; exists = true; if (createdAt == null) createdAt = System.currentTimeMillis()
         }
     }
@@ -1744,12 +2040,12 @@ class SettingsViewModel @Inject constructor(
             val message = try {
                 val (notes, folders) = repo.everything()
                 val count = withContext(Dispatchers.IO) {
-                    val out = context.contentResolver.openOutputStream(uri) ?: throw java.io.IOException("Couldn't open the file")
+                    val out = context.contentResolver.openOutputStream(uri) ?: throw java.io.IOException(context.getString(R.string.view_models_couldnt_open_the_file))
                     out.use { writeMarkdownZip(it, notes, folders) { a -> files.file(a) } }
                 }
-                "Exported $count ${if (count == 1) "note" else "notes"}."
+                context.resources.getQuantityString(R.plurals.view_models_exported_notes, count, count)
             } catch (e: Exception) {
-                "Export failed: ${e.message ?: "unknown error"}"
+                context.getString(R.string.view_models_export_failed, errorText(context, e) ?: context.getString(R.string.view_models_unknown_error))
             }
             onDone(message)
         }
@@ -1771,14 +2067,14 @@ class SettingsViewModel @Inject constructor(
                 val count = repo.importNotes(read.notes)
                 val roots = read.notes.mapNotNull { it.folder.firstOrNull() }.distinct()
                 if (count == 0) {
-                    "No notes found. Margin can import a Google Keep Takeout zip, Evernote .enex files, and Markdown, text or HTML files."
+                    context.getString(R.string.view_models_no_notes_found_margin_can)
                 } else buildString {
-                    append("Imported $count ${if (count == 1) "note" else "notes"} into ${roots.joinToString(" and ") { "“$it”" }}.")
-                    if (read.failed > 0) append(" ${read.failed} ${if (read.failed == 1) "file" else "files"} couldn't be read.")
-                    if (read.missing > 0) append(" ${read.missing} ${if (read.missing == 1) "attachment was" else "attachments were"} missing or over 20 MB.")
+                    append(context.resources.getQuantityString(R.plurals.view_models_imported_notes, count, count, roots.joinToString(context.getString(R.string.view_models_and_separator)) { context.getString(R.string.view_models_quoted_name, it) }))
+                    if (read.failed > 0) append(" ").append(context.resources.getQuantityString(R.plurals.view_models_files_unreadable, read.failed, read.failed))
+                    if (read.missing > 0) append(" ").append(context.resources.getQuantityString(R.plurals.view_models_attachments_missing, read.missing, read.missing))
                 }
             } catch (e: Exception) {
-                "Import failed: ${e.message ?: "unknown error"}"
+                context.getString(R.string.view_models_import_failed, errorText(context, e) ?: context.getString(R.string.view_models_unknown_error))
             }
             importing = false
             onDone(message)
@@ -1873,7 +2169,7 @@ class SettingsViewModel @Inject constructor(
             session.startWith(newPassword)
             appLock.passcodeChanged(newPassword)
             appPrefs.setFingerprint(null)
-            message = if (skipped == 0) "Passcode changed" else "Passcode changed. $skipped note(s) use a different password and weren't changed."
+            message = if (skipped == 0) context.getString(R.string.view_models_passcode_changed) else context.resources.getQuantityString(R.plurals.view_models_passcode_changed_skipped, skipped, skipped)
         } finally {
             newPassword.fill('\u0000')
             busy = false
@@ -1883,6 +2179,10 @@ class SettingsViewModel @Inject constructor(
     fun passwordForFingerprint(): CharArray? = session.passwordCopy()
     /** Unlocked with an old password: time to switch to a passcode. */
     val legacyPassword = session.legacy
+    val passphrase = session.passphrase
+    /** Whether any password is saved, so a 6-digit passcode isn't enough any more. */
+    val hasLogins: StateFlow<Boolean> = repo.liveNotes().map { n -> n.any { isLogin(it) && it.cipher != null } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
     fun setFingerprint(blob: String?) = appPrefs.setFingerprint(blob)
     val autoSortChecked = appPrefs.autoSortChecked
     val toggles = appPrefs.toggles
@@ -1911,19 +2211,23 @@ class SettingsViewModel @Inject constructor(
     fun signOut() = viewModelScope.launch {
         runCatching { signOutOfGoogle(context) }
         prefs.clearAccount()
-        message = "Signed out. Your notes stay on this device."
+        message = context.getString(R.string.view_models_signed_out_your_notes_stay)
     }
 
-    fun syncNow() = run { val r = sync.sync(); message = "Synced: ${r.uploaded} sent, ${r.downloaded} received" }
+    fun syncNow() = run {
+        val r = sync.sync()
+        message = context.getString(R.string.view_models_synced, r.uploaded.toString(), r.downloaded.toString()) +
+            if (r.conflicts > 0) context.resources.getQuantityString(R.plurals.view_models_synced_conflicts, r.conflicts, r.conflicts) else ""
+    }
 
-    fun restore() = run { sync.restore(); message = "Restored from your Google account" }
+    fun restore() = run { sync.restore(); message = context.getString(R.string.view_models_restored_from_your_google_account) }
 
     fun onConsentResult(data: Intent?) {
         consentIntent = null
         val action = pendingAction
         pendingAction = null
         val granted = runCatching { authorizer.resultFromIntent(data).accessToken != null }.getOrDefault(false)
-        if (granted && action != null) run(action) else message = "Google Drive access was not granted"
+        if (granted && action != null) run(action) else message = context.getString(R.string.view_models_google_drive_access_was_not)
     }
 
     private fun run(action: suspend () -> Unit) {
@@ -1936,7 +2240,7 @@ class SettingsViewModel @Inject constructor(
                 pendingAction = action
                 consentIntent = e.pendingIntent
             } catch (e: Exception) {
-                message = e.message ?: "Sync failed"
+                message = errorText(context, e) ?: context.getString(R.string.view_models_sync_failed)
             } finally {
                 busy = false
             }

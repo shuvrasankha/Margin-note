@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -108,6 +109,8 @@ import androidx.fragment.app.FragmentActivity
 import com.margin.app.data.BlockType
 import com.margin.app.data.Drawing
 import com.margin.app.data.MAX_INDENT
+import com.margin.app.data.MIN_PASSPHRASE
+import com.margin.app.data.isPasscode
 import com.margin.app.data.Mark
 import com.margin.app.data.NoteEntity
 import com.margin.app.data.NoteTemplate
@@ -132,6 +135,9 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 
 // ---------- Editor ----------
 
@@ -153,8 +159,12 @@ fun EditorScreen(
     var moving by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var formatting by remember { mutableStateOf(false) }
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     var attaching by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
+    var stats by remember { mutableStateOf(false) }
+    var sortingList by remember { mutableStateOf(false) }
+    var dueFor by remember { mutableStateOf<Int?>(null) }
     var history by remember { mutableStateOf(false) }
     var linked by remember { mutableStateOf(false) }
     var asking by remember { mutableStateOf(false) }
@@ -213,17 +223,52 @@ fun EditorScreen(
     // The notification permission is asked with the microphone; without it recording still works, just with no notification.
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if (result[android.Manifest.permission.RECORD_AUDIO] == true) recording = true
-        else Toast.makeText(context, "Margin needs the microphone to record voice notes.", Toast.LENGTH_LONG).show()
+        else Toast.makeText(context, context.getString(R.string.editor_margin_needs_the_microphone_to), Toast.LENGTH_LONG).show()
     }
     // Reminders: set from More, shown under the date line, rung as a notification.
     val reminderAt by vm.reminderAt.collectAsState()
     val reminderRepeat by vm.reminderRepeat.collectAsState()
+    val placeReminder by vm.placeReminder.collectAsState()
     var reminding by remember { mutableStateOf(false) }
+    var placing by remember { mutableStateOf(false) }
+    val placeAccess = rememberPlaceAccess()
+    placeAccess.Dialogs()
     /** The to-do target date picker is open. */
     var pickingTarget by remember { mutableStateOf(false) }
+    var pickingRepeat by remember { mutableStateOf(false) }
+    var movingTasks by remember { mutableStateOf(false) }
+    var sortingAisles by remember { mutableStateOf(false) }
+    if (sortingAisles) {
+        val items = remember { vm.doc.toBlocks().filter { it.type == com.margin.app.data.BlockType.CHECK && !it.checked && it.attachment == null && it.text.isNotBlank() }.map { it.text.trim() } }
+        AisleSortDialog(
+            items, remember { vm.aisleChoices() }, onChoose = vm::chooseAisle,
+            onSort = { sortingAisles = false; vm.sortByAisle(); toast(context.getString(R.string.editor_sorted_by_aisle_undo_puts)) },
+            onDismiss = { sortingAisles = false },
+        )
+    }
+    if (movingTasks) {
+        val all by vm.linkTargets.collectAsState()
+        val tasks = remember { vm.doc.toBlocks().withIndex().filter { it.value.type == com.margin.app.data.BlockType.CHECK && it.value.attachment == null && it.value.table == null }.map { it.index to it.value } }
+        MoveTasksDialog(
+            tasks, remember(all) { com.margin.app.data.ListWidgetData.lists(all).filter { it.id != vm.noteId } }, vm.canMoveTasks,
+            onDone = { lines, to, title, copy ->
+                movingTasks = false
+                vm.moveTasks(lines, to, title, copy) { name, gained ->
+                    val n = lines.size
+                    toast(
+                        context.resources.getQuantityString(if (gained == 0) R.plurals.editor_already_has else if (copy) R.plurals.editor_copied_items else R.plurals.editor_moved_items, n, n, name),
+                    )
+                }
+            },
+            onDismiss = { movingTasks = false },
+        )
+    }
+    if (pickingRepeat) ListRepeatDialog(vm.listRepeat, onPick = { pickingRepeat = false; vm.changeListRepeat(it) }, onDismiss = { pickingRepeat = false })
     var pickingPaper by remember { mutableStateOf(false) }
     if (pickingPaper) PaperDialog(vm.paper, onPick = { pickingPaper = false; vm.changePaper(it) }, onDismiss = { pickingPaper = false })
     var pickingFont by remember { mutableStateOf(false) }
+    var pickingColor by remember { mutableStateOf(false) }
+    if (pickingColor) ColorDialog(vm.color, onPick = { pickingColor = false; vm.changeColor(it) }, onDismiss = { pickingColor = false })
     if (pickingFont) FontDialog(vm.font, onPick = { pickingFont = false; vm.changeFont(it) }, onDismiss = { pickingFont = false })
     if (pickingTarget) {
         TargetDateDialog(
@@ -238,10 +283,10 @@ fun EditorScreen(
     fun askForExactAlarms() {
         val pkg = android.net.Uri.parse("package:${context.packageName}")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !vm.remindersOnTime) {
-            toast("To ring on time, allow Margin to set alarms.")
+            toast(context.getString(R.string.editor_to_ring_on_time_allow))
             runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg)) }
         } else if (Build.VERSION.SDK_INT >= 34 && vm.shouldAskFullScreen()) {
-            toast("To show reminders full screen on a locked phone, allow Margin here.")
+            toast(context.getString(R.string.editor_to_show_reminders_full_screen))
             runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg)) }
         }
     }
@@ -249,11 +294,16 @@ fun EditorScreen(
     var pendingSave by remember { mutableStateOf<(suspend () -> Unit)?>(null) }
     val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val save = pendingSave; pendingSave = null
-        if (granted && save != null) scope.launch { save() } else if (!granted) toast("Margin needs storage access to save to Photos.")
+        if (granted && save != null) scope.launch { save() } else if (!granted) toast(context.getString(R.string.editor_margin_needs_storage_access_to))
     }
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) toast("Reminder set, but notifications are off for Margin, so it won't show. Turn them on in the phone's settings.")
+        if (!granted) toast(context.getString(R.string.editor_reminder_set_but_notifications_are))
         else askForExactAlarms()
+    }
+    val inShade by vm.inShade.collectAsState()
+    val shadePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) { vm.pinToShade(); toast(context.getString(R.string.editor_pinned_to_notifications)) }
+        else toast(context.getString(R.string.editor_notifications_are_off_for_margin))
     }
     val reminderScope = rememberCoroutineScope()
     if (reminding) {
@@ -280,8 +330,25 @@ fun EditorScreen(
                 reminderScope.launch(kotlinx.coroutines.Dispatchers.IO) { com.margin.app.data.CalendarEvents.remove(context, id) }
             },
             onDismiss = { reminding = false },
+            place = placeReminder, onPlace = { reminding = false; placing = true },
         )
     }
+    if (placing) PlaceReminderDialog(
+        current = placeReminder, recent = remember { vm.recentPlaces() },
+        onPick = { place ->
+            placing = false
+            vm.setPlace(place)
+            // Then location in the background, said why first; the place is kept either way.
+            placeAccess.ensure(background = true) { ok ->
+                if (ok) vm.watchPlaces() else placeNotWatched(context)
+                if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                    != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        },
+        onRemove = { placing = false; vm.clearPlace() },
+        onDismiss = { placing = false },
+    )
     drawing?.let { (line, d) ->
         val onError = { msg: String -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
         DrawingScreen(
@@ -292,34 +359,51 @@ fun EditorScreen(
     }
     val folderName = folders.firstOrNull { it.folder.id == vm.folderId }?.folder?.name
 
+    // A phone on its side with the keyboard up has no room for the top bar; the toolbar still hides the keyboard.
+    val cramped = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480 &&
+        WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var confirmForever by remember { mutableStateOf(false) }
+    if (confirmForever) MarginDialog(
+        onDismissRequest = { confirmForever = false },
+        title = { Text(androidx.compose.ui.res.pluralStringResource(R.plurals.notes_delete_forever_title, 1, 1)) },
+        text = { Text(stringResource(R.string.notes_this_cant_be_undone)) },
+        confirmButton = { TextButton(onClick = { confirmForever = false; vm.deleteForever(onBack) }) { Text(stringResource(R.string.common_delete), color = jc.danger) } },
+        dismissButton = { TextButton(onClick = { confirmForever = false }) { Text(stringResource(R.string.common_cancel)) } },
+    )
     Scaffold(
-        topBar = { Column(Modifier.background(jc.bg)) {
-            NavBar(backLabel, onBack) {
+        containerColor = jc.bg,
+        topBar = { Column(Modifier.background(jc.bg).then(if (cramped) Modifier.statusBarsPadding() else Modifier)) {
+            if (!cramped) NavBar(backLabel, onBack, color = jc.bg) {
                 if (vm.trashed) {
-                    TextAction("Recover", { vm.recover(onBack) })
-                    TextAction("Delete", { vm.deleteForever(onBack) }, color = jc.danger)
+                    TextAction(stringResource(R.string.editor_recover), { vm.recover(onBack) })
+                    TextAction(stringResource(R.string.common_delete), { confirmForever = true }, color = jc.danger)
                 } else if (vm.loaded) {
-                    if (vm.canUndo && !vm.needsUnlock && !vm.viewOnly) IconAction(Ico.UNDO, "Undo", vm::undo)
+                    if (vm.canUndo && !vm.needsUnlock && !vm.viewOnly) IconAction(Ico.UNDO, stringResource(R.string.common_undo), vm::undo, color = jc.ink)
                     // Lock editing: a closed lock while the note is view-only, an open one while it can be changed.
                     if ((vm.exists || vm.doc.text.isNotBlank()) && !vm.needsUnlock) IconAction(
                         if (vm.viewOnly) Ico.LOCK else Ico.LOCK_OPEN,
-                        if (vm.viewOnly) "Editing locked. Unlock editing" else "Lock editing",
+                        if (vm.viewOnly) stringResource(R.string.editor_editing_locked_unlock_editing) else stringResource(R.string.editor_lock_editing),
                         { focusManager.clearFocus(); vm.toggleViewOnly() },
+                        // Locked: amber on a soft circle, so the state shows at a glance.
+                        color = if (vm.viewOnly) jc.accent else jc.ink, soft = vm.viewOnly,
                     )
-                    if (vm.focused && !vm.viewOnly) TextAction("Done", { focusManager.clearFocus() }, bold = true)
+                    // A filled pill, so finishing an edit reads as the main action in the bar.
+                    if (vm.focused && !vm.viewOnly) Box(
+                        Modifier.padding(start = 4.dp).height(36.dp).clip(JShape.pill).background(jc.accent)
+                            .clickable(role = Role.Button) { focusManager.clearFocus() }.padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(stringResource(R.string.common_done), style = JType.item.copy(fontSize = 15.sp), color = jc.bg, fontWeight = FontWeight.SemiBold) }
                     // Reminder: amber while one is set.
                     if (vm.canRemind) IconAction(
-                        Ico.ALARM, reminderAt?.let { "Reminder, ${reminderLabel(context, it, reminderRepeat)}. Change it" } ?: "Remind me",
-                        { reminding = true }, fill = reminderAt != null,
+                        Ico.ALARM, reminderAt?.let { stringResource(R.string.editor_reminder_change_it, reminderLabel(context, it, reminderRepeat)) }
+                            ?: placeReminder?.let { stringResource(R.string.editor_reminder_change_it, it.phraseText(context)) } ?: stringResource(R.string.editor_remind_me),
+                        { reminding = true }, fill = reminderAt != null || placeReminder != null,
+                        color = if (reminderAt != null || placeReminder != null) jc.accent else jc.ink,
                     )
-                    if (!vm.needsUnlock) IconAction(Ico.SHARE, "Share", { sharing = !sharing; formatting = false; attaching = false })
+                    if (!vm.needsUnlock) IconAction(Ico.SHARE, stringResource(R.string.common_share), { sharing = !sharing; formatting = false; attaching = false }, color = jc.ink)
                     Box {
-                        IconAction(Ico.MORE, "More", { menu = true }, fill = true)
-                        DropdownMenu(
-                            expanded = menu, onDismissRequest = { menu = false },
-                            modifier = Modifier.width(262.dp), shape = JShape.md, containerColor = jc.bg,
-                            border = BorderStroke(1.dp, jc.line), shadowElevation = 12.dp,
-                        ) {
+                        IconAction(Ico.MORE, stringResource(R.string.common_more), { menu = true }, fill = true, color = jc.ink)
+                        JMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             val lockTile: (() -> Unit)? = when {
                                 !vm.locked -> {
                                     {
@@ -333,11 +417,14 @@ fun EditorScreen(
                             // Pin, Lock and Share as tiles across the top, then the rest as rows.
                             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                                 listOfNotNull(
-                                    if (vm.exists) Triple(if (vm.pinned) "Unpin" else "Pin", Ico.PIN, vm::togglePin) else null,
-                                    lockTile?.let { Triple(if (vm.locked) "Remove lock" else "Lock", Ico.LOCK, it) },
-                                    if (!vm.needsUnlock) Triple("Share", Ico.SHARE) { sharing = true; formatting = false; attaching = false } else null,
+                                    if (vm.exists) Triple(if (vm.pinned) stringResource(R.string.common_unpin) else stringResource(R.string.common_pin), Ico.PIN, vm::togglePin) else null,
+                                    lockTile?.let { Triple(if (vm.locked) stringResource(R.string.editor_remove_lock) else stringResource(R.string.editor_lock), Ico.LOCK, it) },
+                                    if (vm.canRemind) Triple(stringResource(R.string.editor_remind), Ico.ALARM) { reminding = true } else null,
+                                    if (!vm.needsUnlock) Triple(stringResource(R.string.common_share), Ico.SHARE) { sharing = true; formatting = false; attaching = false } else null,
                                 ).forEachIndexed { i, (label, icon, onClick) ->
-                                    if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(jc.line))
+                                    if (i > 0) Box(
+                                        Modifier.width(1.dp).fillMaxHeight().background(jc.line),
+                                    )
                                     Column(
                                         Modifier.weight(1f).height(68.dp).clickable(role = Role.Button) { menu = false; onClick() },
                                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
@@ -355,24 +442,46 @@ fun EditorScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     val c = if (danger) jc.danger else jc.ink
+                                    JIcon(icon, if (danger) jc.danger else jc.muted, size = 18.dp, stroke = 1.8f)
+                                    Spacer(Modifier.width(12.dp))
                                     Text(label, Modifier.weight(1f), style = JType.item, color = c)
-                                    JIcon(icon, c, size = 18.dp, stroke = 1.8f)
                                 }
                             }
                             var first = true
-                            if (!vm.needsUnlock) { item("Find in note", Ico.SEARCH, gap = true) { find = ""; findAt = 0; focusManager.clearFocus() }; first = false }
-                            item("Move to folder…", Ico.MOVE, gap = first) { moving = true }
-                            if (vm.canRemind) item(if (reminderAt != null) "Change reminder…" else "Remind me…", Ico.ALARM) { reminding = true }
-                            if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) "Change target date…" else "Set target date…", ICON_TARGET) { pickingTarget = true }
-                            if (!vm.readOnly && !vm.needsUnlock) item("Paper · ${vm.paper.label}…", Ico.GRID) { pickingPaper = true }
-                            if (vm.exists && !vm.needsUnlock) item("Duplicate", Ico.COPY) { vm.duplicate(onOpenNote) }
-                            if (vm.canSaveTemplate) item("Save as template", ICON_TEMPLATE) { vm.saveAsTemplate { toast("Saved as template “$it”") } }
+                            if (!vm.needsUnlock) { item(stringResource(R.string.editor_find_in_note), Ico.SEARCH, gap = true) { find = ""; findAt = 0; focusManager.clearFocus() }; first = false }
+                            item(stringResource(R.string.editor_move_to_folder), Ico.MOVE, gap = first) { moving = true }
+                            if (!vm.readOnly && !vm.needsUnlock) item(if (vm.targetDate != null) stringResource(R.string.editor_change_target_date) else stringResource(R.string.editor_set_target_date), ICON_TARGET) { pickingTarget = true }
+                            if (vm.canSortAisles && todoCount(vm.doc.toBlocks()).total > 1) item(stringResource(R.string.editor_sort_list), Ico.SORT) { sortingList = true }
+                            if (vm.canSortAisles && todoCount(vm.doc.toBlocks()).total > 1) item(stringResource(R.string.editor_sort_by_aisle), ICON_AISLE) { sortingAisles = true }
+                            if (vm.canSortAisles && vm.tickedTasks > 0) item(stringResource(R.string.editor_clear_ticked_items), Ico.CHECK) {
+                                val n = vm.tickedTasks
+                                vm.clearTicked()
+                                toast(context.resources.getQuantityString(R.plurals.editor_removed_ticked, n, n))
+                            }
+                            if (vm.canCopyTasks && todoCount(vm.doc.toBlocks()).total > 0) item(if (vm.canMoveTasks) stringResource(R.string.editor_move_items) else stringResource(R.string.editor_copy_items), Ico.MOVE) { movingTasks = true }
+                            if (inShade) item(stringResource(R.string.editor_unpin_from_notifications), Ico.PIN) { vm.unpinFromShade(); toast(context.getString(R.string.editor_unpinned_from_notifications)) }
+                            else if (vm.canRemind) item(stringResource(R.string.editor_pin_to_notifications), Ico.PIN) {
+                                if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+                                    != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) shadePermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                else { vm.pinToShade(); toast(context.getString(R.string.editor_pinned_to_notifications)) }
+                            }
+                            if (!vm.readOnly && !vm.needsUnlock) item(stringResource(R.string.editor_paper_item, stringResource(vm.paper.labelRes)), Ico.GRID) { pickingPaper = true }
+                            if (vm.exists && !vm.needsUnlock) item(stringResource(R.string.editor_duplicate), Ico.COPY) { vm.duplicate(onOpenNote) }
+                            if (vm.canSaveTemplate) item(stringResource(R.string.editor_save_as_template), ICON_TEMPLATE) { vm.saveAsTemplate { toast(context.getString(R.string.editor_saved_as_template, it)) } }
                             // Locked notes are never sent anywhere.
-                            if (!vm.locked && !vm.needsUnlock) item("Ask AI…", Ico.SPARKLE) { asking = true }
-                            item("Linked notes · ${vm.linkedNotes(targets).size}", Ico.LINK, gap = true) { linked = true }
-                            item("Note info", Ico.INFO) { info = true }
-                            if (vm.exists && !vm.locked && !vm.needsUnlock) item("Version history", ICON_HISTORY) { history = true }
-                            item("Delete", Ico.TRASH, gap = true, danger = true) { vm.delete(onBack) }
+                            if (!vm.locked && !vm.needsUnlock) item(stringResource(R.string.editor_ask_ai), Ico.SPARKLE) { asking = true }
+                            item(stringResource(R.string.editor_linked_notes, vm.linkedNotes(targets).size), Ico.LINK, gap = true) { linked = true }
+                            item(stringResource(R.string.editor_note_info), Ico.INFO) { info = true }
+                            if (!vm.needsUnlock) item(stringResource(R.string.editor_writing_stats), Ico.PEN) { stats = true }
+                            if (vm.exists && !vm.locked && !vm.needsUnlock) item(stringResource(R.string.editor_version_history), ICON_HISTORY) { history = true }
+                            if (vm.exists) item(if (vm.archived) stringResource(R.string.common_unarchive) else stringResource(R.string.common_archive), Ico.ARCHIVE, gap = true) {
+                                val archiving = !vm.archived
+                                vm.toggleArchive()
+                                toast(if (archiving) context.getString(R.string.editor_archived_find_it_in_library) else context.getString(R.string.editor_unarchived))
+                                if (archiving) onBack()
+                            }
+                            item(stringResource(R.string.common_delete), Ico.TRASH, gap = !vm.exists, danger = true) { vm.delete(onBack) }
                         }
                     }
                 }
@@ -391,7 +500,7 @@ fun EditorScreen(
                     onReplaceAll = {
                         val n = matches.size
                         vm.replaceRanges(matches, replacement); findAt = 0
-                        toast(if (n == 1) "Replaced 1 match." else "Replaced $n matches.")
+                        toast(context.resources.getQuantityString(R.plurals.editor_replaced_matches, n, n))
                     },
                 )
             }
@@ -406,7 +515,7 @@ fun EditorScreen(
                     if (carding) {
                         val blocks = remember { vm.doc.toBlocks() }
                         val date = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.LONG).format(java.util.Date(vm.editedAt ?: System.currentTimeMillis())) }
-                        val title = remember { blocks.first().text.trim().ifEmpty { "Note" } }
+                        val title = remember { blocks.first().text.trim().ifEmpty { context.getString(R.string.editor_note) } }
                         // The note's first photo (not a drawing or scan page's PDF), if its file is here to read.
                         val photo = remember { blocks.firstNotNullOfOrNull { b -> b.attachment?.takeIf { it.isImage }?.let(vm.files::file)?.takeIf { it.exists() } } }
                         CardDialog(blocks, date, photo, onDismiss = { carding = false }, onSave = { options ->
@@ -428,7 +537,7 @@ fun EditorScreen(
                                                 .also { bmp.recycle() }
                                         }
                                     }.getOrNull()
-                                } ?: return@launch toast("Couldn't make the image.")
+                                } ?: return@launch toast(context.getString(R.string.editor_couldnt_make_the_image))
                                 context.startActivity(Intent.createChooser(vm.files.sendIntent(files, "image/png", title), null))
                             }
                         }
@@ -443,7 +552,7 @@ fun EditorScreen(
                             context.getSystemService(android.content.ClipboardManager::class.java)
                                 .setPrimaryClip(android.content.ClipData.newPlainText(vm.doc.texts.first().trim(), shareText(vm.doc.toBlocks())))
                             // Android 13+ shows its own copied notice.
-                            if (android.os.Build.VERSION.SDK_INT < 33) toast("Copied")
+                            if (android.os.Build.VERSION.SDK_INT < 33) toast(context.getString(R.string.editor_copied))
                         },
                         onText = {
                             sharing = false
@@ -455,8 +564,8 @@ fun EditorScreen(
                         onFile = { pdf, print ->
                             sharing = false
                             scope.launch {
-                                val file = vm.exportFile(pdf) ?: return@launch toast("Couldn't make the file.")
-                                val title = vm.doc.texts.first().trim().ifEmpty { "Note" }
+                                val file = vm.exportFile(pdf) ?: return@launch toast(context.getString(R.string.editor_couldnt_make_the_file))
+                                val title = vm.doc.texts.first().trim().ifEmpty { context.getString(R.string.editor_note) }
                                 if (print) {
                                     val printer = context.getSystemService(android.content.Context.PRINT_SERVICE) as android.print.PrintManager
                                     printer.print(title, PdfFilePrintAdapter(file, file.name), null)
@@ -474,7 +583,7 @@ fun EditorScreen(
                     val docScanner = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
                         if (r.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
                         val pdf = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(r.data)?.pdf
-                            ?: return@rememberLauncherForActivityResult toast("The scan didn't come back. Try again.")
+                            ?: return@rememberLauncherForActivityResult toast(context.getString(R.string.editor_the_scan_didnt_come_back))
                         vm.addScan(context, pdf.uri) { msg -> Toast.makeText(context, msg, Toast.LENGTH_LONG).show() }
                     }
                     fun startVoice() {
@@ -484,7 +593,7 @@ fun EditorScreen(
                         else micPermission.launch(wanted.toTypedArray())
                     }
                     fun startDocScan() {
-                        val activity = context.findActivity() ?: return toast("Couldn't open the scanner.")
+                        val activity = context.findActivity() ?: return toast(context.getString(R.string.editor_couldnt_open_the_scanner))
                         val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
                             .setGalleryImportAllowed(true)
                             .setResultFormats(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
@@ -492,7 +601,7 @@ fun EditorScreen(
                             .build()
                         com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
                             .addOnSuccessListener { docScanner.launch(androidx.activity.result.IntentSenderRequest.Builder(it).build()) }
-                            .addOnFailureListener { toast("The document scanner isn't available on this phone. It needs Google Play services.") }
+                            .addOnFailureListener { toast(context.getString(R.string.editor_the_document_scanner_isnt_available)) }
                     }
                     // An app shortcut ("Scan document", "Voice note") opened this new note: start it once the note has loaded.
                     LaunchedEffect(vm.startAction, vm.loaded) {
@@ -513,7 +622,7 @@ fun EditorScreen(
                             attaching = false
                             try { camera.launch(vm.photoTarget()) } catch (_: android.content.ActivityNotFoundException) {
                                 vm.photoTaken(false) {}
-                                toast("No camera app on this phone.")
+                                toast(context.getString(R.string.editor_no_camera_app_on_this))
                             }
                         },
                         onLink = { attaching = false; addingLink = true },
@@ -522,23 +631,27 @@ fun EditorScreen(
                         saved = savedTemplates,
                         onSaved = { attaching = false; vm.insertSavedTemplate(it) },
                         onEditSaved = { attaching = false; onOpenNote(it) },
-                        onDeleteSaved = { vm.deleteTemplate(it); toast("Template moved to Recently Deleted") },
+                        onDeleteSaved = { vm.deleteTemplate(it); toast(context.getString(R.string.editor_template_moved_to_recently_deleted)) },
                         onPdf = { attaching = false; picker.launch(arrayOf(com.margin.app.data.PDF_MIME)) },
                         onScanDoc = { attaching = false; startDocScan() },
                         onScan = {
                             attaching = false
                             try { scanCamera.launch(vm.scanTarget()) } catch (_: android.content.ActivityNotFoundException) {
                                 vm.scanTaken(false, context)
-                                toast("No camera app on this phone.")
+                                toast(context.getString(R.string.editor_no_camera_app_on_this))
                             }
                         },
                     )
+                    val showCount by vm.writing.showCount.collectAsState()
+                    if (!formatting && !attaching && !sharing) TaskBar(vm) { dueFor = it }
+                    if (showCount && !formatting && !attaching && !sharing) WordCountBar(vm) { stats = true }
                     EditorToolbar(
                         vm, formatting, attaching,
-                        onFormat = { formatting = !formatting; attaching = false; sharing = false }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
+                        onFormat = { formatting = !formatting; attaching = false; sharing = false; if (formatting) keyboard?.hide() }, onHideKeyboard = { vm.mathKeys = false; focusManager.clearFocus() },
                         onAttach = { attaching = !attaching; formatting = false; sharing = false }, onDraw = { drawing = null to null },
                         onNew = { formatting = false; attaching = false; onNewNote(vm.folderId) },
                         onFont = { formatting = false; attaching = false; sharing = false; pickingFont = true },
+                        onColor = { formatting = false; attaching = false; sharing = false; pickingColor = true },
                         onAi = if (!vm.locked && !vm.needsUnlock) ({ formatting = false; attaching = false; sharing = false; asking = true }) else null,
                     )
                     if (vm.mathKeys && vm.focused) MathKeyboard(vm.value, vm::onValueChange, onLetters = { vm.mathKeys = false })
@@ -548,44 +661,51 @@ fun EditorScreen(
     ) { padding ->
         if (!vm.loaded) return@Scaffold
         // No imePadding here: the bottom bar already sits above the keyboard and Scaffold's padding includes it.
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(scroll).padding(horizontal = 24.dp, vertical = 12.dp)) {
+        Column(
+            Modifier.padding(padding).fillMaxSize().verticalScroll(scroll)
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+        ) {
             if (vm.needsUnlock) {
-                LockedNote(vm, fingerprint, listOfNotNull(vm.editedAt?.let { "Edited " + fullTime(context, it) }, folderName).joinToString(" · "))
+                LockedNote(vm, fingerprint, listOfNotNull(vm.editedAt?.let { stringResource(R.string.editor_edited_time, fullTime(context, it)) }, folderName).joinToString(" · "))
             } else {
                 // "Saved" once this visit's edits are written.
+                val todo = remember(vm.doc) { todoCount(vm.doc.toBlocks()) }
+                // When and where, then the lock: a to-do list can still be ticked off; only its wording is locked.
                 Text(
-                    listOfNotNull(vm.editedAt?.let { fullTime(context, it) } ?: "Now", folderName, "Saved".takeIf { vm.canUndo && vm.saved && vm.exists })
-                        .joinToString(" · "),
-                    Modifier.padding(bottom = 10.dp), style = JType.small, color = jc.muted,
+                    androidx.compose.ui.text.buildAnnotatedString {
+                        append(listOfNotNull(vm.editedAt?.let { fullTime(context, it) } ?: stringResource(R.string.editor_now), folderName?.let { stringResource(R.string.editor_in, it) }, stringResource(R.string.editor_saved).takeIf { vm.canUndo && vm.saved && vm.exists })
+                            .joinToString(" · "))
+                        if (vm.viewOnly && !vm.trashed) {
+                            append(" · ")
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = jc.ink)) { append(if (todo.total > 0) stringResource(R.string.editor_locked_ticking_still_works) else stringResource(R.string.editor_locked)) }
+                        }
+                    },
+                    Modifier.padding(bottom = 12.dp), style = JType.small, color = jc.muted,
                 )
                 reminderAt?.takeIf { !vm.readOnly }?.let { at ->
                     Row(
                         Modifier.padding(bottom = 10.dp).clip(JShape.xs).clickable(role = Role.Button) { reminding = true }
                             .background(jc.selected).padding(horizontal = 8.dp, vertical = 4.dp)
-                            .semantics { contentDescription = "Reminder: ${reminderLabel(context, at, reminderRepeat)}. Tap to change it." },
+                            .semantics { contentDescription = context.getString(R.string.editor_reminder_tap_to_change_it, reminderLabel(context, at, reminderRepeat)) },
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         JIcon(Ico.ALARM, jc.accent, size = 14.dp, stroke = 2f)
                         Text(reminderLabel(context, at, reminderRepeat), style = JType.small, color = jc.accent)
                     }
                 }
-                // To-do progress: shown once the note has checklist lines or a target date.
-                val todo = remember(vm.doc) { todoCount(vm.doc.toBlocks()) }
-                if (todo.total > 0 || vm.targetDate != null) {
+                placeReminder?.takeIf { !vm.readOnly }?.let { PlaceChip(it) { placing = true } }
+                // To-do progress, under the title: shown once the note has checklist lines or a target date.
+                val todoHeader: (@Composable () -> Unit)? = if (todo.total > 0 || vm.targetDate != null) { {
                     TodoHeader(
                         todo, startDay = epochDay(vm.createdAt ?: System.currentTimeMillis(), java.time.ZoneId.systemDefault()),
                         target = vm.targetDate, editable = !vm.readOnly, onPickTarget = { pickingTarget = true },
+                        repeat = vm.listRepeat, onPickRepeat = { pickingRepeat = true }, streak = vm.listStreak,
+                        hideTicked = vm.hideTicked, onHideTicked = { vm.hideTicked = !vm.hideTicked },
                     )
-                }
+                } } else null
                 vm.conflictWith?.let { original -> ConflictChooser(original.displayTitle, vm, onBack) }
                 if (vm.trashed) {
-                    Text("Recover this note to edit it.", Modifier.padding(bottom = 10.dp), style = JType.small, color = jc.muted)
-                } else if (vm.viewOnly && !vm.needsUnlock) {
-                    Row(Modifier.padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        JIcon(Ico.LOCK, jc.muted, size = 14.dp)
-                        // A to-do list can still be ticked off; only its wording is locked.
-                        Text(if (todo.total > 0) "Editing is locked. You can still tick items off." else "Editing is locked.", style = JType.small, color = jc.muted)
-                    }
+                    Text(stringResource(R.string.editor_recover_this_note_to_edit), Modifier.padding(bottom = 10.dp), style = JType.small, color = jc.muted)
                 }
                 val density = LocalDensity.current
                 BlockPhoneKeyboard(vm.mathKeys) { NoteField(
@@ -595,13 +715,14 @@ fun EditorScreen(
                     onViewPhoto = { viewing = it },
                     onOpenLink = { title ->
                         val target = resolveLink(title, vm.linkTargets.value)
-                        if (target == null) Toast.makeText(context, "Note not found", Toast.LENGTH_SHORT).show() else onOpenNote(target)
+                        if (target == null) Toast.makeText(context, context.getString(R.string.editor_note_not_found), Toast.LENGTH_SHORT).show() else onOpenNote(target)
                     },
                     onPreviewLink = { title ->
                         val target = resolveLink(title, vm.linkTargets.value)
-                        if (target == null) Toast.makeText(context, "Note not found", Toast.LENGTH_SHORT).show()
+                        if (target == null) Toast.makeText(context, context.getString(R.string.editor_note_not_found), Toast.LENGTH_SHORT).show()
                         else { haptic.performHapticFeedback(HapticFeedbackType.LongPress); peek = target }
                     },
+                    underTitle = todoHeader,
                 ) }
                 // The note's tags; tapping one opens that tag's list.
                 val noteTags = remember(vm.doc.text) { findTags(vm.doc.text).map { it.second }.distinctBy(::tagKey) }
@@ -620,6 +741,11 @@ fun EditorScreen(
         }
     }
     if (info) NoteInfoDialog(vm, folderName) { info = false }
+    if (stats) WritingStatsDialog(vm) { stats = false }
+    if (sortingList) SortListDialog(vm.anyDue, onPick = { sortingList = false; vm.sortTasks(it); toast(context.getString(R.string.editor_sorted_undo, context.getString(it.labelRes).lowercase())) }) { sortingList = false }
+    dueFor?.let { line ->
+        DueDateDialog(vm.doc.lines.getOrNull(line)?.due, onPick = { vm.setDue(line, it); dueFor = null }) { dueFor = null }
+    }
     if (history) VersionHistory(vm) { history = false }
     peek?.let { n -> LinkedNotePreview(n, onOpen = { peek = null; onOpenNote(n) }, onDismiss = { peek = null }) }
     if (asking) {
@@ -642,7 +768,7 @@ fun EditorScreen(
             // The note may have changed while the answer came: replace only if that text is still there.
             if (picked.max <= vm.value.text.length && vm.value.text.substring(picked.min, picked.max) == pickedRaw) {
                 vm.replaceSelection(picked, plainAnswer(answer)); asking = false
-            } else toast("The note changed, so the selection wasn't replaced. Use Copy or Add below instead.")
+            } else toast(context.getString(R.string.editor_the_note_changed_so_the))
         }),
         onTitle = if (vm.readOnly) null else ({ vm.setTitle(it); asking = false }),
         onChecklist = if (vm.readOnly) null else ({ vm.addChecklist(it); asking = false }),
@@ -659,10 +785,10 @@ fun EditorScreen(
         val notes = vm.linkedNotes(targets)
         MarginDialog(
             onDismissRequest = { linked = false },
-            title = { Text("Linked notes") },
+            title = { Text(stringResource(R.string.editor_linked_notes_2)) },
             text = {
                 if (notes.isEmpty()) {
-                    Text("No note links here yet. Type [[ and this note's title in another note to link it.", style = JType.secondary, color = jc.muted)
+                    Text(stringResource(R.string.editor_no_note_links_here_yet), style = JType.secondary, color = jc.muted)
                 } else Column {
                     notes.forEach { n ->
                         Text(
@@ -672,19 +798,19 @@ fun EditorScreen(
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { linked = false }) { Text("Close") } },
+            confirmButton = { TextButton(onClick = { linked = false }) { Text(stringResource(R.string.common_close)) } },
         )
     }
     if (moving) {
         MoveDialog(
-            folders, currentFolderId = vm.folderId, subject = vm.doc.texts.first().ifBlank { "New Note" },
+            folders, currentFolderId = vm.folderId, subject = vm.doc.texts.first().ifBlank { stringResource(R.string.editor_new_note) },
             onDismiss = { moving = false },
         ) { vm.moveTo(it); moving = false }
     }
     passwordFor?.let { mode ->
         var old by remember { mutableStateOf(false) }
         val submit: suspend (CharArray) -> String? = { pw ->
-            if (vm.enterPassword(pw)) { passwordFor = null; vm.lock(); null } else if (old) "Wrong password" else "Wrong passcode"
+            if (vm.enterPassword(pw)) { passwordFor = null; vm.lock(); null } else com.margin.app.data.UnlockLimit.message(context, if (old) context.getString(R.string.editor_wrong_password) else context.getString(R.string.editor_wrong_passcode))
         }
         if (old) OldPasswordDialog(onDismiss = { passwordFor = null }, onSubmit = submit)
         else PasscodeDialog(mode, onDismiss = { passwordFor = null }, onOldPassword = if (mode == PasswordMode.ENTER) ({ old = true }) else null, onSubmit = submit)
@@ -700,17 +826,18 @@ internal fun FindBar(query: String, count: Int, at: Int, onChange: (String) -> U
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        SearchField(query, onChange, "Find in note", Modifier.weight(1f).focusRequester(requester))
-        Text(if (query.isBlank()) "" else if (count == 0) "None" else "${at + 1} of $count", Modifier.padding(horizontal = 6.dp), style = JType.small, color = jc.muted)
-        IconAction("M6 15l6-6 6 6", "Previous match", { onStep(-1) }, enabled = count > 1)
-        IconAction("M6 9l6 6 6-6", "Next match", { onStep(1) }, enabled = count > 1)
-        TextAction("Done", onClose, bold = true)
+        SearchField(query, onChange, stringResource(R.string.editor_find_in_note), Modifier.weight(1f).focusRequester(requester))
+        Text(if (query.isBlank()) "" else if (count == 0) stringResource(R.string.editor_none) else stringResource(R.string.editor_of, at + 1, count), Modifier.padding(horizontal = 6.dp), style = JType.small, color = jc.muted)
+        IconAction("M6 15l6-6 6 6", stringResource(R.string.editor_previous_match), { onStep(-1) }, enabled = count > 1)
+        IconAction("M6 9l6 6 6-6", stringResource(R.string.editor_next_match), { onStep(1) }, enabled = count > 1)
+        TextAction(stringResource(R.string.common_done), onClose, bold = true)
     }
 }
 
 /** Find in note, second row: the new text, then Replace (the current match) and All. */
 @Composable
 internal fun ReplaceBar(text: String, count: Int, onChange: (String) -> Unit, onReplace: () -> Unit, onReplaceAll: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -719,14 +846,14 @@ internal fun ReplaceBar(text: String, count: Int, onChange: (String) -> Unit, on
             Modifier.weight(1f).height(40.dp).clip(JShape.sm).background(jc.surface).padding(horizontal = 12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
-            if (text.isEmpty()) Text("Replace with", style = JType.row, color = jc.muted, maxLines = 1)
+            if (text.isEmpty()) Text(stringResource(R.string.editor_replace_with), style = JType.row, color = jc.muted, maxLines = 1)
             BasicTextField(
                 text, onChange, singleLine = true, textStyle = JType.row.copy(color = jc.ink),
-                cursorBrush = SolidColor(jc.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Replace with" },
+                cursorBrush = SolidColor(jc.accent), modifier = Modifier.fillMaxWidth().semantics { contentDescription = context.getString(R.string.editor_replace_with) },
             )
         }
-        TextAction("Replace", onReplace, enabled = count > 0)
-        TextAction("All", onReplaceAll, enabled = count > 0)
+        TextAction(stringResource(R.string.editor_replace), onReplace, enabled = count > 0)
+        TextAction(stringResource(R.string.editor_all), onReplaceAll, enabled = count > 0)
     }
 }
 
@@ -735,21 +862,22 @@ internal fun ReplaceBar(text: String, count: Int, onChange: (String) -> Unit, on
 internal fun NoteInfoDialog(vm: EditorViewModel, folderName: String?, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val blocks = vm.doc.toBlocks()
-    val body = blocks.drop(1).filter { it.attachment == null }.joinToString("\n") { it.plainText }
-    val words = body.split(Regex("\\s+")).count { it.isNotBlank() }
+    val body = com.margin.app.data.bodyText(blocks)
+    val words = com.margin.app.data.countWords(body)
     val attachments = blocks.count { it.attachment != null }
     val rows = listOfNotNull(
-        "Created" to (vm.createdAt?.let { fullTime(context, it) } ?: "Not saved yet"),
-        "Edited" to (vm.editedAt?.let { fullTime(context, it) } ?: "Now"),
-        folderName?.let { "Folder" to it },
-        "Words" to "$words",
-        "Characters" to "${body.count { !it.isWhitespace() }}",
-        ("Attachments" to "$attachments").takeIf { attachments > 0 },
-        ("Locked" to "Yes").takeIf { vm.locked },
+        stringResource(R.string.editor_created) to (vm.createdAt?.let { fullTime(context, it) } ?: stringResource(R.string.editor_not_saved_yet)),
+        stringResource(R.string.editor_edited) to (vm.editedAt?.let { fullTime(context, it) } ?: stringResource(R.string.editor_now)),
+        folderName?.let { stringResource(R.string.editor_folder) to it },
+        stringResource(R.string.editor_words) to "$words",
+        stringResource(R.string.editor_characters) to "${body.count { !it.isWhitespace() }}",
+        stringResource(R.string.editor_reading_time) to readingText(words),
+        (stringResource(R.string.editor_attachments) to "$attachments").takeIf { attachments > 0 },
+        (stringResource(R.string.editor_locked) to stringResource(R.string.common_yes)).takeIf { vm.locked },
     )
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Note info") },
+        title = { Text(stringResource(R.string.editor_note_info)) },
         text = {
             Column {
                 rows.forEach { (k, v) ->
@@ -760,7 +888,7 @@ internal fun NoteInfoDialog(vm: EditorViewModel, folderName: String?, onDismiss:
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) } },
     )
 }
 
@@ -772,8 +900,9 @@ internal fun passwordColors() = OutlinedTextFieldDefaults.colors(
 /** The title of a locked note, plus the way in: the passcode (or an old password), or a fingerprint if that's set up. */
 @Composable
 internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var password by remember { mutableStateOf("") }
-    var old by remember { mutableStateOf(false) } // notes locked before passcodes
+    var old by remember { mutableStateOf(usesPassphrase(context)) } // a passphrase, or a password from before passcodes
     val activity = LocalContext.current as? FragmentActivity
     val canBio = fingerprint != null && activity != null
     var pad by remember { mutableStateOf(!canBio) } // with fingerprint unlock, the keypad is the fallback
@@ -785,7 +914,7 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
             when (val r = Biometric.decrypt(activity!!, data, iv)) {
                 is Biometric.Result.Ok -> vm.unlock(String(r.bytes, Charsets.UTF_8).toCharArray().also { r.bytes.fill(0) })
                 Biometric.Result.Cancelled -> pad = true // "Use password" on the prompt: show the keypad, as the journal does
-                Biometric.Result.Invalidated -> vm.unlockError = "Fingerprints changed. Use your passcode, then turn fingerprint unlock on again in Settings."
+                Biometric.Result.Invalidated -> vm.unlockError = context.getString(R.string.editor_fingerprints_changed_use_your_passcode)
                 is Biometric.Result.Failed -> vm.unlockError = r.message
             }
         }
@@ -794,18 +923,18 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
         Box(Modifier.size(72.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) {
             JIcon(Ico.LOCK, jc.ink, size = 32.dp, stroke = 1.6f)
         }
-        Text(title.ifBlank { "New Note" }, Modifier.padding(top = 24.dp, bottom = 8.dp), style = JType.heading.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = jc.ink, textAlign = TextAlign.Center)
-        Text("This note is locked.", Modifier.padding(bottom = 4.dp), style = JType.secondary.copy(fontSize = 16.sp, lineHeight = 23.sp), color = jc.muted)
+        Text(title.ifBlank { stringResource(R.string.editor_new_note) }, Modifier.padding(top = 24.dp, bottom = 8.dp), style = JType.heading.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold), color = jc.ink, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.editor_this_note_is_locked), Modifier.padding(bottom = 4.dp), style = JType.secondary.copy(fontSize = 16.sp, lineHeight = 23.sp), color = jc.muted)
         if (meta.isNotEmpty()) Text(meta, style = JType.small, color = jc.muted, textAlign = TextAlign.Center)
         when {
             !pad -> {
-                PrimaryButton("View note", viewNote, Modifier.fillMaxWidth().padding(top = 32.dp), enabled = !vm.unlocking)
+                PrimaryButton(stringResource(R.string.editor_view_note), viewNote, Modifier.fillMaxWidth().padding(top = 32.dp), enabled = !vm.unlocking)
                 vm.unlockError?.let { Text(it, Modifier.padding(top = 8.dp), style = JType.small, color = jc.danger, textAlign = TextAlign.Center) }
-                Box(Modifier.padding(top = 8.dp)) { TextAction("Enter passcode instead", { pad = true; vm.unlockError = null }) }
+                Box(Modifier.padding(top = 8.dp)) { TextAction(stringResource(R.string.editor_enter_passcode_instead), { pad = true; vm.unlockError = null }) }
             }
             old -> {
                 OutlinedTextField(
-                    password, { password = it; vm.unlockError = null }, singleLine = true, label = { Text("Old notes password") },
+                    password, { password = it; vm.unlockError = null }, singleLine = true, label = { Text(stringResource(R.string.editor_old_notes_password)) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     isError = vm.unlockError != null,
@@ -814,7 +943,7 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
                     modifier = Modifier.fillMaxWidth().padding(top = 28.dp),
                 )
                 PrimaryButton(
-                    if (vm.unlocking) "Unlocking…" else "Unlock",
+                    if (vm.unlocking) stringResource(R.string.editor_unlocking) else stringResource(R.string.editor_unlock),
                     { vm.unlock(password.toCharArray()); password = "" },
                     Modifier.fillMaxWidth().padding(top = 8.dp),
                     enabled = password.isNotEmpty() && !vm.unlocking,
@@ -824,12 +953,12 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
         }
         if (pad) {
             Box(Modifier.padding(top = 8.dp)) {
-                TextAction(if (old) "Use passcode" else "Use old password", { old = !old; vm.unlockError = null })
+                TextAction(if (old) stringResource(R.string.editor_use_passcode) else stringResource(R.string.editor_use_old_password), { old = !old; vm.unlockError = null })
             }
-            if (canBio) Box { TextAction("Use fingerprint", { pad = false; old = false; vm.unlockError = null }) }
+            if (canBio) Box { TextAction(stringResource(R.string.editor_use_fingerprint), { pad = false; old = false; vm.unlockError = null }) }
         }
         Text(
-            "Locked notes are encrypted, on this device and in your Google Drive backup. Only the title is visible in your list and in search.",
+            stringResource(R.string.editor_locked_notes_are_encrypted_on),
             Modifier.padding(top = 32.dp), style = JType.small.copy(lineHeight = 19.sp), color = jc.muted, textAlign = TextAlign.Center,
         )
     }
@@ -838,38 +967,66 @@ internal fun LockedNote(vm: EditorViewModel, fingerprint: String?, meta: String)
 enum class PasswordMode { CREATE, ENTER }
 
 /**
- * Asks for a notes password from before passcodes (notes locked with it still open with it). [onSubmit]
- * returns an error to show, or null when done.
+ * The notes password as text: a passphrase, or a password from before passcodes (notes locked with it still
+ * open with it). [create] asks twice and needs at least [MIN_PASSPHRASE] characters. [onSubmit] returns an
+ * error to show, or null when done.
  */
 @Composable
-internal fun OldPasswordDialog(onDismiss: () -> Unit, onSubmit: suspend (CharArray) -> String?) {
+internal fun OldPasswordDialog(onDismiss: () -> Unit, create: Boolean = false, onSubmit: suspend (CharArray) -> String?) {
+    MarginDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (create) R.string.passcode_choose_a_passphrase else R.string.editor_enter_your_old_notes_password)) },
+        text = { PassphraseForm(create, onSubmit) },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    )
+}
+
+/** The passphrase field (twice when [create]) and its OK button; see [OldPasswordDialog]. */
+@Composable
+internal fun PassphraseForm(create: Boolean, onSubmit: suspend (CharArray) -> String?, modifier: Modifier = Modifier) {
     var password by remember { mutableStateOf("") }
+    var again by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    MarginDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Enter your old notes password") },
-        text = {
-            OutlinedTextField(
-                password, { password = it; error = null }, singleLine = true, label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                isError = error != null, supportingText = error?.let { { Text(it) } },
-                shape = JShape.sm, colors = passwordColors(),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                scope.launch {
+    val context = LocalContext.current
+    val submit: () -> Unit = {
+        if (password.isNotEmpty() && !busy) {
+                error = when {
+                    create && password.length < MIN_PASSPHRASE -> context.getString(R.string.passcode_passphrase_too_short, MIN_PASSPHRASE)
+                    create && again != password -> context.getString(R.string.passcode_passphrases_didnt_match)
+                    else -> null
+                }
+                if (error == null) scope.launch {
                     busy = true
+                    // Before submitting: a create can take this form away while the notes are re-sealed.
+                    if (create) rememberEntryKind(context, passphrase = true)
                     error = onSubmit(password.toCharArray())
+                    if (error == null && !create) rememberEntryKind(context, passphrase = !isPasscode(password.toCharArray()))
                     busy = false
                 }
-            }, enabled = password.isNotEmpty() && !busy) { Text(if (busy) "Checking…" else "OK", fontWeight = FontWeight.SemiBold) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+        }
+    }
+    // The keyboard's Done key submits: on a phone the keyboard covers the OK button.
+    val field: @Composable (String, (String) -> Unit, String, String?, Boolean) -> Unit = { value, onValue, label, err, last ->
+        OutlinedTextField(
+            value, { onValue(it); error = null }, singleLine = true, label = { Text(label) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (last) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Next),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { submit() }),
+            isError = err != null, supportingText = err?.let { { Text(it) } },
+            shape = JShape.sm, colors = passwordColors(), modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        field(password, { password = it }, stringResource(if (create) R.string.passcode_passphrase else R.string.editor_old_notes_password), if (create) null else error, !create)
+        if (create) field(again, { again = it }, stringResource(R.string.passcode_type_it_again), error, true)
+        PrimaryButton(
+            if (busy) stringResource(R.string.editor_checking) else stringResource(R.string.common_ok),
+            submit, Modifier.fillMaxWidth(), enabled = password.isNotEmpty() && !busy,
+        )
+    }
 }
 
 /** Known tags that finish the one being typed; tapping one completes it. */
@@ -893,7 +1050,7 @@ internal fun LinkSuggestions(notes: List<NoteEntity>, typed: String, folders: Li
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).clip(JShape.md)
             .border(1.dp, jc.line, JShape.md).background(jc.bg),
     ) {
-        Text("Link to note", Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp), style = JType.section.copy(fontSize = 12.sp), color = jc.muted)
+        Text(stringResource(R.string.editor_link_to_note), Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 6.dp), style = JType.section.copy(fontSize = 12.sp), color = jc.muted)
         notes.take(3).forEachIndexed { i, note ->
             if (i > 0) HorizontalDivider(color = jc.line)
             val q = typed.trim()
@@ -919,7 +1076,7 @@ internal fun LinkSuggestions(notes: List<NoteEntity>, typed: String, folders: Li
 @Composable
 internal fun EditorToolbar(
     vm: EditorViewModel, formatting: Boolean, attaching: Boolean, onFormat: () -> Unit, onHideKeyboard: () -> Unit, onAttach: () -> Unit, onDraw: () -> Unit,
-    onNew: () -> Unit, onFont: () -> Unit, onAi: (() -> Unit)? = null,
+    onNew: () -> Unit, onFont: () -> Unit, onColor: () -> Unit, onAi: (() -> Unit)? = null,
 ) {
     val focusedType = if (vm.focused) vm.doc.lines.getOrNull(vm.cursorLine)?.type else null
     val canFormat = focusedType != null && focusedType != BlockType.TITLE
@@ -934,43 +1091,48 @@ internal fun EditorToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The tools used on most notes stay in the bar; font, note links and the math keyboard are under More.
-        Slot(formatting) { GlyphAction("Aa", "Text style", onFormat, JType.rowTitle.copy(fontSize = 18.sp)) }
-        Slot(focusedType == BlockType.CHECK) { IconAction(Ico.CHECKLIST, "Checklist", { vm.setType(BlockType.CHECK) }, enabled = canFormat, size = 20.dp) }
-        Slot(attaching) { IconAction(Ico.ATTACH, "Attach", onAttach, size = 20.dp) }
-        Slot { IconAction(Ico.PEN, "Draw", onDraw, size = 20.dp) }
+        // Tools are plain ink; only one that is on turns amber, on its tinted circle.
+        val accent = jc.accent; val ink = jc.ink
+        fun tint(on: Boolean) = if (on) accent else ink
+        Slot(formatting) { GlyphAction(stringResource(R.string.editor_aa), stringResource(R.string.editor_text_style), onFormat, JType.rowTitle.copy(fontSize = 18.sp), color = tint(formatting)) }
+        val checking = focusedType == BlockType.CHECK
+        Slot(checking) { IconAction(Ico.CHECKLIST, stringResource(R.string.editor_checklist), { vm.setType(BlockType.CHECK) }, color = tint(checking), enabled = canFormat, size = 20.dp) }
+        Slot(attaching) { IconAction(Ico.ATTACH, stringResource(R.string.editor_attach), onAttach, color = tint(attaching), size = 20.dp) }
+        Slot { IconAction(Ico.PEN, stringResource(R.string.editor_draw), onDraw, color = jc.ink, size = 20.dp) }
         // AI: tinted while text is selected, since it then works on the selection.
         onAi?.let { ai ->
             val picked = vm.focused && !vm.value.selection.collapsed
-            Slot(picked) { IconAction(Ico.SPARKLE, if (picked) "Ask AI about the selection" else "Ask AI", ai, size = 20.dp) }
+            Slot(picked) { IconAction(Ico.SPARKLE, if (picked) stringResource(R.string.editor_ask_ai_about_the_selection) else stringResource(R.string.editor_ask_ai_2), ai, color = tint(picked), size = 20.dp) }
         }
         // While the math keyboard is up, its button stays in the bar so it can be put away.
         if (vm.focused && vm.mathKeys) Slot(true) {
-            GlyphAction("π", "Phone keyboard", { vm.mathKeys = false }, JType.rowTitle.copy(fontSize = 20.sp))
+            GlyphAction("π", stringResource(R.string.editor_phone_keyboard), { vm.mathKeys = false }, JType.rowTitle.copy(fontSize = 20.sp))
         }
-        Slot { ToolbarMore(vm, canFormat, onFont) }
-        if (vm.focused) Slot { IconAction(Ico.HIDE_KEYBOARD, "Hide keyboard", onHideKeyboard, size = 20.dp) }
-        else Slot { IconAction(Ico.COMPOSE, "New note", onNew, size = 20.dp) }
+        Slot { ToolbarMore(vm, canFormat, onFont, onColor) }
+        if (vm.focused) Slot { IconAction(Ico.HIDE_KEYBOARD, stringResource(R.string.editor_hide_keyboard), onHideKeyboard, color = jc.muted, size = 20.dp) }
+        else Slot { IconAction(Ico.COMPOSE, stringResource(R.string.editor_new_note_2), onNew, color = jc.ink, size = 20.dp) }
     }
 }
 
 /** The toolbar's More button: the rarer tools. The menu doesn't take focus, so the keyboard and cursor stay. */
 @Composable
-internal fun ToolbarMore(vm: EditorViewModel, canFormat: Boolean, onFont: () -> Unit) {
+internal fun ToolbarMore(vm: EditorViewModel, canFormat: Boolean, onFont: () -> Unit, onColor: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconAction(Ico.MORE, "More tools", { open = true }, fill = true, size = 20.dp)
-        DropdownMenu(
-            expanded = open, onDismissRequest = { open = false }, containerColor = jc.card,
-            properties = androidx.compose.ui.window.PopupProperties(focusable = false),
-        ) {
+        IconAction(Ico.MORE, stringResource(R.string.editor_more_tools), { open = true }, color = jc.ink, fill = true, size = 20.dp)
+        // Opens without taking focus from the note, so the keyboard stays up.
+        JMenu(expanded = open, onDismissRequest = { open = false }, width = 240.dp, focusable = false) {
             @Composable
             fun tool(text: String, icon: @Composable () -> Unit, enabled: Boolean = true, onClick: () -> Unit) = DropdownMenuItem(
                 text = { Text(text, style = JType.row, color = if (enabled) jc.ink else jc.muted) },
                 leadingIcon = icon, enabled = enabled, onClick = { open = false; onClick() },
             )
-            tool("Font · ${vm.font.label}", { JIcon(Ico.TEXT, jc.ink, size = 20.dp, stroke = 2f) }, enabled = !vm.readOnly && !vm.needsUnlock, onClick = onFont)
-            if (vm.linksOn) tool("Link to a note", { JIcon(Ico.LINK, jc.ink, size = 20.dp, stroke = 2f) }, enabled = canFormat, onClick = vm::startLink)
-            if (vm.focused && !vm.mathKeys) tool("Math keyboard", { Text("π", style = JType.rowTitle.copy(fontSize = 18.sp), color = jc.ink) }) { vm.mathKeys = true }
+            tool(stringResource(R.string.editor_font_item, stringResource(vm.font.labelRes)), { JIcon(Ico.TEXT, jc.ink, size = 20.dp, stroke = 2f) }, enabled = !vm.readOnly && !vm.needsUnlock, onClick = onFont)
+            tool(stringResource(R.string.editor_colour_item, stringResource(vm.color.labelRes)), {
+                Box(Modifier.size(18.dp).clip(CircleShape).background(if (vm.color == com.margin.app.data.NoteColor.NONE) jc.card else Color(vm.color.argb)).border(1.5.dp, jc.ink, CircleShape))
+            }, enabled = !vm.trashed && !vm.needsUnlock, onClick = onColor)
+            if (vm.linksOn) tool(stringResource(R.string.editor_link_to_a_note), { JIcon(Ico.LINK, jc.ink, size = 20.dp, stroke = 2f) }, enabled = canFormat, onClick = vm::startLink)
+            if (vm.focused && !vm.mathKeys) tool(stringResource(R.string.editor_math_keyboard), { Text("π", style = JType.rowTitle.copy(fontSize = 18.sp), color = jc.ink) }) { vm.mathKeys = true }
         }
     }
 }
@@ -978,9 +1140,10 @@ internal fun ToolbarMore(vm: EditorViewModel, canFormat: Boolean, onFont: () -> 
 /** The design's bottom sheet look, shared by Format and Add to note: grab handle, bold title, round close button. */
 @Composable
 internal fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
-        Modifier.fillMaxWidth().clip(JShape.sheet).background(jc.bg)
-            .border(1.dp, jc.line, JShape.sheet)
+        Modifier.fillMaxWidth().clip(JShape.sheet)
+            .background(jc.bg).border(1.dp, jc.line, JShape.sheet)
             .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -988,10 +1151,10 @@ internal fun SheetPanel(title: String, onClose: () -> Unit, content: @Composable
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, Modifier.weight(1f), style = JType.subheading.copy(fontWeight = FontWeight.Bold), color = jc.ink)
             Box(
-                Modifier.size(32.dp).clip(CircleShape).background(jc.surface).clickable(role = Role.Button, onClick = onClose)
-                    .semantics { contentDescription = "Close" },
+                Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClose) // 48 dp touch area, 32 dp circle
+                    .semantics { contentDescription = context.getString(R.string.common_close) },
                 contentAlignment = Alignment.Center,
-            ) { JIcon(Ico.CLOSE, jc.muted, size = 14.dp, stroke = 2.6f) }
+            ) { Box(Modifier.size(32.dp).clip(CircleShape).background(jc.surface), contentAlignment = Alignment.Center) { JIcon(Ico.CLOSE, jc.muted, size = 14.dp, stroke = 2.6f) } }
         }
         content()
     }
@@ -1019,22 +1182,22 @@ internal fun VersionHistory(vm: EditorViewModel, onClose: () -> Unit) {
             Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button) { if (v != null) open = null else onClose() }
-                        .semantics { contentDescription = if (v != null) "Back to versions" else "Close" },
+                        .semantics { contentDescription = if (v != null) context.getString(R.string.editor_back_to_versions) else context.getString(R.string.common_close) },
                     contentAlignment = Alignment.Center,
                 ) { JIcon(if (v != null) Ico.BACK else Ico.CLOSE, jc.accent, size = 20.dp, stroke = 2.2f) }
                 Text(
-                    if (v != null) versionTime(context, v.savedAt) else "Version history",
+                    if (v != null) versionTime(context, v.savedAt) else stringResource(R.string.editor_version_history),
                     Modifier.weight(1f).padding(start = 4.dp), style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 if (v != null && !vm.readOnly) TextButton(onClick = { vm.restoreVersion(v.blocks); onClose() }) {
-                    Text("Restore", fontWeight = FontWeight.SemiBold, color = jc.accent)
+                    Text(stringResource(R.string.common_restore), fontWeight = FontWeight.SemiBold, color = jc.accent)
                 }
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(jc.line))
             when {
                 v != null -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     v.blocks.forEachIndexed { i, b ->
-                        val text = b.attachment?.let { "[" + it.name + "]" } ?: b.table?.let { "[Table]" }
+                        val text = b.attachment?.let { "[" + it.name + "]" } ?: b.table?.let { stringResource(R.string.editor_table) }
                             ?: (if (b.type == com.margin.app.data.BlockType.CHECK) (if (b.checked) "☑ " else "☐ ") else "") + b.text
                         Text(
                             text,
@@ -1049,16 +1212,16 @@ internal fun VersionHistory(vm: EditorViewModel, onClose: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
                 ) {
                     JIcon(ICON_HISTORY, jc.muted, size = 40.dp, stroke = 1.6f)
-                    Text("No earlier versions yet", style = JType.rowTitle, color = jc.ink)
+                    Text(stringResource(R.string.editor_no_earlier_versions_yet), style = JType.rowTitle, color = jc.ink)
                     Text(
-                        "A version is kept each time you come back to edit this note after a break of 10 minutes or more.",
+                        stringResource(R.string.editor_a_version_is_kept_each),
                         style = JType.secondary, color = jc.muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
                 }
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(older, key = { it.id }) { ver ->
                         val preview = remember(ver) {
-                            ver.blocks.drop(1).map { it.plainText }.filter { it.isNotBlank() }.take(2).joinToString(" · ").ifEmpty { "No additional text" }
+                            ver.blocks.drop(1).map { it.plainText }.filter { it.isNotBlank() }.take(2).joinToString(" · ").ifEmpty { context.getString(R.string.editor_no_additional_text) }
                         }
                         Column(
                             Modifier.fillMaxWidth().clickable { open = ver }.padding(horizontal = 20.dp, vertical = 12.dp),
@@ -1082,8 +1245,8 @@ internal fun VersionHistory(vm: EditorViewModel, onClose: () -> Unit) {
 internal fun versionTime(context: android.content.Context, at: Long): String {
     val time = android.text.format.DateFormat.getTimeFormat(context).format(java.util.Date(at))
     val day = when {
-        android.text.format.DateUtils.isToday(at) -> "Today"
-        android.text.format.DateUtils.isToday(at + 86_400_000L) -> "Yesterday"
+        android.text.format.DateUtils.isToday(at) -> context.getString(R.string.common_today)
+        android.text.format.DateUtils.isToday(at + 86_400_000L) -> context.getString(R.string.common_yesterday)
         else -> java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(at))
     }
     return "$day, $time"
@@ -1110,45 +1273,47 @@ internal fun AttachSheet(
     var menuFor by remember { mutableStateOf<String?>(null) }
     // What's already out there (camera, files, scans), then what you make in the note.
     val groups = listOf(
-        "Capture" to listOf(
-            Triple("Camera", Ico.CAMERA, onCamera), Triple("Photo or file", Ico.FILE, onFile), Triple("PDF", ICON_PDF, onPdf),
-            Triple("Voice note", Ico.MIC, onVoice), Triple("Scan text", Ico.SCAN, onScan), Triple("Scan document", ICON_SCAN_DOC, onScanDoc),
+        stringResource(R.string.editor_capture) to listOf(
+            Triple(stringResource(R.string.editor_camera), Ico.CAMERA, onCamera), Triple(stringResource(R.string.editor_photo_file), Ico.FILE, onFile), Triple(stringResource(R.string.editor_pdf), ICON_PDF, onPdf),
+            Triple(stringResource(R.string.editor_voice), Ico.MIC, onVoice), Triple(stringResource(R.string.editor_scan_text), Ico.SCAN, onScan), Triple(stringResource(R.string.editor_scan_doc), ICON_SCAN_DOC, onScanDoc),
         ),
-        "Create" to listOf(Triple("Drawing", Ico.PEN, onDraw), Triple("Table", ICON_TABLE, onTable), Triple("Web link", Ico.GLOBE, onLink)),
-        "Templates" to NoteTemplate.entries.map { t -> Triple(t.label, templateIcon(t)) { onTemplate(t) } },
+        stringResource(R.string.common_create) to listOf(Triple(stringResource(R.string.editor_drawing), Ico.PEN, onDraw), Triple(stringResource(R.string.editor_table_2), ICON_TABLE, onTable), Triple(stringResource(R.string.editor_web_link), Ico.GLOBE, onLink)),
+        stringResource(R.string.editor_templates) to NoteTemplate.entries.map { t -> Triple(stringResource(t.labelRes), templateIcon(t)) { onTemplate(t) } },
     ) + listOfNotNull(saved.takeIf { it.isNotEmpty() }?.let { list ->
-        "Your templates · hold to edit" to list.map { n -> Triple(n.title.ifBlank { "Untitled" }, ICON_TEMPLATE) { onSaved(n.id) } }
+        stringResource(R.string.editor_your_templates_hold_to_edit) to list.map { n -> Triple(n.title.ifBlank { stringResource(R.string.common_untitled) }, ICON_TEMPLATE) { onSaved(n.id) } }
     })
-    SheetPanel("Add to note", onClose) {
+    SheetPanel(stringResource(R.string.editor_add_to_note), onClose) {
       // Scrolls once saved templates make it taller than the screen allows.
       Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         groups.forEach { (name, tiles) ->
-            val savedGroup = name.startsWith("Your templates")
+            val savedGroup = name == stringResource(R.string.editor_your_templates_hold_to_edit)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(name.uppercase(), style = JType.section, color = jc.muted)
-                tiles.chunked(3).forEachIndexed { r, row ->
+                // Four to a row: a quiet icon on a rounded square, the name under it.
+                tiles.chunked(4).forEachIndexed { r, row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEachIndexed { c, (label, icon, onClick) ->
-                            val note = if (savedGroup) saved.getOrNull(r * 3 + c) else null
+                            val note = if (savedGroup) saved.getOrNull(r * 4 + c) else null
                             Box(Modifier.weight(1f)) {
                                 Column(
-                                    Modifier.fillMaxWidth().height(92.dp).clip(JShape.md).background(jc.surface)
+                                    Modifier.fillMaxWidth().clip(JShape.sm)
                                         .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = note?.let { n -> { menuFor = n.id } })
-                                        .padding(horizontal = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically),
+                                        .padding(vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    Box(Modifier.size(40.dp).clip(CircleShape).background(jc.accent.copy(alpha = 0.13f)), contentAlignment = Alignment.Center) {
-                                        JIcon(icon, jc.accent, size = 21.dp, stroke = 1.9f)
-                                    }
-                                    Text(label, style = JType.small.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Box(
+                                        Modifier.size(56.dp).clip(JShape.md).background(jc.surface),
+                                        contentAlignment = Alignment.Center,
+                                    ) { JIcon(icon, jc.ink, size = 24.dp, stroke = 1.8f) }
+                                    Text(label, style = JType.caption.copy(fontWeight = FontWeight.Medium), color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                if (note != null) DropdownMenu(menuFor == note.id, { menuFor = null }) {
-                                    DropdownMenuItem({ Text("Edit template") }, { menuFor = null; onEditSaved(note) })
-                                    DropdownMenuItem({ Text("Delete template", color = jc.danger) }, { menuFor = null; onDeleteSaved(note.id) })
+                                if (note != null) JMenu(menuFor == note.id, { menuFor = null }, width = 220.dp) {
+                                    DropdownMenuItem({ Text(stringResource(R.string.editor_edit_template)) }, { menuFor = null; onEditSaved(note) })
+                                    DropdownMenuItem({ Text(stringResource(R.string.editor_delete_template), color = jc.danger) }, { menuFor = null; onDeleteSaved(note.id) })
                                 }
                             }
                         }
-                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
@@ -1164,21 +1329,122 @@ internal fun AttachSheet(
 @Composable
 internal fun ConflictChooser(title: String, vm: EditorViewModel, onBack: () -> Unit) {
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(JShape.md).border(1.dp, jc.line, JShape.md).padding(16.dp),
+        Modifier.fillMaxWidth().padding(bottom = 14.dp).clip(JShape.md).background(jc.card).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Two versions", style = JType.rowTitle, color = jc.ink)
-        Text(
-            "“$title” was edited on two devices while one was offline. Nothing has been lost — this is the other version. Pick what to keep.",
-            Modifier.padding(top = 6.dp, bottom = 14.dp), style = JType.para, color = jc.muted,
-        )
-        PrimaryButton("Keep this version", { vm.keepThisVersion(onBack) }, Modifier.fillMaxWidth())
-        Box(
-            Modifier.padding(top = 8.dp).fillMaxWidth().height(48.dp).clip(JShape.md).border(1.dp, jc.line, JShape.md)
-                .clickable(role = Role.Button, onClick = vm::keepBothVersions),
-            contentAlignment = Alignment.Center,
-        ) { Text("Keep both as separate notes", style = JType.row, color = jc.ink) }
-        Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 4.dp)) { TextAction("Keep the other version", { vm.keepOtherVersion(onBack) }) }
-        Text("The version you don't keep goes to Recently Deleted.", Modifier.align(Alignment.CenterHorizontally), style = JType.small, color = jc.muted, textAlign = TextAlign.Center)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            IconTile(Ico.SYNC, jc.accent, size = 36.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.editor_two_versions_of_this_note), style = JType.rowTitle, color = jc.ink)
+                Text(
+                    stringResource(R.string.editor_was_changed_on_two_devices, title),
+                    style = JType.secondary, color = jc.muted,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.weight(1f).height(44.dp).clip(JShape.sm).background(jc.ink).clickable(role = Role.Button) { vm.keepThisVersion(onBack) },
+                contentAlignment = Alignment.Center,
+            ) { Text(stringResource(R.string.editor_keep_this_one), style = JType.row, color = jc.bg, fontWeight = FontWeight.SemiBold) }
+            Box(
+                Modifier.weight(1f).height(44.dp).clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) { vm.keepOtherVersion(onBack) },
+                contentAlignment = Alignment.Center,
+            ) { Text(stringResource(R.string.editor_keep_the_other), style = JType.row, color = jc.ink, fontWeight = FontWeight.SemiBold) }
+        }
+        var comparing by remember { mutableStateOf(false) }
+        Row(Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextAction(stringResource(R.string.editor_compare), { comparing = true })
+            TextAction(stringResource(R.string.editor_keep_both), vm::keepBothVersions)
+        }
+        if (comparing) vm.conflictWith?.let { other -> CompareVersions(vm, other, onBack) { comparing = false } }
+    }
+}
+
+/** How one line of a comparison reads: in both versions, only in this one, or only in the other. */
+internal enum class DiffSide { BOTH, THIS, OTHER }
+
+/** Lines of two texts in order, each marked by where it appears (a longest-common-subsequence line diff). */
+internal fun lineDiff(mine: List<String>, theirs: List<String>): List<Pair<DiffSide, String>> {
+    // shortcut: O(n·m) table; a note long enough for this to hurt just shows both versions whole.
+    if (mine.size.toLong() * theirs.size > 4_000_000) return mine.map { DiffSide.THIS to it } + theirs.map { DiffSide.OTHER to it }
+    val n = mine.size; val m = theirs.size
+    val t = Array(n + 1) { IntArray(m + 1) }
+    for (i in n - 1 downTo 0) for (j in m - 1 downTo 0)
+        t[i][j] = if (mine[i] == theirs[j]) t[i + 1][j + 1] + 1 else maxOf(t[i + 1][j], t[i][j + 1])
+    val out = ArrayList<Pair<DiffSide, String>>()
+    var i = 0; var j = 0
+    while (i < n || j < m) when {
+        i < n && j < m && mine[i] == theirs[j] -> { out += DiffSide.BOTH to mine[i]; i++; j++ }
+        j >= m || (i < n && t[i + 1][j] >= t[i][j + 1]) -> { out += DiffSide.THIS to mine[i]; i++ }
+        else -> { out += DiffSide.OTHER to theirs[j]; j++ }
+    }
+    return out
+}
+
+/** A note's body as lines to compare: tasks keep their tick, files and tables show by name. */
+private fun compareLines(blocks: List<com.margin.app.data.Block>): List<String> = blocks.drop(1).flatMap { b ->
+    b.attachment?.let { listOf("[" + it.name + "]") } ?: b.table?.let { listOf("[Table]") }
+        ?: b.text.lines().map { (if (b.type == com.margin.app.data.BlockType.CHECK) (if (b.checked) "☑ " else "☐ ") else "") + it }
+}
+
+/** Both versions of a conflicted note as one list: lines only here, lines only in the other, and what they share. */
+@Composable
+private fun CompareVersions(vm: EditorViewModel, other: com.margin.app.data.NoteEntity, onBack: () -> Unit, onClose: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val diff = remember(vm.doc, other) { lineDiff(compareLines(vm.doc.toBlocks()), compareLines(other.blocks)) }
+    val mineTint = jc.accent
+    val otherTint = jc.danger
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        FullWindow()
+        Column(Modifier.fillMaxSize().background(jc.bg).systemBarsPadding()) {
+            Row(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onClose).semantics { contentDescription = context.getString(R.string.common_close) },
+                    contentAlignment = Alignment.Center,
+                ) { JIcon(Ico.CLOSE, jc.ink, size = 20.dp, stroke = 2.2f) }
+                Text(stringResource(R.string.editor_compare_versions), Modifier.weight(1f).padding(start = 4.dp), style = JType.rowTitle, color = jc.ink)
+            }
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                @Composable fun key(color: androidx.compose.ui.graphics.Color, label: String) = Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(color))
+                    Text(label, style = JType.small, color = jc.muted)
+                }
+                key(mineTint, stringResource(R.string.editor_only_in_this_one))
+                key(otherTint, stringResource(R.string.editor_only_in_the_other))
+            }
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(1.dp).background(jc.line))
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(vertical = 12.dp)) {
+                if (diff.none { it.first != DiffSide.BOTH }) item {
+                    Text(stringResource(R.string.editor_the_text_is_the_same), Modifier.padding(20.dp), style = JType.secondary, color = jc.muted)
+                }
+                items(diff.size) { k ->
+                    val (side, line) = diff[k]
+                    val tint = when (side) { DiffSide.THIS -> mineTint; DiffSide.OTHER -> otherTint; DiffSide.BOTH -> null }
+                    Row(
+                        Modifier.fillMaxWidth().background(tint?.copy(alpha = 0.12f) ?: androidx.compose.ui.graphics.Color.Transparent)
+                            .padding(horizontal = 20.dp, vertical = 6.dp)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = when (side) { DiffSide.THIS -> context.getString(R.string.editor_only_in_this_one_line, line); DiffSide.OTHER -> context.getString(R.string.editor_only_in_the_other_line, line); DiffSide.BOTH -> line }
+                            },
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(when (side) { DiffSide.THIS -> "+"; DiffSide.OTHER -> "−"; DiffSide.BOTH -> " " }, Modifier.width(12.dp), style = JType.body, color = tint ?: jc.muted)
+                        Text(line.ifEmpty { " " }, style = JType.body, color = if (tint == null) jc.muted else jc.ink)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    Modifier.weight(1f).height(48.dp).clip(JShape.sm).background(jc.ink).clickable(role = Role.Button) { onClose(); vm.keepThisVersion(onBack) },
+                    contentAlignment = Alignment.Center,
+                ) { Text(stringResource(R.string.editor_keep_this_one), style = JType.row, color = jc.bg, fontWeight = FontWeight.SemiBold) }
+                Box(
+                    Modifier.weight(1f).height(48.dp).clip(JShape.sm).background(jc.surface).clickable(role = Role.Button) { onClose(); vm.keepOtherVersion(onBack) },
+                    contentAlignment = Alignment.Center,
+                ) { Text(stringResource(R.string.editor_keep_the_other), style = JType.row, color = jc.ink, fontWeight = FontWeight.SemiBold) }
+            }
+        }
     }
 }
 
@@ -1188,25 +1454,25 @@ internal fun ShareSheet(
     title: String, words: Int, onClose: () -> Unit, onText: () -> Unit, onCopy: () -> Unit, onFile: (pdf: Boolean, print: Boolean) -> Unit,
     onCard: () -> Unit,
 ) {
-    SheetPanel("Share note", onClose) {
+    SheetPanel(stringResource(R.string.editor_share_note), onClose) {
         Row(
             Modifier.fillMaxWidth().clip(JShape.md).border(1.dp, jc.line, JShape.md).padding(12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             IconTile(Ico.TEXT)
             Column(Modifier.weight(1f)) {
-                Text(title.ifBlank { "New Note" }, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(plural(words, "word"), style = JType.small, color = jc.muted)
+                Text(title.ifBlank { stringResource(R.string.editor_new_note) }, style = JType.rowTitle, color = jc.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(pluralStringResource(R.plurals.common_words, words, words), style = JType.small, color = jc.muted)
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("SEND A COPY AS", style = JType.section, color = jc.muted)
+            Text(stringResource(R.string.editor_send_a_copy_as), style = JType.section, color = jc.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
-                    Triple("Image", Ico.CAMERA, onCard),
-                    Triple("Text", Ico.TEXT, onText),
-                    Triple("PDF", ICON_PDF) { onFile(true, false) },
-                    Triple("Markdown", Ico.MARKDOWN) { onFile(false, false) },
+                    Triple(stringResource(R.string.editor_image), Ico.CAMERA, onCard),
+                    Triple(stringResource(R.string.editor_text), Ico.TEXT, onText),
+                    Triple(stringResource(R.string.editor_pdf), ICON_PDF) { onFile(true, false) },
+                    Triple(stringResource(R.string.editor_markdown), Ico.MARKDOWN) { onFile(false, false) },
                 ).forEach { (label, icon, onClick) ->
                     Column(
                         Modifier.weight(1f).height(92.dp).clip(JShape.md).background(jc.surface)
@@ -1222,7 +1488,7 @@ internal fun ShareSheet(
             }
         }
         Column(Modifier.clip(JShape.md).background(jc.surface)) {
-            listOf(Triple("Copy text", Ico.COPY, onCopy), Triple("Print", Ico.PRINT) { onFile(true, true) }).forEachIndexed { i, (label, icon, onClick) ->
+            listOf(Triple(stringResource(R.string.editor_copy_text), Ico.COPY, onCopy), Triple(stringResource(R.string.editor_print), Ico.PRINT) { onFile(true, true) }).forEachIndexed { i, (label, icon, onClick) ->
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = jc.line)
                 Row(
                     Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1245,23 +1511,23 @@ internal fun WebLinkDialog(onDismiss: () -> Unit, onAdd: (String, String, (Strin
     var error by remember { mutableStateOf<String?>(null) }
     MarginDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add web link") },
+        title = { Text(stringResource(R.string.editor_add_web_link)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
-                    url, { url = it; error = null }, label = { Text("Address") }, singleLine = true, isError = error != null,
+                    url, { url = it; error = null }, label = { Text(stringResource(R.string.editor_address)) }, singleLine = true, isError = error != null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 )
-                OutlinedTextField(title, { title = it }, label = { Text("Title (optional)") }, singleLine = true)
-                Text(error ?: if (busy) "Getting the page title…" else "Leave the title empty to use the page's own.", style = JType.small, color = if (error != null) jc.danger else jc.muted)
+                OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.editor_title_optional)) }, singleLine = true)
+                Text(error ?: if (busy) stringResource(R.string.editor_getting_the_page_title) else stringResource(R.string.editor_leave_the_title_empty_to), style = JType.small, color = if (error != null) jc.danger else jc.muted)
             }
         },
         confirmButton = {
             TextButton(onClick = { busy = true; onAdd(url, title) { e -> busy = false; error = e } }, enabled = url.isNotBlank() && !busy) {
-                Text("Add", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.common_add), fontWeight = FontWeight.SemiBold)
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -1285,7 +1551,7 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
                 }
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     image?.let { Image(it, a.name, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) }
-                        ?: Text(if (file.exists()) "" else "Not downloaded yet.", color = Color.White, style = JType.secondary)
+                        ?: Text(if (file.exists()) "" else stringResource(R.string.editor_not_downloaded_yet), color = Color.White, style = JType.secondary)
                 }
             }
             val current = photos.getOrNull(pager.currentPage.coerceAtMost(photos.lastIndex))
@@ -1293,10 +1559,10 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
                 Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f)).statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconAction(Ico.CLOSE, "Close", onClose, color = Color.White)
+                IconAction(Ico.CLOSE, stringResource(R.string.common_close), onClose, color = Color.White)
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(current?.value?.attachment?.name.orEmpty(), style = JType.rowTitle, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (photos.size > 1) Text("${pager.currentPage + 1} of ${photos.size}", style = JType.small, color = Color.White.copy(alpha = 0.7f))
+                    if (photos.size > 1) Text(stringResource(R.string.editor_of, pager.currentPage + 1, photos.size), style = JType.small, color = Color.White.copy(alpha = 0.7f))
                 }
                 Spacer(Modifier.size(44.dp))
             }
@@ -1305,12 +1571,12 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
                     .padding(horizontal = 24.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconAction(Ico.EDIT, "Edit photo", { editing = current.value.id }, color = Color.White)
-                IconAction(Ico.ROTATE, "Rotate", { vm.rotateImage(current.index, onError) }, color = Color.White)
+                IconAction(Ico.EDIT, stringResource(R.string.editor_edit_photo), { editing = current.value.id }, color = Color.White)
+                IconAction(Ico.ROTATE, stringResource(R.string.editor_rotate), { vm.rotateImage(current.index, onError) }, color = Color.White)
                 // OCR: closes the viewer and shows the text found, to add below the photo.
                 val context = LocalContext.current
-                IconAction(Ico.SCAN, "Get text from photo", { onClose(); vm.scanPhoto(current.index, context.applicationContext) }, color = Color.White)
-                IconAction(Ico.TRASH, "Remove", { vm.removeAttachment(current.index) }, color = Color.White)
+                IconAction(Ico.SCAN, stringResource(R.string.editor_get_text_from_photo), { onClose(); vm.scanPhoto(current.index, context.applicationContext) }, color = Color.White)
+                IconAction(Ico.TRASH, stringResource(R.string.common_remove), { vm.removeAttachment(current.index) }, color = Color.White)
             }
         }
         // Crop, straighten, colours, size: saved as one edit, so Undo brings the photo back as it was.
@@ -1333,20 +1599,23 @@ internal fun PhotoViewer(vm: EditorViewModel, startId: String, onClose: () -> Un
 internal fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
     val focusedType = if (vm.focused) vm.doc.lines.getOrNull(vm.cursorLine)?.type else null
     val enabled = focusedType != null && focusedType != BlockType.TITLE
-    SheetPanel("Format", onClose) {
+    // Stays below the status bar and above the keyboard, scrolling when it doesn't fit (large text, a small phone).
+    val imeDp = with(LocalDensity.current) { WindowInsets.ime.getBottom(this).toDp() }
+    val maxHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp - imeDp - 200.dp).coerceIn(160.dp, 560.dp)
+    SheetPanel(stringResource(R.string.editor_format), onClose) { Column(Modifier.heightIn(max = maxHeight).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (!enabled) {
             Text(
-                if (focusedType == BlockType.TITLE) "The first line is always the title. Move to another line to format it."
-                else "Tap a line in the note to format it.",
+                if (focusedType == BlockType.TITLE) stringResource(R.string.editor_the_first_line_is_always)
+                else stringResource(R.string.editor_tap_a_line_in_the),
                 style = JType.small, color = jc.muted,
             )
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
-                Triple(BlockType.HEADING, "Heading", JType.heading.copy(fontSize = 19.sp)),
-                Triple(BlockType.SUBHEADING, "Subheading", JType.rowTitle),
-                Triple(BlockType.BODY, "Body", JType.secondary),
-                Triple(BlockType.MONOSPACED, "Mono", JType.secondary.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp)),
+                Triple(BlockType.HEADING, stringResource(R.string.editor_heading), JType.heading.copy(fontSize = 19.sp)),
+                Triple(BlockType.SUBHEADING, stringResource(R.string.editor_subheading), JType.rowTitle),
+                Triple(BlockType.BODY, stringResource(R.string.editor_body), JType.secondary),
+                Triple(BlockType.MONOSPACED, stringResource(R.string.editor_mono), JType.secondary.copy(fontFamily = FontFamily.Monospace, fontSize = 14.sp)),
             ).forEach { (type, label, style) ->
                 val on = focusedType == type
                 Box(
@@ -1385,16 +1654,16 @@ internal fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
                 }
             }
         }
-        if (!hasSelection) Text("Select text to make it bold, italic, underlined or highlighted.", style = JType.small, color = jc.muted)
+        if (!hasSelection) Text(stringResource(R.string.editor_select_text_to_make_it), style = JType.small, color = jc.muted)
         Row(
             Modifier.fillMaxWidth().clip(JShape.sm).background(jc.line),
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             listOf(
-                Triple(BlockType.BULLET, Ico.BULLETS, "Bulleted list"),
-                Triple(BlockType.DASHED, Ico.DASHES, "Dashed list"),
-                Triple(BlockType.NUMBERED, Ico.NUMBERS, "Numbered list"),
-                Triple(BlockType.CHECK, Ico.CHECKLIST, "Checklist"),
+                Triple(BlockType.BULLET, Ico.BULLETS, stringResource(R.string.editor_bulleted_list)),
+                Triple(BlockType.DASHED, Ico.DASHES, stringResource(R.string.editor_dashed_list)),
+                Triple(BlockType.NUMBERED, Ico.NUMBERS, stringResource(R.string.editor_numbered_list)),
+                Triple(BlockType.CHECK, Ico.CHECKLIST, stringResource(R.string.editor_checklist)),
             ).forEach { (type, icon, label) ->
                 val on = focusedType == type
                 Box(
@@ -1411,9 +1680,9 @@ internal fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             listOf(
-                Triple(Ico.QUOTE, "Quote", vm::toggleQuote),
-                Triple(Ico.OUTDENT, "Indent less") { vm.indent(-1) },
-                Triple(Ico.INDENT, "Indent more") { vm.indent(1) },
+                Triple(Ico.QUOTE, stringResource(R.string.editor_quote), vm::toggleQuote),
+                Triple(Ico.OUTDENT, stringResource(R.string.editor_indent_less)) { vm.indent(-1) },
+                Triple(Ico.INDENT, stringResource(R.string.editor_indent_more)) { vm.indent(1) },
             ).forEachIndexed { i, (icon, label, onClick) ->
                 val on = i == 0 && line?.quote == true
                 val can = enabled && when (i) { 1 -> (line?.indent ?: 0) > 0; 2 -> (line?.indent ?: 0) < MAX_INDENT; else -> true }
@@ -1425,20 +1694,25 @@ internal fun FormatSheet(vm: EditorViewModel, onClose: () -> Unit) {
                 ) { JIcon(icon, if (on) jc.bg else if (can) jc.ink else jc.muted, size = 20.dp) }
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Highlight colour", Modifier.weight(1f), style = JType.secondary, color = jc.muted)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.editor_highlight_colour), Modifier.weight(1f), style = JType.secondary, color = jc.muted)
             Tint.entries.forEach { t ->
                 val on = t == vm.highlightTint
                 val name = t.name.lowercase().replaceFirstChar { it.uppercase() }
+                // 48 dp touch area, 28 dp swatch; the 12 dp row spacing would otherwise clip the touch area to 40 dp.
                 Box(
-                    Modifier.size(28.dp).clip(CircleShape).background(t.swatch())
-                        .border(if (on) 2.dp else 0.dp, if (on) jc.ink else Color.Transparent, CircleShape)
-                        .clickable(role = Role.RadioButton) { vm.pickTint(t) }
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.RadioButton) { vm.pickTint(t) }
                         .semantics { contentDescription = name; selected = on },
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(28.dp).clip(CircleShape).background(t.swatch())
+                            .border(if (on) 2.dp else 0.dp, if (on) jc.ink else Color.Transparent, CircleShape),
+                    )
+                }
             }
         }
-    }
+    } }
 }
 
 /** A highlight colour, see-through so text stays readable in light and dark mode. */
@@ -1479,5 +1753,5 @@ internal suspend fun saveCards(context: android.content.Context, blocks: List<co
             pages.size
         }.getOrNull()
     }
-    toast(when (saved) { null -> "Couldn't save the image."; 1 -> "Saved to Photos"; else -> "Saved $saved images to Photos" })
+    toast(when (saved) { null -> context.getString(R.string.editor_couldnt_save_the_image); 1 -> context.getString(R.string.editor_saved_to_photos); else -> context.resources.getQuantityString(R.plurals.editor_saved_images, saved, saved) })
 }

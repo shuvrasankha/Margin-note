@@ -71,7 +71,7 @@ The behavior is based on the clean-room spec in [`research/SPEC.md`](research/SP
   Notes unlock until Margin goes to the background. Settings has Lock now, Change password and fingerprint
   unlock. **There's no password recovery.**
 
-**Not built:** sharing/collaboration, importing from other note apps, password hints.
+**Not built:** live sharing/collaboration, password hints. (Importing from Google Keep Takeout, Evernote .enex and Markdown, text or HTML files is built.)
 
 ## Build
 

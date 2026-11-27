@@ -19,18 +19,44 @@ class MarginApp : Application() {
     @Inject lateinit var attachmentFiles: AttachmentFiles
     @Inject lateinit var attachmentIndex: com.margin.app.data.AttachmentIndex
     @Inject lateinit var backupPrefs: com.margin.app.sync.BackupPrefs
+    @Inject lateinit var placeReminders: com.margin.app.data.PlaceReminders
+    @Inject lateinit var pinnedNotes: com.margin.app.data.PinnedNotes
+    @Inject lateinit var appPrefs: com.margin.app.data.AppPrefs
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        com.margin.app.data.untitledNoteName = getString(R.string.model_new_note)
+    }
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
+        com.margin.app.data.UnlockLimit.init(this)
+        com.margin.app.data.untitledNoteName = getString(R.string.model_new_note)
         appScope.launch {
             repository.ensureDefaultFolder()
             repository.purgeExpiredTrash()
             attachmentFiles.cleanUp(repository.attachmentsInUse())
+            attachmentFiles.clearExports()
         }
+        // Repeating checklists: untick the ones whose new round began while Margin was closed, then hourly.
+        appScope.launch { repository.resetRepeatingLists() }
+        com.margin.app.sync.ListResetWorker.schedule(this)
         // Keeps the home-screen widget current while the process runs (app or background sync).
-        appScope.launch { repository.liveNotes().collect { RecentWidget.push(this@MarginApp, it) } }
+        appScope.launch {
+            // Redrawn when App Lock turns on or off too: the note widgets hide their text while it's on.
+            kotlinx.coroutines.flow.combine(repository.liveNotes(), appPrefs.appLock) { notes, _ -> notes }.collect {
+                RecentWidget.push(this@MarginApp, it)
+                com.margin.app.ui.ListWidget.push(this@MarginApp, it)
+                com.margin.app.ui.NoteWidget.push(this@MarginApp, it)
+                com.margin.app.ui.TodayWidget.push(this@MarginApp, it)
+                // Notes pinned to the shade; also puts them back after a restart, when this process starts.
+                pinnedNotes.refresh(it)
+            }
+        }
+        // Place reminders: Android or Play services may have dropped the geofences (restart, update, data cleared).
+        placeReminders.registerAll()
         // Reads text in photos and PDFs so search finds it.
         appScope.launch { attachmentIndex.run() }
         scheduler.onAppStart() // sync on app start (when signed in) + 6 h periodic job

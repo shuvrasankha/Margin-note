@@ -52,6 +52,8 @@ import com.margin.app.data.newId
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.margin.app.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * The widget's new-note popup: a title and some text over the home screen, saved to the default folder
@@ -114,18 +116,18 @@ private fun QuickNote(onCancel: () -> Unit, onSave: (String, String) -> Unit) {
                 .padding(horizontal = 20.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextAction("Cancel", onCancel)
+                TextAction(stringResource(R.string.common_cancel), onCancel)
                 Spacer(Modifier.weight(1f))
-                Text("New note", style = JType.rowTitle, color = jc.ink)
+                Text(stringResource(R.string.quick_note_new_note), style = JType.rowTitle, color = jc.ink)
                 Spacer(Modifier.weight(1f))
-                TextAction("Save", { saving = true; onSave(title, text) }, bold = true, enabled = !empty && !saving)
+                TextAction(stringResource(R.string.common_save), { saving = true; onSave(title, text) }, bold = true, enabled = !empty && !saving)
             }
             Field(
-                title, { title = it.replace('\n', ' ') }, "Title", JType.noteTitle,
+                title, { title = it.replace('\n', ' ') }, stringResource(R.string.quick_note_title), JType.noteTitle,
                 Modifier.padding(top = 14.dp).focusRequester(focus), single = true,
             )
             Field(
-                text, { text = it }, "Note", JType.body,
+                text, { text = it }, stringResource(R.string.quick_note_note), JType.body,
                 Modifier.padding(top = 8.dp, bottom = 6.dp).heightIn(min = 120.dp, max = 320.dp).verticalScroll(rememberScrollState()),
             )
         }
