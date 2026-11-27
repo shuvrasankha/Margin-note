@@ -25,8 +25,8 @@ android {
         applicationId = "com.margin.note"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 4
+        versionName = "1.1.0"
         buildConfigField("String", "WEB_CLIENT_ID", "\"$webClientId\"")
     }
 
