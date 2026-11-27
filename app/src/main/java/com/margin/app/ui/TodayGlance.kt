@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -88,42 +87,45 @@ fun DateHeading(today: LocalDate, title: String) {
  */
 @Composable
 fun TodayCards(g: TodayGlance, modifier: Modifier = Modifier) {
-    Row(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp).height(IntrinsicSize.Min).clip(JShape.md).background(jc.card),
-    ) {
-        AgendaPart(
+    // Large text: three thirds would cut every label short, so each part gets a line of its own.
+    val stacked = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+    val card = modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(JShape.md).background(jc.card)
+    val rule: @Composable () -> Unit = { if (stacked) androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = jc.line) else PartRule() }
+    val parts: @Composable (Modifier) -> Unit = { part ->
+        AgendaPart(part,
             if (g.openTodos == 0) stringResource(R.string.today_glance_no_to_dos) else pluralStringResource(R.plurals.today_todos, g.openTodos, g.openTodos),
             if (g.overdue > 0) pluralStringResource(R.plurals.today_overdue, g.overdue, g.overdue) else if (g.openTodos == 0) stringResource(R.string.today_glance_all_clear) else stringResource(R.string.today_glance_on_track),
             g.onTodos, dot = g.overdue > 0, alert = g.overdue > 0,
         )
-        PartRule()
-        if (g.habits > 0) AgendaPart(
+        rule()
+        if (g.habits > 0) AgendaPart(part,
             if (g.habitsLeft.isEmpty()) stringResource(R.string.today_glance_habits) else pluralStringResource(R.plurals.today_habits, g.habitsLeft.size, g.habitsLeft.size),
             if (g.habitsLeft.isEmpty()) stringResource(R.string.today_glance_all_done) else stringResource(R.string.today_habit_left, g.habitsLeft.first()),
             g.onHabits,
         ) else {
             val next = g.nextReminderDay
             AgendaPart(
-                stringResource(R.string.today_glance_reminders),
+                part, stringResource(R.string.today_glance_reminders),
                 when { g.remindersToday > 0 -> pluralStringResource(R.plurals.today_reminders_today, g.remindersToday, g.remindersToday); next != null -> stringResource(R.string.today_next_day, dayShort(next, LocalDate.now())); else -> stringResource(R.string.today_glance_none_set) },
                 g.onReminders,
             )
         }
-        PartRule()
-        AgendaPart(stringResource(R.string.today_glance_journal), if (g.journaled) stringResource(R.string.today_glance_written) else stringResource(R.string.today_glance_write_today), g.onJournal, accentSub = !g.journaled)
+        rule()
+        AgendaPart(part, stringResource(R.string.today_glance_journal), if (g.journaled) stringResource(R.string.today_glance_written) else stringResource(R.string.today_glance_write_today), g.onJournal, accentSub = !g.journaled)
     }
+    if (stacked) Column(card) { parts(Modifier.fillMaxWidth()) } else Row(card.height(IntrinsicSize.Min)) { parts(Modifier.weight(1f)) }
 }
 
 @Composable
 private fun PartRule() = Box(Modifier.padding(vertical = 12.dp).width(1.dp).fillMaxHeight().background(jc.line))
 
 @Composable
-private fun RowScope.AgendaPart(
-    title: String, sub: String, onClick: () -> Unit,
+private fun AgendaPart(
+    modifier: Modifier, title: String, sub: String, onClick: () -> Unit,
     dot: Boolean = false, alert: Boolean = false, accentSub: Boolean = false,
 ) {
     Column(
-        Modifier.weight(1f).clickable(role = Role.Button, onClick = onClick)
+        modifier.clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 11.dp)
             .semantics(mergeDescendants = true) {},
         verticalArrangement = Arrangement.spacedBy(2.dp),

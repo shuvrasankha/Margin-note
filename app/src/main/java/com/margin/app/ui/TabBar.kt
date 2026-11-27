@@ -63,6 +63,11 @@ enum class Tab(val label: String, @androidx.annotation.StringRes val labelRes: I
 
 private val tabShape = RoundedCornerShape(18.dp)
 
+/** 12 sp that grows with the user's text size only up to 1.3x: past that, five labels can't fit in 68 dp each. */
+@Composable
+private fun tabLabelSize() = (12f * minOf(androidx.compose.ui.platform.LocalDensity.current.fontScale, 1.3f) /
+    androidx.compose.ui.platform.LocalDensity.current.fontScale).sp
+
 /** Notes · Today · New · Library · Settings, along the bottom of every tab's root screen, or down the left as a rail when [vertical]. */
 @Composable
 fun TabBar(current: Tab, onSelect: (Tab) -> Unit, onNew: () -> Unit, modifier: Modifier = Modifier, vertical: Boolean = false) {
@@ -111,7 +116,7 @@ private fun NewItem(onNew: () -> Unit) {
         Box(Modifier.size(width = 56.dp, height = 30.dp).clip(JShape.pill).background(jc.accent), contentAlignment = Alignment.Center) {
             JIcon(Ico.PLUS, jc.bg, size = 18.dp, stroke = 2.4f)
         }
-        Text(stringResource(R.string.tab_bar_new), style = JType.caption.copy(fontSize = 12.sp), color = jc.muted, fontWeight = FontWeight.Medium, maxLines = 1)
+        Text(stringResource(R.string.tab_bar_new), style = JType.caption.copy(fontSize = tabLabelSize()), color = jc.muted, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
 
@@ -131,6 +136,6 @@ private fun TabItem(tab: Tab, current: Tab, onSelect: (Tab) -> Unit) {
         Box(Modifier.size(width = 56.dp, height = 30.dp).clip(JShape.pill).background(pill), contentAlignment = Alignment.Center) {
             JIcon(tab.icon, color, size = 22.dp, stroke = if (on) 2.1f else 1.8f)
         }
-        Text(stringResource(tab.labelRes), style = JType.caption.copy(fontSize = 12.sp), color = color, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
+        Text(stringResource(tab.labelRes), style = JType.caption.copy(fontSize = tabLabelSize()), color = color, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
     }
 }
